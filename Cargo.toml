@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["crates/dialogue", "app"]
+default-members = ["app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.98"
+
+[workspace.dependencies]
+dialogue = { path = "crates/dialogue" }
+nana-ui-platform = { path = "../sena-nana/NanaUI/crates/nana-ui-platform", default-features = false }
+nana-ui = { path = "../sena-nana/NanaUI/crates/nana-ui", default-features = false, features = [
+    "hosted",
+    "bundled-fonts",
+    "wgpu-interop",
+    "wgpu-backends",
+    "icons-tabler",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-segmentation = "1"
