@@ -1,80 +1,120 @@
-//! Embed a Common Controls 6 manifest. `TaskDialogIndirect` (pulled in by the
-//! tray stack) is only exported by comctl32 v6; without this resource the
-//! loader binds v5 and the process dies with STATUS_ENTRYPOINT_NOT_FOUND
-//! before any window is created. rustc writes a sidecar manifest but does not
-//! embed it with the current linker.
+//! Windows resources.
+//!
+//! * The Common Controls 6 manifest is embedded through linker arguments, so
+//!   no resource compiler is needed. `TaskDialogIndirect` (pulled in by the
+//!   tray stack) exists only in comctl32 v6; without the manifest the loader
+//!   binds v5 and the process dies before any window opens.
+//! * The icon and version information need a resource compiler. When none is
+//!   installed a development build only warns; release CI sets
+//!   `NANATYPE_REQUIRE_RESOURCES=1` to make it an error.
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-
-const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
-    <security>
-      <requestedPrivileges>
-        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
-      </requestedPrivileges>
-    </security>
-  </trustInfo>
-  <dependency>
-    <dependentAssembly>
-      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*" />
-    </dependentAssembly>
-  </dependency>
-</assembly>
-"#;
+use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    if target_os != "windows" {
+    println!("cargo:rerun-if-changed=assets/nanatype.ico");
+    println!("cargo:rerun-if-env-changed=NANATYPE_REQUIRE_RESOURCES");
+    println!("cargo:rerun-if-env-changed=NANATYPE_BUILD_ID");
+    let build = env::var("NANATYPE_BUILD_ID").unwrap_or_else(|_| "dev".into());
+    println!("cargo:rustc-env=NANATYPE_BUILD_ID={build}");
+
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
-    let manifest_path = out_dir.join("nanatype.manifest");
-    let rc_path = out_dir.join("nanatype.rc");
-    let res_path = out_dir.join("nanatype.res");
-    fs::write(&manifest_path, MANIFEST).expect("write manifest");
-    let manifest_rc = manifest_path.display().to_string().replace('\\', "/");
-    let rc = format!("1 24 \"{manifest_rc}\"\r\n");
-    fs::write(&rc_path, rc).expect("write rc");
-    let rc_exe = find_rc().unwrap_or_else(|| {
-        panic!("rc.exe was not found; install the Windows SDK so the Common Controls manifest can be embedded");
-    });
-    let status = Command::new(&rc_exe)
-        .arg("/nologo")
-        .arg("/fo")
-        .arg(&res_path)
-        .arg(&rc_path)
-        .status()
-        .unwrap_or_else(|error| panic!("failed to run {}: {error}", rc_exe.display()));
-    if !status.success() {
-        panic!("rc.exe failed with {status}");
+    if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        println!("cargo:rustc-link-arg-bin=nanatype=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg-bin=nanatype=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+        );
+        println!(
+            "cargo:rustc-link-arg-bin=nanatype=/MANIFESTUAC:level='asInvoker' uiAccess='false'"
+        );
     }
-    println!("cargo:rustc-link-arg-bin=nanatype={}", res_path.display());
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    copy_dxc_for_dev(&out_dir);
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
+    let icon = manifest_dir.join("assets").join("nanatype.ico");
+    let version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    let mut parts: Vec<u16> = version
+        .split(['.', '-', '+'])
+        .take(3)
+        .map(|p| p.parse().unwrap_or(0))
+        .collect();
+    parts.resize(4, 0);
+    let numeric = parts
+        .iter()
+        .map(u16::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let rc = format!(
+        r#"#pragma code_page(65001)
+1 ICON "{icon}"
+1 VERSIONINFO
+FILEVERSION {numeric}
+PRODUCTVERSION {numeric}
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "sena-nana"
+      VALUE "FileDescription", "NanaType"
+      VALUE "FileVersion", "{version}"
+      VALUE "InternalName", "nanatype"
+      VALUE "OriginalFilename", "nanatype.exe"
+      VALUE "ProductName", "NanaType"
+      VALUE "ProductVersion", "{version} ({build})"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
+"#,
+        icon = icon.display().to_string().replace('\\', "/"),
+    );
+    let rc_path = out_dir.join("nanatype.rc");
+    fs::write(&rc_path, rc).expect("write rc");
+    let required = env::var("NANATYPE_REQUIRE_RESOURCES").as_deref() == Ok("1");
+    match embed_resource::compile(&rc_path, embed_resource::NONE).manifest_optional() {
+        Ok(()) => {}
+        Err(error) if required => panic!("icon/version resources: {error}"),
+        Err(error) => println!(
+            "cargo:warning=icon and version info not embedded ({error}); install the Windows SDK"
+        ),
+    }
 }
 
-fn find_rc() -> Option<PathBuf> {
-    if let Ok(path) = env::var("RC_PATH") {
-        let path = PathBuf::from(path);
-        if path.is_file() {
-            return Some(path);
-        }
+/// NanaUI compiles its DX12 shaders with `dxcompiler.dll` when it sits next
+/// to the executable (about twice as fast as the FXC fallback). For local
+/// builds, copy it from the Windows SDK into the profile directory; packaged
+/// builds ship it through `packaging/nana-package.toml`.
+fn copy_dxc_for_dev(out_dir: &std::path::Path) {
+    let Some(profile_dir) = out_dir.ancestors().nth(3) else {
+        return;
+    };
+    let target = profile_dir.join("dxcompiler.dll");
+    if target.exists() {
+        return;
     }
-    let kits = Path::new(r"C:\Program Files (x86)\Windows Kits\10\bin");
-    let mut versions = fs::read_dir(kits)
-        .ok()?
-        .filter_map(|entry| entry.ok())
-        .collect::<Vec<_>>();
-    versions.sort_by_key(|entry| entry.file_name());
-    versions.reverse();
-    for version in versions {
-        let rc = version.path().join("x64").join("rc.exe");
-        if rc.is_file() {
-            return Some(rc);
-        }
+    let kits = std::path::Path::new(r"C:\Program Files (x86)\Windows Kits\10\bin");
+    let Ok(entries) = fs::read_dir(kits) else {
+        return;
+    };
+    let mut versions: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+    versions.sort();
+    if let Some(dll) = versions
+        .iter()
+        .rev()
+        .map(|v| v.join("x64").join("dxcompiler.dll"))
+        .find(|p| p.is_file())
+    {
+        let _ = fs::copy(dll, target);
     }
-    None
 }

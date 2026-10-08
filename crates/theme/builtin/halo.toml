@@ -1,0 +1,8 @@
+# Halo: the reference skin. Every other built-in starts from these defaults.
+[meta]
+id = "nanatype.halo"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+name = { zh-CN = "光环", en-US = "Halo", ja-JP = "ハロー" }
+description = { zh-CN = "清爽的天蓝圆角对话框", en-US = "A crisp sky-blue rounded box", ja-JP = "爽やかな空色の角丸ボックス" }

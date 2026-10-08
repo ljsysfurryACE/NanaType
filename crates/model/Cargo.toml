@@ -1,0 +1,15 @@
+[package]
+name = "nanatype-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "NanaType dialogue document model: runs, atoms, markers and lines"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

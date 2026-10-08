@@ -1,0 +1,19 @@
+[package]
+name = "nanatype-theme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "NanaType skin packages: manifest, inheritance, validation, install and export"
+
+[dependencies]
+nanatype-model.workspace = true
+nanatype-playback.workspace = true
+serde.workspace = true
+toml = { version = "1.1", default-features = false, features = ["parse", "serde", "display"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+imagesize = "0.15"
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tempfile = "3"

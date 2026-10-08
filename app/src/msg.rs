@@ -1,0 +1,197 @@
+//! Messages into the host program. Views, background threads and the tray all
+//! speak this one type; [`crate::app::App::update`] is the only place that
+//! changes state.
+
+use nanatype_audio::AudioStatus;
+use nanatype_bridge::BridgeStatus;
+use nanatype_core::Cmd;
+use nanatype_playback::CueKind;
+use nanatype_settings::{Hotkey, Settings};
+
+use crate::windows::WindowKind;
+
+/// An edit applied to the settings, then saved and propagated.
+pub type SettingsEdit = Box<dyn FnOnce(&mut Settings) + Send>;
+
+/// Global (system-wide) shortcut actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GlobalAction {
+    Summon,
+    Continue,
+    Skip,
+    Clear,
+    ToggleMode,
+    ToggleOverlays,
+}
+
+impl GlobalAction {
+    pub const ALL: [Self; 6] = [
+        Self::Summon,
+        Self::Continue,
+        Self::Skip,
+        Self::Clear,
+        Self::ToggleMode,
+        Self::ToggleOverlays,
+    ];
+
+    pub fn label_key(self) -> &'static str {
+        match self {
+            Self::Summon => "hotkeys-summon",
+            Self::Continue => "hotkeys-continue",
+            Self::Skip => "hotkeys-skip",
+            Self::Clear => "hotkeys-clear",
+            Self::ToggleMode => "hotkeys-toggle-mode",
+            Self::ToggleOverlays => "hotkeys-toggle-overlays",
+        }
+    }
+
+    pub fn get(self, s: &Settings) -> Option<&Hotkey> {
+        let h = &s.hotkeys;
+        match self {
+            Self::Summon => h.summon.as_ref(),
+            Self::Continue => h.continue_.as_ref(),
+            Self::Skip => h.skip.as_ref(),
+            Self::Clear => h.clear.as_ref(),
+            Self::ToggleMode => h.toggle_mode.as_ref(),
+            Self::ToggleOverlays => h.toggle_overlays.as_ref(),
+        }
+    }
+
+    pub fn set(self, s: &mut Settings, value: Option<Hotkey>) {
+        let h = &mut s.hotkeys;
+        *match self {
+            Self::Summon => &mut h.summon,
+            Self::Continue => &mut h.continue_,
+            Self::Skip => &mut h.skip,
+            Self::Clear => &mut h.clear,
+            Self::ToggleMode => &mut h.toggle_mode,
+            Self::ToggleOverlays => &mut h.toggle_overlays,
+        } = value;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileTarget {
+    Avatar,
+    InsertImage,
+    ImportSkin,
+    ExportSkin,
+    StickerFolder,
+}
+
+pub enum Msg {
+    /// A session command (send, continue, draft changed…).
+    Core(Cmd),
+    /// Change settings.
+    Edit(SettingsEdit),
+    /// Replace the editor's markup source (source mode).
+    Markup(MarkupEdit),
+    /// A formatting action from the toolbar or a shortcut.
+    Tool(Tool),
+    /// A raw editor command (scripted demos; phrase insertion).
+    EditorCommand(nana_ui::runtime::RichEditCommand),
+    /// The rich editor's document changed.
+    EditorChanged(nana_ui_core::RichText),
+    /// The rich editor found no text to paste (try an image).
+    EditorPaste,
+    /// Switch between the rich editor and the markup source.
+    ToggleSource,
+    Hotkey(GlobalAction),
+    /// Start recording a chord for an action; `None` stops recording.
+    RecordHotkey(Option<GlobalAction>),
+    /// A chord was captured while recording.
+    HotkeyCaptured(Hotkey),
+    ToggleWindow(WindowKind),
+    ShowWindow(WindowKind),
+    HideInput,
+    ResetWindow(WindowKind),
+    LockOverlays(bool),
+    OpenSettings,
+    SettingsPage(crate::ui::settings::Page),
+    PickFile(FileTarget),
+    DeleteSkin(String),
+    ExportSkin(String),
+    DuplicateSkin(String),
+    OpenFolder(std::path::PathBuf),
+    CopyText(String),
+    PlaySample,
+    VtsAuthorize,
+    VtsRefresh,
+    InsertPhrase(usize),
+    DismissNotice(u64),
+    /// A scheduled wake from the timer thread.
+    Wake {
+        epoch: u64,
+        reason: nanatype_playback::WakeReason,
+    },
+    /// A visual or broadcast cue reached its time.
+    Cue(CueKind),
+    Audio(AudioStatus),
+    Bridge(BridgeStatus),
+    /// A sticker file changed on disk.
+    AssetsChanged,
+    /// A file of the active (folder) skin changed and hot reload is on.
+    SkinFilesChanged,
+    /// A second instance asked us to come forward.
+    SecondInstance,
+    /// Skin sounds finished decoding.
+    SoundsLoaded {
+        skin: String,
+        bank: crate::services::sounds::Bank,
+        errors: Vec<String>,
+    },
+    /// The monitor layout was read.
+    Displays(Vec<nanatype_settings::MonitorInfo>),
+    HotkeyStatus(std::collections::HashMap<GlobalAction, crate::services::hotkeys::HotkeyState>),
+    /// An image pasted into the editor (straight RGBA).
+    PasteImage {
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    },
+    /// The input window's native handle (for the summon hotkey).
+    InputHwnd(isize),
+    /// Show a message in the status line.
+    Notice {
+        text: String,
+        error: bool,
+    },
+    Quit,
+}
+
+/// A toolbar or shortcut action on the draft. Applied to the rich editor's
+/// selection, or as markup in source mode.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tool {
+    Bold,
+    Italic,
+    Underline,
+    Strike,
+    Color(nanatype_model::Rgba8),
+    /// Multiple of the skin's text size.
+    Size(f32),
+    Stroke(Option<nanatype_model::Stroke>),
+    Shadow(Option<nanatype_model::Shadow>),
+    Ruby(String),
+    Effect(nanatype_model::ContinuousKind),
+    Entrance(nanatype_model::EntranceKind),
+    Pace(nanatype_model::Pace),
+    /// Insert a marker or a picture at the caret.
+    Insert(nanatype_model::Inline),
+    ClearFormat,
+}
+
+/// Toolbar edits of the markup editor.
+pub enum MarkupEdit {
+    /// The user typed: the editor's whole text and selection (byte offsets).
+    Typed {
+        text: String,
+        selection: (usize, usize),
+    },
+    /// Wrap the selection in `open` … `close` (or insert both at the caret).
+    Wrap { open: String, close: String },
+    /// Insert at the caret, replacing the selection.
+    Insert(String),
+    /// Remove every tag inside the selection.
+    ClearFormat,
+}

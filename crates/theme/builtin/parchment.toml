@@ -1,0 +1,56 @@
+[meta]
+id = "nanatype.parchment"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+name = { zh-CN = "羊皮纸", en-US = "Parchment", ja-JP = "羊皮紙" }
+description = { zh-CN = "暖色纸张与宋体", en-US = "Warm paper with a serif face", ja-JP = "温かい紙と明朝体" }
+
+[chrome]
+accent = "#7a4824"
+background = "#faf4e8"
+surface = "#fffcf5"
+text = "#3e2a1c"
+muted = "#6e543e"
+border = "#d6c4a8"
+success = "#2e6e3e"
+warning = "#a06014"
+danger = "#a8302a"
+
+[fonts.body]
+families = ["Noto Serif SC", "SimSun", "Songti SC"]
+weight = 600
+
+[fonts.name]
+families = ["Noto Serif SC", "SimSun", "Songti SC"]
+weight = 700
+
+[dialogue.box]
+color = "#f4e4c4"
+border_color = "#7a5430"
+border_width = 2
+radius = 6
+shadow = { color = "#3e2a1c40", dy = 3, blur = 8 }
+
+[dialogue.text]
+color = "#3e2a1c"
+size = 30
+
+[dialogue.nameplate]
+color = "#5c341c"
+text_color = "#fff4dc"
+size = 20
+radius = 4
+
+[dialogue.continue]
+color = "#7a4824"
+
+[history]
+name_color = "#7a4824"
+bubble_color = "#f4e4c4f0"
+bubble_border = "#7a543080"
+bubble_radius = 6
+time_color = "#967e66"
+
+[history.text]
+color = "#3e2a1c"

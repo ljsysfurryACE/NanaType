@@ -1,6 +1,17 @@
 [workspace]
 resolver = "3"
-members = ["crates/dialogue", "app"]
+members = [
+    "crates/model",
+    "crates/markup",
+    "crates/playback",
+    "crates/theme",
+    "crates/i18n",
+    "crates/settings",
+    "crates/audio",
+    "crates/bridge",
+    "crates/core",
+    "app",
+]
 default-members = ["app"]
 
 [workspace.package]
@@ -10,15 +21,38 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.98"
 
 [workspace.dependencies]
-dialogue = { path = "crates/dialogue" }
-nana-ui-platform = { path = "../sena-nana/NanaUI/crates/nana-ui-platform", default-features = false }
-nana-ui = { path = "../sena-nana/NanaUI/crates/nana-ui", default-features = false, features = [
+nanatype-model = { path = "crates/model" }
+nanatype-markup = { path = "crates/markup" }
+nanatype-playback = { path = "crates/playback" }
+nanatype-theme = { path = "crates/theme" }
+nanatype-i18n = { path = "crates/i18n" }
+nanatype-settings = { path = "crates/settings" }
+nanatype-audio = { path = "crates/audio" }
+nanatype-bridge = { path = "crates/bridge" }
+nanatype-core = { path = "crates/core" }
+nana-ui-platform = { path = "../sena-nana/NanaUI-app/crates/nana-ui-platform", default-features = false }
+nana-ui-core = { path = "../sena-nana/NanaUI-app/crates/nana-ui-core", default-features = false }
+nana-ui = { path = "../sena-nana/NanaUI-app/crates/nana-ui", default-features = false, features = [
     "hosted",
     "bundled-fonts",
     "wgpu-interop",
     "wgpu-backends",
     "icons-tabler",
+    "native-export",
+    "packaged-resources",
 ] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 unicode-segmentation = "1"
+proptest = { version = "1", default-features = false, features = ["std"] }
+
+[profile.release]
+debug = "line-tables-only"
+
+# Shipped builds: thin LTO, one codegen unit, stripped symbols kept in a PDB.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+split-debuginfo = "packed"

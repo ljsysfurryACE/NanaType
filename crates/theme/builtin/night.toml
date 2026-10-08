@@ -1,0 +1,46 @@
+[meta]
+id = "nanatype.night"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+name = { zh-CN = "夜色", en-US = "Night", ja-JP = "夜色" }
+description = { zh-CN = "深色半透明框与发光描边", en-US = "Dark translucent box with a glowing edge", ja-JP = "発光する縁取りの半透明ダーク" }
+
+[chrome]
+appearance = "dark"
+accent = "#5cb8ff"
+background = "#0e1218"
+surface = "#1c2531"
+text = "#e6edf5"
+muted = "#a6b5c7"
+border = "#404f62"
+success = "#48d296"
+warning = "#ffc85a"
+danger = "#ff7a96"
+
+[dialogue.box]
+color = "#101c2ce6"
+border_color = "#5cb8ff"
+border_width = 1.5
+glow = "#5cb8ff80"
+glow_blur = 14
+
+[dialogue.text]
+color = "#bae0ff"
+shadow = { color = "#5cb8ff66", blur = 6 }
+
+[dialogue.nameplate]
+color = "#5cb8ff"
+text_color = "#0b1a2a"
+
+[dialogue.continue]
+color = "#5cb8ff"
+
+[history]
+name_color = "#5cb8ff"
+bubble_color = "#101c2ce0"
+bubble_border = "#5cb8ff66"
+time_color = "#84a0bc"
+
+[history.text]
+color = "#d4ebff"

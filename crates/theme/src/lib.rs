@@ -1,0 +1,30 @@
+//! Skin packages.
+//!
+//! A skin is a folder (or a `.ntskin` zip of one) with a `skin.toml` and the
+//! images, fonts and sounds it names. It styles the dialogue box, the name
+//! plate, the portrait, the history bubbles, typing sounds and the app's own
+//! controls. Skins inherit from a `base` by deep-merging TOML tables, so a
+//! user skin only states what it changes. Nothing here depends on NanaUI; the
+//! app maps a [`Skin`] onto its widgets.
+
+#![forbid(unsafe_code)]
+
+mod files;
+mod load;
+mod manifest;
+mod registry;
+
+#[cfg(test)]
+mod tests;
+
+pub use files::{
+    DirFiles, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, MemoryFiles, SkinFiles, ZipFiles,
+    clean_path,
+};
+pub use load::{
+    BaseResolver, LoadedSkin, MANIFEST, MAX_IMAGE_SIDE, Severity, SkinDiagnostic, SkinOrigin,
+    deep_merge, load, read_manifest,
+};
+pub use manifest::*;
+pub use registry::{DEFAULT_SKIN, InstallOutcome, SkinEntry, SkinRegistry};
+pub use toml::Table as TomlTable;

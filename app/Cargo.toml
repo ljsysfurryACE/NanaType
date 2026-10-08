@@ -4,32 +4,57 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "NanaType tray typewriter"
+description = "NanaType — typewriter dialogue for VTubers"
+
+[lib]
+name = "nanatype"
+path = "src/lib.rs"
 
 [[bin]]
 name = "nanatype"
 path = "src/main.rs"
 
 [dependencies]
-dialogue.workspace = true
+nanatype-model.workspace = true
+nanatype-markup.workspace = true
+nanatype-playback.workspace = true
+nanatype-theme.workspace = true
+nanatype-i18n.workspace = true
+nanatype-settings.workspace = true
+nanatype-audio.workspace = true
+nanatype-bridge.workspace = true
+nanatype-core.workspace = true
 nana-ui.workspace = true
 nana-ui-platform.workspace = true
+nana-ui-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+unicode-segmentation.workspace = true
 arboard = "3"
-cosmic-text = "0.19"
+raw-window-handle = "0.6"
+imagesize = "0.15"
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+crossbeam-channel = "0.5"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
-gif = "0.13"
 tray-icon = "0.21"
 
 [target.'cfg(windows)'.dependencies]
-nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout.git", rev = "bdbe1d539dadae6beb0be556e9964f619fc268f3", default-features = false, features = ["cpu-dx11"] }
+nanalive-spout = { path = "../../sena-nana/nanalive-spout", default-features = false, features = ["gpu-dx11-shared"] }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
-    "Win32_Media_Audio",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Devices_Display",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_System_Time",
 ] }
+
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"
+
+[dev-dependencies]
+nana-ui-devtools = { path = "../../sena-nana/NanaUI-app/crates/nana-ui-devtools", features = ["runtime-agent"] }

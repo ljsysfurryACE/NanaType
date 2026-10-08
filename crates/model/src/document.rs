@@ -1,0 +1,565 @@
+use std::fmt;
+use std::ops::Range;
+use std::str::FromStr;
+
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use unicode_segmentation::UnicodeSegmentation;
+
+use crate::{CharClass, Effects, Pace, Style, classify};
+
+/// A line longer than this many reveal units is cut at normalization.
+pub const MAX_UNITS: usize = 4096;
+
+/// Where an atom's pixels live. The document itself never carries pixels.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AssetRef {
+    /// Content-addressed blob in the session asset store (clipboard paste).
+    Blob(String),
+    /// A file inside the active skin package (`stickers/wave.png`).
+    Skin(String),
+    /// An entry of a user sticker library: folder name and file stem.
+    Library { lib: String, name: String },
+    /// An absolute file the user picked.
+    File(String),
+}
+
+impl fmt::Display for AssetRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Blob(hash) => write!(f, "blob:{hash}"),
+            Self::Skin(path) => write!(f, "skin:{path}"),
+            Self::Library { lib, name } => write!(f, "lib:{lib}/{name}"),
+            Self::File(path) => write!(f, "file:{path}"),
+        }
+    }
+}
+
+impl FromStr for AssetRef {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (scheme, rest) = value
+            .split_once(':')
+            .ok_or_else(|| format!("asset `{value}` has no scheme"))?;
+        if rest.is_empty() {
+            return Err(format!("asset `{value}` is empty"));
+        }
+        Ok(match scheme {
+            "blob" => Self::Blob(rest.to_owned()),
+            "skin" => Self::Skin(rest.to_owned()),
+            "file" => Self::File(rest.to_owned()),
+            "lib" => {
+                let (lib, name) = rest
+                    .rsplit_once('/')
+                    .ok_or_else(|| format!("library asset `{value}` needs lib/name"))?;
+                Self::Library {
+                    lib: lib.to_owned(),
+                    name: name.to_owned(),
+                }
+            }
+            _ => return Err(format!("unknown asset scheme `{scheme}`")),
+        })
+    }
+}
+
+impl Serialize for AssetRef {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetRef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AtomKind {
+    Sticker,
+    Emote,
+    Image,
+}
+
+/// An inline picture. It counts as one reveal unit and wraps like a glyph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Atom {
+    pub kind: AtomKind,
+    pub asset: AssetRef,
+    /// Height as a multiple of the line's body size.
+    #[serde(default = "default_atom_height")]
+    pub height_em: f32,
+    /// Spoken/plain text form, used by copy, history export and screen readers.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub alt: String,
+    #[serde(default, skip_serializing_if = "Effects::is_none")]
+    pub effects: Effects,
+}
+
+fn default_atom_height() -> f32 {
+    1.0
+}
+
+/// A zero-width point event. Markers are chips in the editor and never paint
+/// on the typewriter or in history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "marker", rename_all = "snake_case")]
+pub enum Marker {
+    /// Hold the reveal for `ms`.
+    Wait { ms: u32 },
+    /// Stop until the continue key; `auto_ms` continues on its own.
+    Pause {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auto_ms: Option<u32>,
+    },
+    /// Wait for continue, then clear the box and keep typing on a fresh page.
+    Page,
+    /// Play a sound effect: a skin `se` key or an asset reference string.
+    Sound {
+        sound: String,
+        #[serde(default = "unit_gain")]
+        gain: f32,
+    },
+    /// Broadcast an expression (VTube Studio hotkey, OSC, WebSocket) and
+    /// switch the portrait variant of the same name when the skin has one.
+    Expression {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        intensity: Option<f32>,
+    },
+    /// Switch the portrait/avatar variant without broadcasting.
+    Portrait { variant: String },
+    /// Shake the whole dialogue box.
+    ScreenShake { amp: f32, ms: u32 },
+}
+
+fn unit_gain() -> f32 {
+    1.0
+}
+
+impl Marker {
+    /// Markers that stop the reveal until something continues it.
+    pub fn is_gate(&self) -> bool {
+        matches!(self, Self::Pause { .. } | Self::Page)
+    }
+}
+
+/// Styled text. `text` never contains `\n` after normalization; hard breaks
+/// split paragraphs.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TextRun {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Style::is_plain")]
+    pub style: Style,
+    #[serde(default, skip_serializing_if = "Effects::is_none")]
+    pub effects: Effects,
+    #[serde(default, skip_serializing_if = "Pace::is_inherit")]
+    pub pace: Pace,
+}
+
+impl TextRun {
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ..Self::default()
+        }
+    }
+
+    pub fn styled(text: impl Into<String>, style: Style) -> Self {
+        Self {
+            text: text.into(),
+            style,
+            ..Self::default()
+        }
+    }
+
+    /// Same attributes, so the two runs may be merged.
+    pub fn same_attrs(&self, other: &TextRun) -> bool {
+        self.style == other.style && self.effects == other.effects && self.pace == other.pace
+    }
+}
+
+/// Base text with a reading above it. The base reveals; the annotation
+/// appears together with the first base character.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RubyGroup {
+    pub base: TextRun,
+    pub annotation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Inline {
+    Text(TextRun),
+    Ruby(RubyGroup),
+    Atom(Atom),
+    Marker(Marker),
+}
+
+impl Inline {
+    pub fn text(text: impl Into<String>) -> Self {
+        Self::Text(TextRun::plain(text))
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Paragraph {
+    #[serde(default)]
+    pub inlines: Vec<Inline>,
+}
+
+impl Paragraph {
+    pub fn new(inlines: Vec<Inline>) -> Self {
+        Self { inlines }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnitKind {
+    /// A grapheme of a text run (`ruby: false`) or of a ruby base (`ruby: true`).
+    Grapheme {
+        class: CharClass,
+        ruby: bool,
+    },
+    Atom,
+}
+
+/// One reveal step: a grapheme cluster or an atom.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Unit {
+    pub para: usize,
+    pub inline: usize,
+    /// Byte range inside the run's (or ruby base's) text; empty for atoms.
+    pub bytes: Range<usize>,
+    pub kind: UnitKind,
+    pub pace: Pace,
+}
+
+impl Unit {
+    pub fn class(&self) -> CharClass {
+        match self.kind {
+            UnitKind::Grapheme { class, .. } => class,
+            UnitKind::Atom => CharClass::Atom,
+        }
+    }
+}
+
+/// A dialogue line's content.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Document {
+    #[serde(default)]
+    pub paragraphs: Vec<Paragraph>,
+}
+
+impl Document {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Unstyled text; `\n` starts a new paragraph.
+    pub fn plain(text: &str) -> Self {
+        let mut doc = Self {
+            paragraphs: vec![Paragraph::new(vec![Inline::text(text)])],
+        };
+        doc.normalize();
+        doc
+    }
+
+    pub fn from_inlines(inlines: Vec<Inline>) -> Self {
+        let mut doc = Self {
+            paragraphs: vec![Paragraph::new(inlines)],
+        };
+        doc.normalize();
+        doc
+    }
+
+    /// No graphemes and no atoms. Markers alone do not make a line.
+    pub fn is_blank(&self) -> bool {
+        self.paragraphs.iter().all(|p| {
+            p.inlines.iter().all(|inline| match inline {
+                Inline::Text(run) => run.text.trim().is_empty(),
+                Inline::Ruby(ruby) => ruby.base.text.trim().is_empty(),
+                Inline::Atom(_) => false,
+                Inline::Marker(_) => true,
+            })
+        })
+    }
+
+    /// Plain text with atoms as their alt text and ruby as its base.
+    pub fn plain_text(&self) -> String {
+        let mut out = String::new();
+        for (index, paragraph) in self.paragraphs.iter().enumerate() {
+            if index > 0 {
+                out.push('\n');
+            }
+            for inline in &paragraph.inlines {
+                match inline {
+                    Inline::Text(run) => out.push_str(&run.text),
+                    Inline::Ruby(ruby) => out.push_str(&ruby.base.text),
+                    Inline::Atom(atom) => out.push_str(&atom.alt),
+                    Inline::Marker(_) => {}
+                }
+            }
+        }
+        out
+    }
+
+    /// Reveal units in document order.
+    pub fn units(&self) -> Vec<Unit> {
+        let mut units = Vec::new();
+        self.walk(|item| {
+            if let Item::Unit(unit) = item {
+                units.push(unit);
+            }
+        });
+        units
+    }
+
+    pub fn unit_count(&self) -> usize {
+        let mut count = 0;
+        self.walk(|item| {
+            if matches!(item, Item::Unit(_)) {
+                count += 1;
+            }
+        });
+        count
+    }
+
+    /// Markers with the number of units revealed before them.
+    pub fn markers(&self) -> Vec<(usize, &Marker)> {
+        let mut out = Vec::new();
+        let mut seen = 0;
+        for paragraph in &self.paragraphs {
+            for inline in &paragraph.inlines {
+                match inline {
+                    Inline::Text(run) => seen += run.text.graphemes(true).count(),
+                    Inline::Ruby(ruby) => seen += ruby.base.text.graphemes(true).count(),
+                    Inline::Atom(_) => seen += 1,
+                    Inline::Marker(marker) => out.push((seen, marker)),
+                }
+            }
+        }
+        out
+    }
+
+    /// Visit units and markers in order. Unit ordinals are implied by order.
+    pub fn walk(&self, mut visit: impl FnMut(Item<'_>)) {
+        for (para, paragraph) in self.paragraphs.iter().enumerate() {
+            for (inline_index, inline) in paragraph.inlines.iter().enumerate() {
+                let text_units = |run: &TextRun, ruby: bool, visit: &mut dyn FnMut(Item<'_>)| {
+                    for (start, cluster) in run.text.grapheme_indices(true) {
+                        visit(Item::Unit(Unit {
+                            para,
+                            inline: inline_index,
+                            bytes: start..start + cluster.len(),
+                            kind: UnitKind::Grapheme {
+                                class: classify(cluster),
+                                ruby,
+                            },
+                            pace: run.pace,
+                        }));
+                    }
+                };
+                match inline {
+                    Inline::Text(run) => text_units(run, false, &mut visit),
+                    Inline::Ruby(ruby) => text_units(&ruby.base, true, &mut visit),
+                    Inline::Atom(_) => visit(Item::Unit(Unit {
+                        para,
+                        inline: inline_index,
+                        bytes: 0..0,
+                        kind: UnitKind::Atom,
+                        pace: Pace::Inherit,
+                    })),
+                    Inline::Marker(marker) => visit(Item::Marker(marker)),
+                }
+            }
+        }
+    }
+
+    /// The text of one unit (empty for atoms).
+    pub fn unit_text(&self, unit: &Unit) -> &str {
+        match self
+            .paragraphs
+            .get(unit.para)
+            .and_then(|p| p.inlines.get(unit.inline))
+        {
+            Some(Inline::Text(run)) => run.text.get(unit.bytes.clone()).unwrap_or(""),
+            Some(Inline::Ruby(ruby)) => ruby.base.text.get(unit.bytes.clone()).unwrap_or(""),
+            _ => "",
+        }
+    }
+
+    /// Canonical form: LF paragraphs, no empty runs, equal neighbours merged,
+    /// at most [`MAX_UNITS`] units, never zero paragraphs. Idempotent.
+    pub fn normalize(&mut self) {
+        let mut paragraphs: Vec<Paragraph> = Vec::new();
+        let mut current: Vec<Inline> = Vec::new();
+        let mut budget = MAX_UNITS;
+
+        fn push_run(current: &mut Vec<Inline>, run: TextRun) {
+            if run.text.is_empty() {
+                return;
+            }
+            if let Some(Inline::Text(last)) = current.last_mut()
+                && last.same_attrs(&run)
+            {
+                last.text.push_str(&run.text);
+                return;
+            }
+            current.push(Inline::Text(run));
+        }
+
+        fn take_graphemes(text: &str, budget: &mut usize) -> String {
+            let mut out = String::new();
+            for cluster in text.graphemes(true) {
+                if *budget == 0 {
+                    break;
+                }
+                *budget -= 1;
+                out.push_str(cluster);
+            }
+            out
+        }
+
+        let source = std::mem::take(&mut self.paragraphs);
+        let count = source.len();
+        for (index, paragraph) in source.into_iter().enumerate() {
+            for inline in paragraph.inlines {
+                match inline {
+                    Inline::Text(run) => {
+                        let text = run.text.replace("\r\n", "\n").replace('\r', "\n");
+                        let mut pieces = text.split('\n').peekable();
+                        while let Some(piece) = pieces.next() {
+                            let kept = take_graphemes(piece, &mut budget);
+                            push_run(
+                                &mut current,
+                                TextRun {
+                                    text: kept,
+                                    ..run.clone()
+                                },
+                            );
+                            if pieces.peek().is_some() {
+                                paragraphs.push(Paragraph::new(std::mem::take(&mut current)));
+                            }
+                        }
+                    }
+                    Inline::Ruby(mut ruby) => {
+                        ruby.base.text = ruby.base.text.replace(['\r', '\n'], "");
+                        ruby.annotation = ruby.annotation.replace(['\r', '\n'], "");
+                        ruby.base.text = take_graphemes(&ruby.base.text, &mut budget);
+                        if ruby.base.text.is_empty() {
+                            continue;
+                        }
+                        if ruby.annotation.trim().is_empty() {
+                            push_run(&mut current, ruby.base);
+                        } else {
+                            current.push(Inline::Ruby(ruby));
+                        }
+                    }
+                    Inline::Atom(atom) => {
+                        if budget == 0 {
+                            continue;
+                        }
+                        budget -= 1;
+                        current.push(Inline::Atom(atom));
+                    }
+                    Inline::Marker(marker) => current.push(Inline::Marker(marker)),
+                }
+            }
+            if index + 1 < count {
+                paragraphs.push(Paragraph::new(std::mem::take(&mut current)));
+            }
+        }
+        paragraphs.push(Paragraph::new(current));
+        self.paragraphs = paragraphs;
+    }
+
+    pub fn normalized(mut self) -> Self {
+        self.normalize();
+        self
+    }
+
+    /// Every text run (including ruby bases), mutably.
+    pub fn runs_mut(&mut self) -> impl Iterator<Item = &mut TextRun> {
+        self.paragraphs.iter_mut().flat_map(|p| {
+            p.inlines.iter_mut().filter_map(|inline| match inline {
+                Inline::Text(run) => Some(run),
+                Inline::Ruby(ruby) => Some(&mut ruby.base),
+                _ => None,
+            })
+        })
+    }
+
+    /// A copy without markers: what history shows and what is copied out.
+    pub fn without_markers(&self) -> Document {
+        let mut doc = Document {
+            paragraphs: self
+                .paragraphs
+                .iter()
+                .map(|p| Paragraph {
+                    inlines: p
+                        .inlines
+                        .iter()
+                        .filter(|inline| !matches!(inline, Inline::Marker(_)))
+                        .cloned()
+                        .collect(),
+                })
+                .collect(),
+        };
+        doc.normalize();
+        doc
+    }
+
+    /// The first `count` units with the markers before them. Used to show the
+    /// part of a line that is already revealed.
+    pub fn prefix(&self, count: usize) -> Document {
+        let mut left = count;
+        let mut paragraphs = Vec::new();
+        'outer: for paragraph in &self.paragraphs {
+            let mut inlines = Vec::new();
+            for inline in &paragraph.inlines {
+                match inline {
+                    Inline::Text(run) => {
+                        let text: String = run.text.graphemes(true).take(left).collect();
+                        left -= text.graphemes(true).count();
+                        inlines.push(Inline::Text(TextRun {
+                            text,
+                            ..run.clone()
+                        }));
+                    }
+                    Inline::Ruby(ruby) => {
+                        let base: String = ruby.base.text.graphemes(true).take(left).collect();
+                        left -= base.graphemes(true).count();
+                        let mut ruby = ruby.clone();
+                        ruby.base.text = base;
+                        inlines.push(Inline::Ruby(ruby));
+                    }
+                    Inline::Atom(atom) if left > 0 => {
+                        left -= 1;
+                        inlines.push(Inline::Atom(atom.clone()));
+                    }
+                    Inline::Atom(_) => {}
+                    Inline::Marker(marker) => inlines.push(Inline::Marker(marker.clone())),
+                }
+                if left == 0 {
+                    paragraphs.push(Paragraph::new(inlines));
+                    break 'outer;
+                }
+            }
+            paragraphs.push(Paragraph::new(inlines));
+        }
+        let mut doc = Document { paragraphs };
+        doc.normalize();
+        doc
+    }
+}
+
+/// What [`Document::walk`] visits.
+#[derive(Debug)]
+pub enum Item<'a> {
+    Unit(Unit),
+    Marker(&'a Marker),
+}

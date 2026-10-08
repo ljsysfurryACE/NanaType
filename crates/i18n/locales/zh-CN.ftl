@@ -1,0 +1,359 @@
+## 应用
+app-name = NanaType
+app-tagline = 虚拟主播打字机
+history-count = { $count } 条
+
+## 窗口标题
+window-input = 输入
+window-display = 对话框
+window-history = 历史记录
+window-settings = 设置
+
+## 托盘
+tray-show-input = 输入框
+tray-show-display = 对话框
+tray-show-history = 历史记录
+tray-lock-overlays = 锁定叠加窗口
+tray-mode = 输入模式
+tray-skin = 皮肤
+tray-settings = 设置…
+tray-obs-help = OBS 接入说明…
+tray-quit = 退出 NanaType
+
+## 输入模式
+mode-compose = 编辑后发送
+mode-compose-hint = 编辑完成后发送，展示框以打字机效果播放
+mode-mirror = 实时镜像
+mode-mirror-hint = 展示框实时跟随输入内容
+
+## 工具栏
+tb-bold = 粗体
+tb-italic = 斜体
+tb-underline = 下划线
+tb-strike = 删除线
+tb-color = 文字颜色
+tb-color-reset = 默认颜色
+tb-color-recent = 最近使用
+tb-size = 字号
+tb-size-reset = 默认字号
+tb-stroke = 描边
+tb-shadow = 阴影
+tb-stroke-none = 去除描边
+tb-shadow-none = 去除阴影
+tb-stroke-width = 描边宽度
+tb-shadow-blur = 模糊
+tb-ruby = 注音
+tb-ruby-placeholder = 输入注音，例如 かんじ
+tb-ruby-apply = 添加注音
+tb-ruby-remove = 移除注音
+tb-effects = 动效
+tb-effect-shake = 抖动
+tb-effect-wave = 波浪
+tb-effect-jump = 跳跃
+tb-effect-rainbow = 彩虹
+tb-effect-strength = 强度
+tb-effect-speed = 速度
+tb-entrance = 出场
+tb-entrance-skin = 跟随皮肤
+tb-entrance-none = 无
+tb-entrance-fade = 淡入
+tb-entrance-pop = 弹出
+tb-entrance-slide = 上浮
+tb-pacing = 节奏
+tb-wait = 停顿
+tb-wait-ms = 停顿 { $ms } 毫秒
+tb-wait-custom = 自定义停顿…
+tb-speed-slow = 放慢
+tb-speed-fast = 加快
+tb-speed-instant = 瞬间显示
+tb-speed-reset = 恢复速度
+tb-pause = 等待继续
+tb-pause-auto = 暂停后自动继续
+tb-page = 翻页
+tb-insert = 插入
+tb-sticker = 贴纸
+tb-sticker-search = 搜索贴纸
+tb-sticker-empty = 尚未添加贴纸目录，可在 设置 › 素材 中添加
+tb-image = 图片…
+tb-sound = 音效
+tb-expression = 表情
+tb-expression-placeholder = 表情名称，例如 smile
+tb-portrait = 立绘差分
+tb-screenshake = 震屏
+tb-phrases = 快捷短语
+tb-phrases-empty = 尚无快捷短语，可在 设置 › 素材 中添加
+tb-source = 标记源码
+tb-preview-effects = 预览动效
+tb-send = 发送
+tb-send-hint = { $key } 发送
+tb-clear-format = 清除格式
+tb-more = 更多
+tb-undo = 撤销
+tb-redo = 重做
+
+## 编辑器
+editor-placeholder = 在这里输入台词…
+editor-source-placeholder = 使用 [b]标记[/b] 编辑，例如 [shake]哇！[/shake][wait=500]
+editor-diagnostic = 第 { $pos } 个字符：{ $message }
+marker-wait = 停 { $ms }ms
+marker-pause = 等待
+marker-pause-auto = 等 { $ms }ms
+marker-page = 翻页
+marker-sound = 音 { $name }
+marker-expression = 表情 { $name }
+marker-portrait = 立绘 { $name }
+marker-shake = 震屏
+status-queued = 已加入队列（第 { $position } 条）
+status-mirror = 镜像中
+status-sent = 已发送
+
+## 设置导航
+settings-general = 常规
+settings-playback = 播放
+settings-skins = 皮肤
+settings-windows = 窗口
+settings-history = 历史记录
+settings-hotkeys = 快捷键
+settings-output = 输出 / OBS
+settings-integrations = 联动
+settings-assets = 素材
+settings-about = 关于
+
+## 常规
+general-language = 界面语言
+general-language-system = 跟随系统
+general-speaker = 角色名
+general-speaker-hint = 显示在名牌和历史记录中，留空则隐藏名牌
+general-avatar = 头像
+general-avatar-pick = 选择图片…
+general-avatar-clear = 移除
+general-presence = 输入框
+general-presence-resident = 常驻
+general-presence-summon = 快捷键唤出
+general-presence-hint = 唤出模式下，发送或按 Esc 后输入框自动隐藏
+general-mode = 输入模式
+general-send-key = 发送键
+general-send-enter = Enter 发送，Shift+Enter 换行
+general-send-ctrl-enter = Ctrl+Enter 发送，Enter 换行
+general-autostart = 开机启动
+general-updates = 自动检查更新
+
+## 播放
+playback-speed = 打字速度
+playback-speed-value = { $value }×
+playback-typing = 打字机效果
+playback-typing-hint = 关闭后整句直接显示
+playback-punct = 标点停顿
+playback-punct-hint = 逗号、句号和省略号后稍作停顿
+playback-entrance = 文字出场
+playback-after = 播放结束后
+playback-after-hold = 保持显示
+playback-after-fade = 渐隐消失
+playback-after-clear = 直接清除
+playback-after-delay = 停留时长
+playback-after-delay-value = { $seconds } 秒
+playback-auto = 自动推进下一句
+playback-auto-off = 关闭
+playback-auto-value = { $seconds } 秒后
+playback-queue = 正在播放时发送新台词
+playback-queue-replace = 立即替换
+playback-queue-finish = 先完整显示当前句
+playback-queue-queue = 排队等待继续键
+playback-reduced = 减少动态效果
+playback-reduced-hint = 关闭逐字动效与震屏，适合对动态敏感的观众
+playback-stagger = 镜像模式字间隔
+playback-sound = 打字音效
+playback-volume = 主音量
+playback-volume-typing = 打字音量
+playback-volume-effects = 音效音量
+playback-device = 输出设备
+playback-device-default = 系统默认
+
+## 皮肤
+skins-active = 当前皮肤
+skins-import = 导入皮肤…
+skins-export = 导出…
+skins-duplicate = 复制为可编辑
+skins-open-folder = 打开文件夹
+skins-delete = 删除
+skins-delete-confirm = 删除皮肤「{ $name }」？此操作无法撤销。
+skins-builtin = 内置
+skins-broken = 无法加载
+skins-by = 作者 { $author }
+skins-version = 版本 { $version }
+skins-overrides = 个性化
+skins-override-text = 文字颜色
+skins-override-name = 名牌颜色
+skins-override-box = 对话框颜色
+skins-override-accent = 强调色
+skins-override-size = 文字大小
+skins-override-reset = 恢复皮肤默认
+skins-chrome = 界面外观
+skins-chrome-skin = 跟随皮肤
+skins-chrome-system = 跟随系统
+skins-chrome-light = 浅色
+skins-chrome-dark = 深色
+skins-hot-reload = 文件变化时自动重载
+skins-hot-reload-hint = 制作皮肤时使用
+skins-installed = 已安装「{ $name }」
+skins-replaced = 已将「{ $name }」从 { $previous } 更新
+skins-import-failed = 皮肤无法导入
+skins-fallback = 皮肤「{ $id }」无法加载，已改用默认皮肤
+
+## 窗口
+windows-input = 输入框
+windows-display = 对话框
+windows-history = 历史记录
+windows-visible = 显示
+windows-lock = 交互
+windows-lock-locked = 锁定（点击穿透）
+windows-lock-interactive = 可交互
+windows-lock-edit = 调整布局
+windows-on-top = 置顶
+windows-background = 捕获背景
+windows-background-transparent = 透明
+windows-background-chroma = 色键
+windows-reset = 重置位置
+windows-size = 尺寸
+windows-size-skin = 跟随皮肤
+
+## 历史
+history-max = 保留条数
+history-visible = 显示条数
+history-fade = 自动淡出
+history-fade-off = 不淡出
+history-fade-value = { $seconds } 秒后
+history-avatar = 显示头像
+history-name = 显示名字
+history-time = 显示时间
+history-sync = 出现时机
+history-sync-submit = 发送时
+history-sync-reveal = 随打字同步
+history-sync-complete = 显示完成后
+history-clear = 清空历史记录
+history-clear-confirm = 清空本次的全部历史记录？
+history-empty = 发送的台词会显示在这里
+
+## 快捷键
+hotkeys-summon = 唤出输入框
+hotkeys-continue = 继续
+hotkeys-skip = 跳过当前句
+hotkeys-clear = 清空对话框
+hotkeys-toggle-mode = 切换输入模式
+hotkeys-toggle-overlays = 显示/隐藏叠加窗口
+hotkeys-record = 录制
+hotkeys-recording = 请按下组合键…
+hotkeys-none = 未设置
+hotkeys-clear-binding = 清除
+hotkeys-ok = 已注册
+hotkeys-conflict-os = 被其他程序占用
+hotkeys-conflict-dup = 与「{ $action }」重复
+hotkeys-unsafe = 单个按键会影响正常打字，请加上 Ctrl、Alt 或 Shift
+hotkeys-local = 输入框内快捷键
+hotkeys-local-hint = Ctrl+B/I/U 设置样式，Ctrl+↑/↓ 调出已发送的台词，Esc 隐藏输入框
+
+## 输出
+output-display = 对话框
+output-history = 历史记录
+output-spout = Spout2 输出
+output-spout-name = 发送端名称
+output-spout-copy = 复制名称
+output-spout-size = 输出分辨率
+output-spout-size-window = 跟随窗口
+output-spout-straight = 直通 Alpha
+output-spout-straight-hint = 接收端不支持预乘 Alpha 时开启
+output-status-active = 正在发送
+output-status-off = 未启用
+output-status-unavailable = 不可用：{ $reason }
+output-spout-unsupported = Spout2 仅支持 Windows，请使用窗口捕获
+output-sample = 播放示例台词
+output-sample-line = [b]你好！[/b]这是 NanaType 的[wave]示例台词[/wave]。[wait=300][shake]看得到吗？[/shake]
+output-obs-title = 在 OBS 中接入
+output-obs-spout = 安装 OBS 的 Spout2 插件，添加「Spout2 Capture」来源，选择上面的发送端名称，并将合成模式设为「预乘 Alpha」。
+output-obs-window = 也可以使用「窗口捕获」（捕获方式选 Windows 10 (1903 及以上)），对话框窗口背景为透明。
+output-obs-mac = macOS 上请使用「macOS 屏幕捕获」并选择对话框窗口。
+
+## 联动
+int-vts = VTube Studio
+int-vts-hint = 遇到 [expr=名称] 标记时触发 VTube Studio 热键
+int-vts-port = 端口
+int-vts-authorize = 请求授权
+int-vts-authorize-hint = 点击后请在 VTube Studio 中允许 NanaType 插件
+int-vts-map = 表情映射
+int-vts-map-expression = 表情名称
+int-vts-map-hotkey = VTS 热键
+int-vts-map-auto = 同名自动匹配
+int-vts-refresh = 刷新热键列表
+int-osc = OSC
+int-osc-hint = 向 VNyan、Warudo、VSeeFace 等工具发送 OSC 消息
+int-osc-host = 目标地址
+int-osc-port = 端口
+int-osc-prefix = 地址前缀
+int-ws = WebSocket 广播
+int-ws-hint = 在本机端口广播台词与表情事件（JSON）
+int-ws-port = 端口
+int-ws-clients = 已连接 { $count } 个客户端
+int-status-off = 未启用
+int-status-connecting = 连接中…
+int-status-connected = 已连接
+int-status-needs-token = 需要授权
+int-status-error = 错误：{ $message }
+
+## 素材
+assets-stickers = 贴纸目录
+assets-stickers-hint = 目录中的图片成为贴纸，文件夹名即贴纸库名
+assets-add-folder = 添加目录…
+assets-remove = 移除
+assets-phrases = 快捷短语
+assets-phrase-label = 名称
+assets-phrase-markup = 内容（支持标记）
+assets-phrase-send = 直接发送
+assets-phrase-add = 添加短语
+assets-phrase-hotkey = 快捷键
+
+## 关于
+about-version = 版本 { $version }
+about-build = 构建 { $build }
+about-logs = 打开日志文件夹
+about-data = 打开数据文件夹
+about-diagnostics = 导出诊断信息…
+about-licenses = 开源许可
+about-homepage = 项目主页
+about-update-available = 有新版本 { $version } 可用
+about-update-latest = 已是最新版本
+
+## 首次启动
+onboard-welcome = 欢迎使用 NanaType
+onboard-welcome-body = 只需几步即可开始在直播中使用打字机。
+onboard-language = 选择语言
+onboard-speaker = 你的角色名
+onboard-skin = 选择皮肤
+onboard-mode = 输入方式
+onboard-hotkeys = 快捷键
+onboard-hotkeys-body = 按 { $summon } 唤出输入框，按 { $continue } 继续播放。
+onboard-obs = 接入 OBS
+onboard-next = 下一步
+onboard-back = 上一步
+onboard-skip = 跳过
+onboard-done = 开始使用
+
+## 通用
+common-ok = 确定
+common-cancel = 取消
+common-close = 关闭
+common-apply = 应用
+common-reset = 重置
+common-on = 开
+common-off = 关
+common-browse = 浏览…
+common-copied = 已复制
+common-error = 出错了
+common-ms = { $ms } 毫秒
+
+## 错误与提示
+err-settings-quarantined = 设置文件已损坏，已备份到 { $path } 并使用默认设置
+err-settings-newer = 设置文件来自更新版本的 NanaType，本次修改不会保存
+err-audio = 音频设备不可用：{ $message }
+err-hotkey = 快捷键 { $hotkey } 注册失败
+err-image = 图片无法读取：{ $message }
+err-spout = Spout 输出失败：{ $message }

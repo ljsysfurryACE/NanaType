@@ -1,0 +1,13 @@
+[package]
+name = "nanatype-i18n"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "NanaType UI strings: Fluent bundles for zh-CN, en-US and ja-JP"
+
+[dependencies]
+fluent-bundle = "0.16"
+fluent-syntax = "0.12"
+unic-langid = "0.9"
+sys-locale = "0.3"

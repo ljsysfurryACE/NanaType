@@ -1,0 +1,72 @@
+[meta]
+id = "nanatype.rpg"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+name = { zh-CN = "RPG 窗口", en-US = "RPG Window", ja-JP = "RPGウィンドウ" }
+description = { zh-CN = "蓝底双线边框，经典 RPG 消息窗", en-US = "Blue window with a double border, classic RPG message box", ja-JP = "青地に二重枠のクラシックなRPGメッセージ" }
+
+[chrome]
+appearance = "dark"
+accent = "#8fa8ff"
+background = "#0a1030"
+surface = "#16205a"
+text = "#ffffff"
+muted = "#c0c8f0"
+border = "#3c4a9a"
+success = "#6ae09a"
+warning = "#ffd060"
+danger = "#ff7a7a"
+
+[fonts.body]
+families = ["Fusion Pixel 12px Proportional SC", "Zpix", "MS Gothic", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[fonts.name]
+families = ["Fusion Pixel 12px Proportional SC", "Zpix", "MS Gothic", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[dialogue.box]
+color = "#10206ee6"
+border_color = "#ffffff"
+border_width = 3
+inner_border_color = "#8fa8ff"
+inner_border_width = 2
+radius = 6
+
+[dialogue.text]
+color = "#ffffff"
+size = 26
+shadow = { color = "#000000", dx = 2, dy = 2 }
+
+[dialogue.nameplate]
+color = "#10206e"
+text_color = "#ffffff"
+radius = 4
+offset = [12, -16]
+
+[dialogue.continue]
+glyph = "▼"
+color = "#ffffff"
+
+[dialogue.reveal]
+base_ms = 40
+
+[dialogue.reveal.entrance]
+kind = "none"
+ms = 0
+
+[effects]
+shake_px = 2
+jump_px = 4
+
+[history]
+name_color = "#ffffff"
+bubble_color = "#10206ee0"
+bubble_border = "#ffffff"
+bubble_radius = 4
+time_color = "#c0c8f0"
+avatar = { shape = "square", size = 40 }
+
+[history.text]
+color = "#ffffff"
