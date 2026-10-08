@@ -89,6 +89,14 @@ impl Hotkeys {
             if s.bindings == bindings && s.suspended == suspended {
                 return;
             }
+            // No global hotkeys here yet: every binding reports so.
+            #[cfg(not(windows))]
+            {
+                s.status = bindings
+                    .iter()
+                    .map(|(a, _)| (*a, HotkeyState::Unsupported))
+                    .collect();
+            }
             s.bindings = bindings;
             s.suspended = suspended;
         }
@@ -97,16 +105,6 @@ impl Hotkeys {
     }
 
     pub fn status(&self) -> HashMap<GlobalAction, HotkeyState> {
-        #[cfg(not(windows))]
-        {
-            let s = self.shared.lock().unwrap_or_else(|e| e.into_inner());
-            return s
-                .bindings
-                .iter()
-                .map(|(a, _)| (*a, HotkeyState::Unsupported))
-                .collect();
-        }
-        #[cfg(windows)]
         self.shared
             .lock()
             .unwrap_or_else(|e| e.into_inner())
