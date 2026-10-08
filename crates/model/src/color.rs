@@ -25,10 +25,6 @@ impl Rgba8 {
         Self { r, g, b, a }
     }
 
-    pub fn to_array(self) -> [u8; 4] {
-        [self.r, self.g, self.b, self.a]
-    }
-
     pub fn with_alpha(self, a: u8) -> Self {
         Self { a, ..self }
     }

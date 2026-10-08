@@ -1328,15 +1328,6 @@ impl App {
                     }
                 });
             }
-            Msg::LockOverlays(lock) => self.edit(|s| {
-                let l = if lock {
-                    nanatype_settings::Lock::Locked
-                } else {
-                    nanatype_settings::Lock::Interactive
-                };
-                s.overlays.display.lock = l;
-                s.overlays.history.lock = l;
-            }),
             Msg::OpenSettings => self.open_settings(),
             Msg::SettingsPage(page) => {
                 self.ui.page.set(page);

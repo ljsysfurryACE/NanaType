@@ -105,7 +105,6 @@ pub enum Msg {
     ShowWindow(WindowKind),
     HideInput,
     ResetWindow(WindowKind),
-    LockOverlays(bool),
     OpenSettings,
     SettingsPage(crate::ui::settings::Page),
     PickFile(FileTarget),

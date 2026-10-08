@@ -14,7 +14,8 @@ use crate::msg::Msg;
 const QUIET: Duration = Duration::from_millis(300);
 
 pub struct Watch {
-    watcher: Option<RecommendedWatcher>,
+    /// Held only to keep watching: dropping it stops the watch.
+    _watcher: Option<RecommendedWatcher>,
     paths: Vec<PathBuf>,
 }
 
@@ -35,7 +36,7 @@ impl Watch {
             Ok(w) => w,
             Err(_) => {
                 return Self {
-                    watcher: None,
+                    _watcher: None,
                     paths,
                 };
             }
@@ -54,16 +55,12 @@ impl Watch {
             })
             .expect("spawn watch thread");
         Self {
-            watcher: Some(watcher),
+            _watcher: Some(watcher),
             paths,
         }
     }
 
     pub fn paths(&self) -> &[PathBuf] {
         &self.paths
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.watcher.is_some()
     }
 }

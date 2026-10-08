@@ -61,22 +61,6 @@ impl Reveal {
                 .map_or(0, |offset| seg.origin_ms + u64::from(*offset)),
         )
     }
-
-    /// Units visible at `now`, ignoring entrance animation.
-    pub fn visible_count(&self, now: Millis) -> u32 {
-        (self.visible_from..self.hidden_from)
-            .filter(|u| self.unit_at(*u).is_some_and(|t| t <= now))
-            .count() as u32
-    }
-
-    /// When the last unit appears; `None` when nothing is still to come.
-    pub fn settles_at(&self) -> Option<Millis> {
-        let seg = self.segment.as_ref()?;
-        seg.reveal_ms
-            .iter()
-            .max()
-            .map(|offset| seg.origin_ms + u64::from(*offset))
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

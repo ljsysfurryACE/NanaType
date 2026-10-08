@@ -88,11 +88,6 @@ impl Timeline {
     pub fn last_segment(&self) -> usize {
         self.segments.len().saturating_sub(1)
     }
-
-    /// Total time if every pause continued immediately.
-    pub fn nominal_ms(&self) -> u64 {
-        self.segments.iter().map(|s| u64::from(s.duration_ms)).sum()
-    }
 }
 
 struct Draft {

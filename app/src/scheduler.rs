@@ -23,7 +23,6 @@ enum Job {
 enum Command {
     Add(Instant, Job),
     Cancel(u64),
-    CancelAll,
 }
 
 #[derive(Clone)]
@@ -81,10 +80,6 @@ impl Scheduler {
     pub fn cancel(&self, epoch: u64) {
         let _ = self.tx.send(Command::Cancel(epoch));
     }
-
-    pub fn cancel_all(&self) {
-        let _ = self.tx.send(Command::CancelAll);
-    }
 }
 
 fn run(rx: Receiver<Command>, post: impl Fn(Msg)) {
@@ -103,9 +98,6 @@ fn run(rx: Receiver<Command>, post: impl Fn(Msg)) {
                 }
                 Ok(Command::Cancel(epoch)) => {
                     heap.retain(|Reverse(e)| !matches!(e.job, Job::Cue { epoch: x, .. } if x == epoch));
-                }
-                Ok(Command::CancelAll) => {
-                    heap.retain(|Reverse(e)| matches!(e.job, Job::Wake(_)));
                 }
                 Err(_) => return,
             },

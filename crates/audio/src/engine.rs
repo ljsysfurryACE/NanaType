@@ -76,10 +76,6 @@ impl AudioHandle {
         self.send(Command::Cancel { epoch });
     }
 
-    pub fn cancel_all(&self) {
-        self.send(Command::CancelAll);
-    }
-
     pub fn set_master(&self, gain: f32) {
         self.send(Command::Master(gain));
     }

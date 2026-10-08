@@ -60,7 +60,6 @@ pub(crate) enum Command {
     Play(Voice),
     Schedule { epoch: u64, items: Vec<Scheduled> },
     Cancel { epoch: u64 },
-    CancelAll,
     Master(f32),
     BusGain(Bus, f32),
 }
@@ -99,7 +98,6 @@ impl Mixer {
                 self.pending.extend(items.into_iter().map(|s| (epoch, s)))
             }
             Command::Cancel { epoch } => self.pending.retain(|(e, _)| *e != epoch),
-            Command::CancelAll => self.pending.clear(),
             Command::Master(g) => self.master = g.clamp(0.0, 1.0),
             Command::BusGain(bus, g) => self.buses[bus.index()] = g.clamp(0.0, 1.0),
         }

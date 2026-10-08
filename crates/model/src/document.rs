@@ -140,13 +140,6 @@ fn unit_gain() -> f32 {
     1.0
 }
 
-impl Marker {
-    /// Markers that stop the reveal until something continues it.
-    pub fn is_gate(&self) -> bool {
-        matches!(self, Self::Pause { .. } | Self::Page)
-    }
-}
-
 /// Styled text. `text` never contains `\n` after normalization; hard breaks
 /// split paragraphs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
