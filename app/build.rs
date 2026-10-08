@@ -35,6 +35,14 @@ fn main() {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     copy_dxc_for_dev(&out_dir);
+    // The resource compiler crate is a Windows-host build dependency.
+    #[cfg(windows)]
+    embed_resources(&out_dir, &build);
+}
+
+/// Icon and version information.
+#[cfg(windows)]
+fn embed_resources(out_dir: &std::path::Path, build: &str) {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest dir"));
     let icon = manifest_dir.join("assets").join("nanatype.ico");
     let version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
