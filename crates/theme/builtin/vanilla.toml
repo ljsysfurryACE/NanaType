@@ -26,6 +26,7 @@ border_width = 0
 border_widths = [0, 0, 0, 4]
 radius = 0
 radii = [0, 6, 6, 0]
+gradient = { angle = 90, stops = [[0, "#eef3fff2"], [0.35, "#fffffff2"]] }
 shadows = [{ color = "#22263a26", dy = 4, blur = 14 }]
 
 [dialogue.text]

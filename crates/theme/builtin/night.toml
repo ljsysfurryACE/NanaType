@@ -40,6 +40,38 @@ size = ["70%", 2]
 gradient = { angle = 90, stops = [[0, "#55ccff00"], [0.3, "#55ccff"], [0.7, "#a07cff"], [1, "#a07cff00"]] }
 shadows = [{ color = "#5cb8ff99", blur = 8 }]
 
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [7, 7]
+size = [16, 16]
+border_color = "#9fdcff"
+border_width = 0
+border_widths = [2, 0, 0, 2]
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-7, 7]
+size = [16, 16]
+border_color = "#9fdcff"
+border_width = 0
+border_widths = [2, 2, 0, 0]
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [7, -7]
+size = [16, 16]
+border_color = "#9fdcff"
+border_width = 0
+border_widths = [0, 0, 2, 2]
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-7, -7]
+size = [16, 16]
+border_color = "#9fdcff"
+border_width = 0
+border_widths = [0, 2, 2, 0]
+
 [dialogue.text]
 color = "#bae0ff"
 shadow = { color = "#5cb8ff88", blur = 6 }

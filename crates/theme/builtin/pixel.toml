@@ -31,7 +31,10 @@ color = "#9bbc0f"
 border_color = "#0f380f"
 border_width = 4
 radius = 0
-shadows = [{ color = "#0f380f", dx = 4, dy = 4 }]
+shadows = [
+    { color = "#0f380f", dx = 4, dy = 4 },
+    { color = "#30623055", blur = 22, inset = true },
+]
 
 # Inner rule.
 [[dialogue.decor]]

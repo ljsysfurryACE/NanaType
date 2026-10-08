@@ -32,6 +32,14 @@ width_fraction = 0.96
 gradient = { stops = [[0, "#1a1a24cc"], [1, "#0a0a10e6"]] }
 shadows = [{ color = "#ffffff33", dy = 1, inset = true }]
 
+# Gold rule under the name, fading out.
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [44, 46]
+size = ["40%", 1]
+gradient = { angle = 90, stops = [[0, "#ffd27fcc"], [1, "#ffd27f00"]] }
+when = "speaker"
+
 [dialogue.text]
 color = "#ffffff"
 size = 30
@@ -41,13 +49,11 @@ shadow = { color = "#000000cc", dx = 2, dy = 2, blur = 3 }
 [dialogue.nameplate]
 color = "#00000000"
 text_color = "#ffd27f"
-size = 22
-offset = [44, 12]
+size = 24
+offset = [44, 10]
 padding = [4, 1]
 radius = 0
 stroke = { color = "#000000", width = 3 }
-border_color = "#ffd27f"
-border_widths = [0, 0, 2, 0]
 
 [dialogue.continue]
 glyph = "▼"

@@ -41,23 +41,42 @@ lean = 8
 color = "#ffe6efff"
 shadow = false
 
+# Drifting petals: leaf shapes with two rounded corners.
 [[dialogue.decor]]
 anchor = "top_right"
-offset = [-18, -14]
-size = [28, 28]
-text = "✿"
-text_color = "#f490b5"
-text_size = 24
-rotate = 15
+offset = [-22, -12]
+size = [24, 15]
+radii = [15, 1, 15, 1]
+rotate = -25
+gradient = { angle = 135, stops = [[0, "#ffd1e1"], [1, "#f490b5"]] }
+shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
 
 [[dialogue.decor]]
 anchor = "top_right"
-offset = [-48, -8]
-size = [18, 18]
-text = "❀"
-text_color = "#ffb3cf"
-text_size = 15
-rotate = -15
+offset = [-48, -4]
+size = [17, 11]
+radii = [11, 1, 11, 1]
+rotate = 20
+gradient = { angle = 135, stops = [[0, "#ffe0ea"], [1, "#ffaecb"]] }
+shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-8, 14]
+size = [13, 8]
+radii = [8, 1, 8, 1]
+rotate = 60
+gradient = { angle = 135, stops = [[0, "#ffe0ea"], [1, "#ffaecb"]] }
+shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [20, 6]
+size = [18, 11]
+radii = [11, 1, 11, 1]
+rotate = 35
+gradient = { angle = 135, stops = [[0, "#ffe0ea"], [1, "#f7a8c4"]] }
+shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
 
 [dialogue.text]
 color = "#7a3050"

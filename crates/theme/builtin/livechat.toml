@@ -20,7 +20,7 @@ families = ["Segoe UI Symbol", "Microsoft YaHei UI", "PingFang SC"]
 weight = 700
 
 [dialogue]
-region = [800, 200]
+region = [800, 176]
 padding = [20, 42, 22, 14]
 
 [dialogue.box]
@@ -45,6 +45,17 @@ shadows = [{ color = "#1f2a3633", dy = 2, blur = 6 }]
 text = "♪"
 text_color = "#ffffff"
 text_size = 20
+
+# LIVE badge.
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-14, 12]
+size = [50, 22]
+radius = 11
+gradient = { angle = 90, stops = [[0, "#ff5c7a"], [1, "#ff8a5c"]] }
+text = "LIVE"
+text_color = "#ffffff"
+text_size = 12
 
 [dialogue.text]
 color = "#1f2a36"

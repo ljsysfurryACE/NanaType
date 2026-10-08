@@ -25,15 +25,15 @@ shadows = [
 # Accent bar on the left edge.
 [[dialogue.decor]]
 anchor = "left"
-offset = [0, 0]
-size = [4, "56%"]
+offset = [12, 0]
+size = [3, "46%"]
 radius = 2
 gradient = { stops = [[0, "accent"], [1, "#8fd3ff"]] }
 
 [dialogue.nameplate]
 radius = 999
-padding = [14, 4]
-offset = [20, -14]
+padding = [16, 5]
+offset = [24, -15]
 gradient = { angle = 90, stops = [[0, "#0876d0"], [1, "#3aa6f0"]] }
 shadows = [{ color = "#0876d055", dy = 3, blur = 8 }]
 

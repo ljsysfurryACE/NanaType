@@ -47,12 +47,20 @@ lean = -10
 # Sparkle on the top-right corner.
 [[dialogue.decor]]
 anchor = "top_right"
-offset = [-22, -14]
-size = [26, 26]
-text = "✦"
-text_color = "#ffb020"
-text_size = 24
+# Four-point sparkles, drawn as polygons so they stay crisp at any size.
+offset = [-18, -20]
+size = [30, 30]
+color = "#ffb020"
+polygon = [[50, 0], [61, 39], [100, 50], [61, 61], [50, 100], [39, 61], [0, 50], [39, 39]]
 rotate = 12
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-50, -8]
+size = [16, 16]
+color = "#7ec8ff"
+polygon = [[50, 0], [61, 39], [100, 50], [61, 61], [50, 100], [39, 61], [0, 50], [39, 39]]
+rotate = -10
 
 [dialogue.text]
 color = "#2b2b3a"

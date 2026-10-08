@@ -52,11 +52,25 @@ border_widths = [0, 0, 1, 0]
 
 [[dialogue.decor]]
 anchor = "top_left"
-offset = [10, 0]
-size = [48, 24]
-text = "● ● ●"
-text_color = "#33ff6699"
-text_size = 10
+offset = [12, 8]
+size = [8, 8]
+radius = 4
+color = "#33ff66"
+shadows = [{ color = "#33ff6699", blur = 6 }]
+
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [26, 8]
+size = [8, 8]
+radius = 4
+color = "#33ff6699"
+
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [40, 8]
+size = [8, 8]
+radius = 4
+color = "#33ff6644"
 
 [dialogue.text]
 color = "#33ff66"
