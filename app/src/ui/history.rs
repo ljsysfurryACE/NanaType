@@ -76,7 +76,7 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         let l = Arc::make_mut(&mut initial_style.layout);
         l.font_size = Some(size * 0.45);
         l.font_weight = Some(700);
-        l.color = Some([1.0, 1.0, 1.0, 1.0]);
+        l.color = Some(c(crate::skin_theme::on(skin.chrome.accent)));
     }
     let avatar: AnyView = if show_avatar {
         let has_url = avatar_url.is_some();

@@ -42,3 +42,4 @@ bubble_radii = [4, 14, 14, 14]
 bubble_gradient = { angle = 160, stops = [[0, "#fffffff5"], [1, "#eef6fdf0"]] }
 bubble_shadows = [{ color = "#1b2f4b1f", dy = 3, blur = 10 }]
 avatar = { shape = "circle", size = 40, ring_color = "#ffffff", ring_width = 2 }
+name_plate = { color = "name", gradient = { angle = 90, stops = [[0, "#0876d0"], [1, "#3aa6f0"]] }, text_color = "name_text", radius = 9, padding = [8, 1] }
