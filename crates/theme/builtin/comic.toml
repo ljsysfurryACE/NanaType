@@ -1,0 +1,80 @@
+[meta]
+id = "nanatype.comic"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["game", "cute"]
+name = { zh-CN = "漫画", en-US = "Comic", ja-JP = "コミック" }
+description = { zh-CN = "黑色粗线、硬投影和带影子的尾巴，黄色倾斜名牌", en-US = "Heavy black lines, a hard drop shadow, a shadowed tail and a tilted yellow tag", ja-JP = "太い黒線とベタ影、影つきのしっぽ、傾いた黄色の名札" }
+
+[chrome]
+accent = "#ffcc00"
+background = "#fffbea"
+surface = "#ffffff"
+text = "#111111"
+muted = "#555555"
+border = "#111111"
+
+[fonts.body]
+weight = 800
+
+[fonts.name]
+weight = 900
+
+[dialogue]
+region = [760, 230]
+padding = [28, 30, 28, 18]
+
+[dialogue.box]
+color = "#ffffff"
+border_color = "#000000"
+border_width = 4
+radius = 14
+margin = [0, 8, 30, 0]
+shadows = [{ color = "#000000", dx = 8, dy = 8 }]
+
+[dialogue.tail]
+side = "bottom"
+at = 0.12
+width = 36
+length = 28
+lean = -12
+
+[dialogue.text]
+color = "#111111"
+
+[dialogue.nameplate]
+color = "#ffd400"
+text_color = "#111111"
+radius = 4
+padding = [14, 3]
+offset = [22, -20]
+border_color = "#000000"
+border_width = 3
+rotate = -4
+shadows = [{ color = "#000000", dx = 4, dy = 4 }]
+
+[dialogue.continue]
+glyph = "▶"
+color = "#111111"
+motion = "pulse"
+period_s = 0.8
+offset = [-24, -14]
+
+[effects]
+shake_px = 2.4
+jump_px = 8
+screen_shake_px = 10
+
+[history]
+name_color = "#111111"
+bubble_color = "#ffffff"
+bubble_border = "#000000"
+bubble_border_width = 3
+bubble_radius = 10
+bubble_shadows = [{ color = "#000000", dx = 4, dy = 4 }]
+name_plate = { color = "#ffd400", text_color = "#111111", radius = 3, padding = [8, 1] }
+avatar = { shape = "circle", size = 40, ring_color = "#000000", ring_width = 3 }
+
+[history.text]
+color = "#111111"

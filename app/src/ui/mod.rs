@@ -6,6 +6,7 @@ pub mod history;
 pub mod input;
 pub mod rich;
 pub mod settings;
+pub mod surface;
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -49,6 +50,12 @@ pub struct Status {
 pub struct SkinRow {
     pub id: String,
     pub name: String,
+    pub description: String,
+    /// The skin's chrome is dark.
+    pub dark: bool,
+    pub tags: Vec<String>,
+    /// The loaded skin, for the picker's preview.
+    pub skin: Option<Arc<Skin>>,
     pub author: String,
     pub version: String,
     pub builtin: bool,
@@ -153,6 +160,57 @@ impl Ui {
     pub fn tr(self, key: &str, args: &[(&str, Arg<'_>)]) -> String {
         I18N.tr_in(self.locale.get(), key, args)
     }
+}
+
+/// The skin picker's rows, built-ins first.
+pub fn skin_rows(registry: &nanatype_theme::SkinRegistry, locale: Locale) -> Vec<SkinRow> {
+    registry
+        .entries()
+        .iter()
+        .map(|e| {
+            let mut row = SkinRow {
+                id: e.id.clone(),
+                name: e.id.clone(),
+                description: String::new(),
+                dark: false,
+                tags: Vec::new(),
+                author: e.author.clone(),
+                version: e.version.clone(),
+                builtin: e.is_builtin(),
+                error: e.errors.first().map(|d| d.to_string()),
+                folder: match &e.origin {
+                    nanatype_theme::SkinOrigin::Directory(p) => Some(p.clone()),
+                    _ => None,
+                },
+                accent: [0.5; 4],
+                box_color: [0.5; 4],
+                text_color: [0.5; 4],
+                skin: e.skin.clone(),
+            };
+            if let Some(s) = &e.skin {
+                let b = &s.dialogue.box_;
+                row.name = s.display_name(locale.tag());
+                row.description = s.description(locale.tag());
+                row.dark = s.chrome.appearance == nanatype_theme::Appearance::Dark;
+                row.tags = (s.meta.tags.iter())
+                    .filter(|t| nanatype_theme::SKIN_TAGS.contains(&t.as_str()))
+                    .cloned()
+                    .collect();
+                row.accent = c(s.chrome.accent);
+                // A gradient box shows its first stop.
+                let first = b.shape.gradient.as_ref().and_then(|g| g.stops.first());
+                row.box_color = c(first.map_or(b.color, |(_, col)| s.color(*col)));
+                row.text_color = c(s.dialogue.text.color);
+            }
+            row
+        })
+        .collect()
+}
+
+/// Rewrite a bound stack's layout in place.
+pub fn restyle(s: &mut nana_ui::runtime::Stack, f: impl FnOnce(&mut nana_ui_core::LayoutStyle)) {
+    let taken = std::mem::replace(s, nana_ui::runtime::Stack::row(0.0));
+    *s = taken.with_layout(f);
 }
 
 /// `[r, g, b, a]` in 0..=1 from a skin colour.

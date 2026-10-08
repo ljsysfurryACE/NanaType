@@ -2,6 +2,7 @@
 //! files, picked files and pasted images. NanaUI decodes and caches images
 //! itself, so resolving an [`AssetRef`] means finding a `file://` URL.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -36,6 +37,21 @@ pub fn is_image(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+}
+
+/// `skin:<path>` → URL for every file of a skin with a folder on disk.
+pub fn skin_urls(files: &dyn nanatype_theme::SkinFiles) -> HashMap<String, String> {
+    let Some(root) = files.root() else {
+        return HashMap::new();
+    };
+    files
+        .list()
+        .into_iter()
+        .map(|path| {
+            let url = file_url(&root.join(&path));
+            (format!("skin:{path}"), url)
+        })
+        .collect()
 }
 
 pub fn file_url(path: &Path) -> String {

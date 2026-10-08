@@ -83,6 +83,372 @@ pub struct TextStrokeSpec {
     pub width: f32,
 }
 
+/// A skin colour a newer field can follow instead of naming a hex value, so
+/// decorations and tails track the box colour (and the user's overrides).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorRole {
+    /// `dialogue.box.color`
+    Box,
+    /// `dialogue.box.border_color`
+    Border,
+    /// `chrome.accent`
+    Accent,
+    /// `dialogue.text.color`
+    Text,
+    /// `dialogue.nameplate.color`
+    Name,
+    /// `dialogue.nameplate.text_color`
+    NameText,
+}
+
+impl ColorRole {
+    const ALL: [(Self, &'static str); 6] = [
+        (Self::Box, "box"),
+        (Self::Border, "border"),
+        (Self::Accent, "accent"),
+        (Self::Text, "text"),
+        (Self::Name, "name"),
+        (Self::NameText, "name_text"),
+    ];
+
+    pub fn name(self) -> &'static str {
+        Self::ALL
+            .iter()
+            .find(|(r, _)| *r == self)
+            .map_or("", |(_, n)| n)
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.iter().find(|(_, n)| *n == name).map(|(r, _)| *r)
+    }
+}
+
+/// `"#rrggbbaa"` or a [`ColorRole`] name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorRef {
+    Rgba(Rgba8),
+    Role(ColorRole),
+}
+
+impl From<Rgba8> for ColorRef {
+    fn from(c: Rgba8) -> Self {
+        Self::Rgba(c)
+    }
+}
+
+impl Serialize for ColorRef {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Rgba(c) => c.serialize(serializer),
+            Self::Role(r) => serializer.serialize_str(r.name()),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ColorRef {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if let Some(role) = ColorRole::parse(text.trim()) {
+            return Ok(Self::Role(role));
+        }
+        text.parse::<Rgba8>()
+            .map(Self::Rgba)
+            .map_err(|_| serde::de::Error::custom(format!("invalid colour `{text}`: use #rrggbb(aa) or one of box, border, accent, text, name, name_text")))
+    }
+}
+
+/// A length in px (`24`) or a percentage of the box (`"50%"`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Len {
+    Px(f32),
+    Percent(f32),
+}
+
+impl Default for Len {
+    fn default() -> Self {
+        Self::Px(0.0)
+    }
+}
+
+impl Serialize for Len {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Px(v) => serializer.serialize_f64(f64::from(*v)),
+            Self::Percent(v) => serializer.serialize_str(&format!("{v}%")),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Len {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct V;
+        impl serde::de::Visitor<'_> for V {
+            type Value = Len;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a number of px or a percentage like \"50%\"")
+            }
+            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Len, E> {
+                Ok(Len::Px(v as f32))
+            }
+            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Len, E> {
+                Ok(Len::Px(v as f32))
+            }
+            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Len, E> {
+                Ok(Len::Px(v as f32))
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Len, E> {
+                v.trim()
+                    .strip_suffix('%')
+                    .and_then(|n| n.trim().parse::<f32>().ok())
+                    .filter(|n| n.is_finite())
+                    .map(Len::Percent)
+                    .ok_or_else(|| E::custom(format!("`{v}` is not a percentage like \"50%\"")))
+            }
+        }
+        deserializer.deserialize_any(V)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GradientKind {
+    #[default]
+    Linear,
+    Radial,
+}
+
+/// A CSS-like gradient painted over a fill colour.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GradientSpec {
+    pub kind: GradientKind,
+    /// Linear direction in degrees, CSS style: 0 = to top, 90 = to right.
+    pub angle: f32,
+    /// Radial centre in percent of the box.
+    pub center: [f32; 2],
+    /// Radial: a circle rather than an ellipse.
+    pub circle: bool,
+    /// `[[position 0–1, colour], …]`, 2–8 stops.
+    pub stops: Vec<(f32, ColorRef)>,
+}
+
+impl Default for GradientSpec {
+    fn default() -> Self {
+        Self {
+            kind: GradientKind::Linear,
+            angle: 180.0,
+            center: [50.0, 50.0],
+            circle: false,
+            stops: Vec::new(),
+        }
+    }
+}
+
+/// A box shadow layer (outer, or inset for inner glows and rules).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShadowSpec {
+    pub color: ColorRef,
+    #[serde(default)]
+    pub dx: f32,
+    #[serde(default)]
+    pub dy: f32,
+    #[serde(default)]
+    pub blur: f32,
+    #[serde(default)]
+    pub spread: f32,
+    #[serde(default)]
+    pub inset: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BorderStyleSpec {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+/// What every drawn part can add to its fill colour: a gradient, per-corner
+/// radii, per-side borders and shadow layers. Flattened, so the keys sit
+/// directly in the part's table.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShapeSpec {
+    /// Painted over the fill colour.
+    pub gradient: Option<GradientSpec>,
+    /// `[top_left, top_right, bottom_right, bottom_left]`; replaces `radius`.
+    pub radii: Option<[f32; 4]>,
+    /// `[top, right, bottom, left]`; replaces `border_width`.
+    pub border_widths: Option<[f32; 4]>,
+    pub border_style: BorderStyleSpec,
+    pub shadows: Vec<ShadowSpec>,
+}
+
+impl ShapeSpec {
+    pub fn radii(&self, radius: f32) -> [f32; 4] {
+        self.radii.unwrap_or([radius; 4])
+    }
+
+    pub fn border_widths(&self, width: f32) -> [f32; 4] {
+        self.border_widths.unwrap_or([width; 4])
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Edge {
+    Top,
+    Right,
+    #[default]
+    Bottom,
+    Left,
+}
+
+impl Edge {
+    /// Index into `[top, right, bottom, left]` arrays.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// A speech-bubble tail: a triangle on one side of the box that shares its
+/// fill and border.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TailSpec {
+    pub side: Edge,
+    /// Where the tail's base starts along the side, 0–1 from the left/top.
+    pub at: f32,
+    /// Base width in px.
+    pub width: f32,
+    /// How far the tip reaches past the box edge, px.
+    pub length: f32,
+    /// Shift of the tip along the side, px.
+    pub lean: f32,
+    /// Fill; the box colour when unset.
+    pub color: Option<ColorRef>,
+    /// Repeat the box's hard (unblurred, outer) shadows under the tail.
+    pub shadow: bool,
+}
+
+impl Default for TailSpec {
+    fn default() -> Self {
+        Self {
+            side: Edge::Bottom,
+            at: 0.2,
+            width: 32.0,
+            length: 22.0,
+            lean: 0.0,
+            color: None,
+            shadow: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecorLayer {
+    /// Drawn before the box, so the box covers it.
+    Below,
+    #[default]
+    Above,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecorWhen {
+    #[default]
+    Always,
+    /// Only while the name plate shows.
+    Speaker,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FontRole {
+    Body,
+    Name,
+    #[default]
+    Accent,
+}
+
+/// A decorative shape placed relative to the dialogue box: accent bars,
+/// inner rules, ornaments, seals, title bars.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecorSpec {
+    pub layer: DecorLayer,
+    /// The decor's own point of this name lands on the box's.
+    pub anchor: Anchor,
+    pub offset: [f32; 2],
+    pub size: [Len; 2],
+    /// `[top, right, bottom, left]` from the box edges (negative reaches
+    /// outside); stretches the decor and replaces `anchor` and `size`.
+    pub inset: Option<[f32; 4]>,
+    pub color: Option<ColorRef>,
+    pub radius: f32,
+    pub border_color: Option<ColorRef>,
+    pub border_width: f32,
+    #[serde(flatten)]
+    pub shape: ShapeSpec,
+    /// Clip to a polygon, points in percent of the decor (3–8 points).
+    pub polygon: Vec<[f32; 2]>,
+    /// Degrees, clockwise.
+    pub rotate: f32,
+    pub opacity: f32,
+    /// A glyph or two drawn centred in the decor.
+    pub text: String,
+    pub text_color: ColorRef,
+    pub text_size: f32,
+    pub font: FontRole,
+    pub when: DecorWhen,
+}
+
+impl Default for DecorSpec {
+    fn default() -> Self {
+        Self {
+            layer: DecorLayer::Above,
+            anchor: Anchor::TopLeft,
+            offset: [0.0, 0.0],
+            size: [Len::Px(16.0), Len::Px(16.0)],
+            inset: None,
+            color: None,
+            radius: 0.0,
+            border_color: None,
+            border_width: 0.0,
+            shape: ShapeSpec::default(),
+            polygon: Vec::new(),
+            rotate: 0.0,
+            opacity: 1.0,
+            text: String::new(),
+            text_color: ColorRef::Role(ColorRole::Text),
+            text_size: 16.0,
+            font: FontRole::Accent,
+            when: DecorWhen::Always,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContinueMotion {
+    #[default]
+    Bob,
+    Blink,
+    Pulse,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Meta {
@@ -98,6 +464,8 @@ pub struct Meta {
     pub author: String,
     pub license: String,
     pub preview: Option<String>,
+    /// Picker categories: classic, streaming, game, retro, cute, elegant, minimal.
+    pub tags: Vec<String>,
 }
 
 impl Default for Meta {
@@ -113,6 +481,7 @@ impl Default for Meta {
             author: String::new(),
             license: String::new(),
             preview: None,
+            tags: Vec::new(),
         }
     }
 }
@@ -185,6 +554,21 @@ pub struct Fonts {
     pub accent: FontSpec,
 }
 
+impl Fonts {
+    pub fn role(&self, role: FontRole) -> &FontSpec {
+        match role {
+            FontRole::Body => &self.body,
+            FontRole::Name => &self.name,
+            FontRole::Accent => &self.accent,
+        }
+    }
+
+    /// Body, name and accent.
+    pub fn roles_mut(&mut self) -> [&mut FontSpec; 3] {
+        [&mut self.body, &mut self.name, &mut self.accent]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BoxSpec {
@@ -202,6 +586,12 @@ pub struct BoxSpec {
     pub frame: Option<NineSlice>,
     /// Box width as a fraction of the region (ADV boxes span the screen).
     pub width_fraction: f32,
+    /// Its `shadows` paint after `inner_border_color`, `glow` and `shadow`.
+    #[serde(flatten)]
+    pub shape: ShapeSpec,
+    /// Room kept free inside the region `[top, right, bottom, left]`, for tails
+    /// and ornaments that reach past the box.
+    pub margin: [f32; 4],
 }
 
 impl Default for BoxSpec {
@@ -218,6 +608,49 @@ impl Default for BoxSpec {
             shadow: None,
             frame: None,
             width_fraction: 1.0,
+            shape: ShapeSpec::default(),
+            margin: [0.0; 4],
+        }
+    }
+}
+
+fn layer(color: ColorRef, dx: f32, dy: f32, blur: f32, spread: f32, inset: bool) -> ShadowSpec {
+    ShadowSpec {
+        color,
+        dx,
+        dy,
+        blur,
+        spread,
+        inset,
+    }
+}
+
+impl BoxSpec {
+    /// Every shadow layer in paint order: the inner border, glow and shadow
+    /// fields as layers, then `shadows`.
+    pub fn shadow_layers(&self) -> Vec<ShadowSpec> {
+        let mut out = Vec::new();
+        if let Some(c) = self.inner_border_color {
+            // A second border drawn just inside the first.
+            let spread = self.inner_border_width.max(1.0);
+            out.push(layer(c.into(), 0.0, 0.0, 0.0, spread, true));
+        }
+        if let Some(c) = self.glow {
+            out.push(layer(c.into(), 0.0, 0.0, self.glow_blur, 0.0, false));
+        }
+        if let Some(s) = &self.shadow {
+            out.push(layer(s.color.into(), s.dx, s.dy, s.blur, 0.0, false));
+        }
+        out.extend(self.shape.shadows.iter().cloned());
+        out
+    }
+
+    /// `[top, right, bottom, left]` border widths; none under a frame image.
+    pub fn border_widths(&self) -> [f32; 4] {
+        if self.frame.is_some() {
+            [0.0; 4]
+        } else {
+            self.shape.border_widths(self.border_width)
         }
     }
 }
@@ -231,6 +664,7 @@ pub struct TextSpec {
     pub letter_spacing: f32,
     pub stroke: Option<TextStrokeSpec>,
     pub shadow: Option<TextShadowSpec>,
+    pub align: TextAlign,
 }
 
 impl Default for TextSpec {
@@ -242,6 +676,7 @@ impl Default for TextSpec {
             letter_spacing: 0.0,
             stroke: None,
             shadow: None,
+            align: TextAlign::Start,
         }
     }
 }
@@ -260,6 +695,16 @@ pub struct NameplateSpec {
     pub offset: [f32; 2],
     pub frame: Option<NineSlice>,
     pub stroke: Option<TextStrokeSpec>,
+    pub border_color: Option<ColorRef>,
+    pub border_width: f32,
+    #[serde(flatten)]
+    pub shape: ShapeSpec,
+    pub text_shadow: Option<TextShadowSpec>,
+    /// The plate's own point of this name is placed at the box's, then moved
+    /// by `offset`.
+    pub anchor: Anchor,
+    /// Degrees, clockwise.
+    pub rotate: f32,
 }
 
 impl Default for NameplateSpec {
@@ -274,6 +719,12 @@ impl Default for NameplateSpec {
             offset: [16.0, -12.0],
             frame: None,
             stroke: None,
+            border_color: None,
+            border_width: 0.0,
+            shape: ShapeSpec::default(),
+            text_shadow: None,
+            anchor: Anchor::TopLeft,
+            rotate: 0.0,
         }
     }
 }
@@ -328,6 +779,13 @@ pub struct ContinueSpec {
     pub fps: f32,
     pub anchor: Anchor,
     pub bob_px: f32,
+    /// From the anchor point of the box's border edge, px.
+    pub offset: [f32; 2],
+    pub motion: ContinueMotion,
+    /// One bob, blink or pulse cycle, seconds.
+    pub period_s: f32,
+    /// Drawn size of `image` (one frame); `size × 1.4` square when unset.
+    pub image_size: Option<[f32; 2]>,
 }
 
 impl Default for ContinueSpec {
@@ -341,6 +799,10 @@ impl Default for ContinueSpec {
             fps: 8.0,
             anchor: Anchor::BottomRight,
             bob_px: 3.0,
+            offset: [-14.0, -8.0],
+            motion: ContinueMotion::Bob,
+            period_s: 0.83,
+            image_size: None,
         }
     }
 }
@@ -404,6 +866,8 @@ pub struct Dialogue {
     pub reveal: RevealSpec,
     /// Background drawn behind the box inside the region (rarely used).
     pub background: Option<String>,
+    pub tail: Option<TailSpec>,
+    pub decor: Vec<DecorSpec>,
 }
 
 impl Default for Dialogue {
@@ -419,6 +883,8 @@ impl Default for Dialogue {
             continue_: ContinueSpec::default(),
             reveal: RevealSpec::default(),
             background: None,
+            tail: None,
+            decor: Vec::new(),
         }
     }
 }
@@ -437,6 +903,8 @@ pub enum AvatarShape {
 pub struct HistoryAvatar {
     pub shape: AvatarShape,
     pub size: f32,
+    pub ring_color: Option<ColorRef>,
+    pub ring_width: f32,
 }
 
 impl Default for HistoryAvatar {
@@ -444,6 +912,8 @@ impl Default for HistoryAvatar {
         Self {
             shape: AvatarShape::Circle,
             size: 40.0,
+            ring_color: None,
+            ring_width: 0.0,
         }
     }
 }
@@ -456,6 +926,29 @@ pub enum HistoryEntrance {
     SlideUp,
     Fade,
     SlideLeft,
+}
+
+/// A pill behind the speaker's name in the history list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HistoryNamePlate {
+    pub color: ColorRef,
+    pub gradient: Option<GradientSpec>,
+    pub text_color: ColorRef,
+    pub radius: f32,
+    pub padding: [f32; 2],
+}
+
+impl Default for HistoryNamePlate {
+    fn default() -> Self {
+        Self {
+            color: ColorRef::Role(ColorRole::Name),
+            gradient: None,
+            text_color: ColorRef::Role(ColorRole::NameText),
+            radius: 10.0,
+            padding: [8.0, 2.0],
+        }
+    }
 }
 
 /// The blivechat-style list: avatar, name, then a bubble per line.
@@ -478,6 +971,11 @@ pub struct History {
     pub entrance: HistoryEntrance,
     pub show_time: bool,
     pub time_color: Rgba8,
+    pub bubble_gradient: Option<GradientSpec>,
+    pub bubble_radii: Option<[f32; 4]>,
+    pub bubble_border_width: f32,
+    pub bubble_shadows: Vec<ShadowSpec>,
+    pub name_plate: Option<HistoryNamePlate>,
 }
 
 impl Default for History {
@@ -503,6 +1001,11 @@ impl Default for History {
             entrance: HistoryEntrance::SlideUp,
             show_time: false,
             time_color: Rgba8::rgb(127, 149, 174),
+            bubble_gradient: None,
+            bubble_radii: None,
+            bubble_border_width: 1.0,
+            bubble_shadows: Vec::new(),
+            name_plate: None,
         }
     }
 }
@@ -605,6 +1108,24 @@ pub struct Skin {
 impl Skin {
     pub fn display_name(&self, locale: &str) -> String {
         localized(&self.meta.name, locale, &self.meta.id)
+    }
+
+    pub fn description(&self, locale: &str) -> String {
+        localized(&self.meta.description, locale, "")
+    }
+
+    /// The concrete colour of `c` in this skin.
+    pub fn color(&self, c: ColorRef) -> Rgba8 {
+        let d = &self.dialogue;
+        match c {
+            ColorRef::Rgba(c) => c,
+            ColorRef::Role(ColorRole::Box) => d.box_.color,
+            ColorRef::Role(ColorRole::Border) => d.box_.border_color,
+            ColorRef::Role(ColorRole::Accent) => self.chrome.accent,
+            ColorRef::Role(ColorRole::Text) => d.text.color,
+            ColorRef::Role(ColorRole::Name) => d.nameplate.color,
+            ColorRef::Role(ColorRole::NameText) => d.nameplate.text_color,
+        }
     }
 
     /// Pacing from the skin's reveal table and the user's speed settings.

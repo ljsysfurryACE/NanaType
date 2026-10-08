@@ -519,12 +519,16 @@ fn toolbar(ui: Ui) -> AnyView {
                 item(t("tb-page"), pace_open, || marker(Marker::Page)),
             ])
             .collect();
+        let shake = skin.effects.screen_shake_px;
         let mut inserts: Vec<AnyView> = vec![
             item(t("tb-image"), insert_open, || {
                 Msg::PickFile(FileTarget::InsertImage)
             }),
-            item(t("tb-screenshake"), insert_open, || {
-                marker(Marker::ScreenShake { amp: 6.0, ms: 300 })
+            item(t("tb-screenshake"), insert_open, move || {
+                marker(Marker::ScreenShake {
+                    amp: shake,
+                    ms: 300,
+                })
             }),
         ];
         let se: Vec<String> = skin.sounds.se.keys().cloned().collect();

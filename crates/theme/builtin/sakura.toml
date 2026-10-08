@@ -1,0 +1,95 @@
+[meta]
+id = "nanatype.sakura"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["cute"]
+name = { zh-CN = "樱花", en-US = "Sakura", ja-JP = "さくら" }
+description = { zh-CN = "粉色渐变圆角框，花瓣点缀与爱心提示", en-US = "A pink gradient box with petals and a heart continue mark", ja-JP = "ピンクのグラデーションに花びらとハートのマーク" }
+
+[chrome]
+accent = "#f06a9c"
+background = "#fff4f8"
+surface = "#ffffff"
+text = "#5e2a42"
+muted = "#9a6a80"
+border = "#f7c6d8"
+
+[fonts.accent]
+families = ["Segoe UI Symbol", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[dialogue]
+region = [760, 210]
+padding = [30, 28, 28, 16]
+
+[dialogue.box]
+color = "#ffeef5f2"
+border_color = "#f7a8c4"
+border_width = 2
+radius = 24
+margin = [0, 0, 18, 0]
+gradient = { angle = 135, stops = [[0, "#fff0f5f5"], [1, "#ffe1ecf2"]] }
+shadows = [{ color = "#f7a8c466", dy = 6, blur = 18 }]
+
+[dialogue.tail]
+side = "bottom"
+at = 0.8
+width = 24
+length = 18
+lean = 8
+color = "#ffe6efff"
+shadow = false
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-18, -14]
+size = [28, 28]
+text = "✿"
+text_color = "#f490b5"
+text_size = 24
+rotate = 15
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-48, -8]
+size = [18, 18]
+text = "❀"
+text_color = "#ffb3cf"
+text_size = 15
+rotate = -15
+
+[dialogue.text]
+color = "#7a3050"
+
+[dialogue.nameplate]
+color = "#ff8fb8"
+text_color = "#ffffff"
+radius = 999
+padding = [14, 3]
+offset = [24, -14]
+gradient = { angle = 90, stops = [[0, "#ff8fb8"], [1, "#ffb3cf"]] }
+shadows = [{ color = "#ff8fb855", dy = 3, blur = 8 }]
+
+[dialogue.continue]
+glyph = "♥"
+color = "#f06a9c"
+size = 16
+motion = "pulse"
+period_s = 1.0
+offset = [-24, -10]
+
+[history]
+name_color = "#f06a9c"
+bubble_color = "#fff0f5f2"
+bubble_border = "#f7a8c4"
+bubble_border_width = 1.5
+bubble_radius = 16
+bubble_gradient = { angle = 135, stops = [[0, "#fff0f5f5"], [1, "#ffe1ecf2"]] }
+bubble_shadows = [{ color = "#f7a8c44d", dy = 3, blur = 10 }]
+name_plate = { color = "#ff8fb8", gradient = { angle = 90, stops = [[0, "#ff8fb8"], [1, "#ffb3cf"]] }, text_color = "#ffffff", radius = 9, padding = [8, 1] }
+avatar = { shape = "circle", size = 40, ring_color = "#ffb3cf", ring_width = 2 }
+time_color = "#c48aa2"
+
+[history.text]
+color = "#7a3050"

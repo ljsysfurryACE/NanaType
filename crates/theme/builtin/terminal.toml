@@ -1,0 +1,103 @@
+[meta]
+id = "nanatype.terminal"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["retro", "minimal"]
+name = { zh-CN = "终端", en-US = "Terminal", ja-JP = "ターミナル" }
+description = { zh-CN = "黑底绿字的命令行窗口，带标题栏与闪烁光标", en-US = "A green-on-black console window with a title bar and a blinking cursor", ja-JP = "黒地に緑文字のコンソール。タイトルバーと点滅カーソル付き" }
+
+[chrome]
+appearance = "dark"
+accent = "#33ff66"
+background = "#050805"
+surface = "#0d140e"
+text = "#c8ffd4"
+muted = "#6fae7e"
+border = "#1f5f2a"
+success = "#48d296"
+warning = "#ffc85a"
+danger = "#ff7a96"
+
+[fonts.body]
+families = ["Cascadia Mono", "Consolas", "Sarasa Mono SC", "NSimSun", "Menlo"]
+weight = 400
+
+[fonts.name]
+families = ["Cascadia Mono", "Consolas", "Sarasa Mono SC", "NSimSun", "Menlo"]
+weight = 400
+
+[fonts.accent]
+families = ["Cascadia Mono", "Consolas", "Segoe UI Symbol"]
+weight = 400
+
+[dialogue]
+padding = [22, 40, 22, 14]
+
+[dialogue.box]
+color = "#0a0f0af2"
+border_color = "#1f5f2a"
+border_width = 1
+radius = 4
+shadows = [{ color = "#33ff6626", blur = 16 }]
+
+# Title bar with window dots.
+[[dialogue.decor]]
+anchor = "top"
+size = ["100%", 24]
+radii = [4, 4, 0, 0]
+color = "#132a17"
+border_color = "#1f5f2a"
+border_widths = [0, 0, 1, 0]
+
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [10, 0]
+size = [48, 24]
+text = "● ● ●"
+text_color = "#33ff6699"
+text_size = 10
+
+[dialogue.text]
+color = "#33ff66"
+size = 24
+letter_spacing = 0.5
+shadow = { color = "#33ff6680", blur = 6 }
+
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#33ff66"
+size = 13
+radius = 0
+padding = [0, 0]
+anchor = "top_right"
+offset = [-12, 4]
+text_shadow = { color = "#33ff6680", blur = 4 }
+
+[dialogue.continue]
+glyph = "█"
+color = "#33ff66"
+size = 16
+motion = "blink"
+period_s = 1.0
+
+[dialogue.reveal]
+base_ms = 35
+cjk_factor = 1.6
+
+[dialogue.reveal.entrance]
+kind = "none"
+ms = 0
+
+[history]
+name_color = "#33ff66"
+bubble_color = "#0a0f0ae6"
+bubble_border = "#1f5f2a"
+bubble_radius = 3
+time_color = "#4f8f5e"
+avatar = { shape = "square", size = 32, ring_color = "#33ff66", ring_width = 1 }
+
+[history.text]
+color = "#33ff66"
+size = 17
+shadow = { color = "#33ff6660", blur = 4 }

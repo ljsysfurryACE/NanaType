@@ -199,6 +199,20 @@ skins-installed = 「{ $name }」を追加しました
 skins-replaced = 「{ $name }」を { $previous } から更新しました
 skins-import-failed = スキンを読み込めませんでした
 skins-fallback = スキン「{ $id }」を読み込めないため既定のスキンを使用しています
+skins-preview = プレビュー
+skins-preview-show = このスキンをプレビュー
+skins-preview-name = ナナ
+skins-preview-line = みなさんこんにちは！今日も[b]タイピング[/b]していくよ～[wave]なみなみ[/wave]、[rainbow]にじいろ[/rainbow]、[shake]ぶるぶる[/shake]もできるよ。
+skins-filter-all = すべて
+skins-tag-light = ライト
+skins-tag-dark = ダーク
+skins-tag-classic = クラシック
+skins-tag-streaming = 配信
+skins-tag-game = ゲーム
+skins-tag-retro = レトロ
+skins-tag-cute = かわいい
+skins-tag-elegant = 上品
+skins-tag-minimal = シンプル
 
 ## ウィンドウ
 windows-input = 入力

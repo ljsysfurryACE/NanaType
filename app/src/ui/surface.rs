@@ -1,0 +1,391 @@
+//! Painting the skin's shapes. The dialogue box, the name plate, history
+//! bubbles, decorations and tails all describe themselves as a [`Surface`],
+//! and [`Surface::apply`] is the one place that writes NanaUI paint fields,
+//! so every shape supports the same fills, gradients, borders and shadows.
+
+use nana_ui_core::{
+    BackgroundImage, BorderImageSlice, BorderImageSpec, BorderStyle, BoxShadowSpec, ClipPath,
+    ClipPoint, CssGradient, GradientStop, LayoutStyle, LengthSpec, LinearGradient, PaintTransform,
+    RadialGradient, TextShadowSpec, TextStrokeSpec,
+};
+use nanatype_theme::{
+    BorderStyleSpec, ColorRef, DecorSpec, GradientKind, GradientSpec, NineSlice, ShadowSpec,
+    ShapeSpec, Skin, TextShadowSpec as SkinShadow, TextStrokeSpec as SkinStroke,
+};
+
+use super::c;
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Border {
+    /// `[top, right, bottom, left]`.
+    pub widths: [f32; 4],
+    pub color: [f32; 4],
+    pub style: BorderStyleSpec,
+}
+
+/// Everything a skin can paint on one node.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Surface {
+    pub fill: Option<[f32; 4]>,
+    pub gradient: Option<BackgroundImage>,
+    /// `[top_left, top_right, bottom_right, bottom_left]`.
+    pub radii: [f32; 4],
+    pub border: Option<Border>,
+    pub shadows: Vec<BoxShadowSpec>,
+    /// A nine-slice image and its drawn border widths; replaces fill and border.
+    pub frame: Option<(BorderImageSpec, [f32; 4])>,
+    /// Polygon clip, points in percent of the node.
+    pub polygon: Option<Vec<[f32; 2]>>,
+    pub rotate_deg: f32,
+    pub opacity: Option<f32>,
+}
+
+pub fn gradient(skin: &Skin, g: &GradientSpec) -> BackgroundImage {
+    let stops = g
+        .stops
+        .iter()
+        .map(|(position, color)| GradientStop {
+            paint_color: None,
+            position: *position,
+            color: c(skin.color(*color)),
+        })
+        .collect();
+    BackgroundImage::Gradient(match g.kind {
+        GradientKind::Linear => CssGradient::Linear(LinearGradient {
+            angle_deg: g.angle,
+            stops,
+        }),
+        GradientKind::Radial => CssGradient::Radial(RadialGradient {
+            circle: g.circle,
+            center: g.center.map(LengthSpec::Percent),
+            stops,
+        }),
+    })
+}
+
+pub fn shadow(skin: &Skin, s: &ShadowSpec) -> BoxShadowSpec {
+    BoxShadowSpec {
+        paint_color: None,
+        offset_x: s.dx,
+        offset_y: s.dy,
+        blur_radius: s.blur,
+        spread_radius: s.spread,
+        color: c(skin.color(s.color)),
+        inset: s.inset,
+    }
+}
+
+fn shadows(skin: &Skin, list: &[ShadowSpec]) -> Vec<BoxShadowSpec> {
+    list.iter().map(|s| shadow(skin, s)).collect()
+}
+
+/// A nine-slice frame and the border widths it is drawn with (`slice × scale`).
+pub fn nine_slice(frame: &NineSlice, url: String) -> (BorderImageSpec, [f32; 4]) {
+    let mut spec = BorderImageSpec::from_source(BackgroundImage::url(url));
+    spec.slice = frame.slice.map(|v| BorderImageSlice::Number(v as f32));
+    spec.fill = true;
+    (spec, frame.slice.map(|v| v as f32 * frame.scale))
+}
+
+/// A real outline behind the glyphs.
+pub fn text_stroke(l: &mut LayoutStyle, s: &SkinStroke) {
+    l.paint.text_stroke = Some(TextStrokeSpec {
+        width: s.width,
+        color: Some(c(s.color)),
+        paint_color: None,
+    });
+    l.paint.paint_order_stroke_first = true;
+}
+
+pub fn text_shadow(l: &mut LayoutStyle, s: &SkinShadow) {
+    l.paint.text_shadows = vec![TextShadowSpec {
+        offset_x: s.dx,
+        offset_y: s.dy,
+        blur_radius: s.blur,
+        color: c(s.color),
+        paint_color: None,
+    }];
+}
+
+fn set_border_widths(l: &mut LayoutStyle, [t, r, b, left]: [f32; 4]) {
+    l.border_top_width = Some(t);
+    l.border_right_width = Some(r);
+    l.border_bottom_width = Some(b);
+    l.border_left_width = Some(left);
+}
+
+impl Surface {
+    /// A frame image, when the skin names one and it resolved to a URL.
+    fn framed(frame: Option<&NineSlice>, url: Option<String>) -> Option<Self> {
+        Some(Self {
+            frame: Some(nine_slice(frame?, url?)),
+            ..Self::default()
+        })
+    }
+
+    /// A fill with the shape fields every part shares.
+    fn shaped(
+        skin: &Skin,
+        fill: Option<ColorRef>,
+        shape: &ShapeSpec,
+        radius: f32,
+        border: Option<ColorRef>,
+        border_width: f32,
+    ) -> Self {
+        let widths = shape.border_widths(border_width);
+        Self {
+            fill: fill.map(|f| c(skin.color(f))),
+            gradient: shape.gradient.as_ref().map(|g| gradient(skin, g)),
+            radii: shape.radii(radius),
+            border: border
+                .filter(|_| widths.iter().any(|w| *w > 0.0))
+                .map(|color| Border {
+                    widths,
+                    color: c(skin.color(color)),
+                    style: shape.border_style,
+                }),
+            shadows: shadows(skin, &shape.shadows),
+            ..Self::default()
+        }
+    }
+
+    /// The dialogue box: fill, gradient, border, shadow layers, or a frame image.
+    pub fn dialogue_box(skin: &Skin, frame_url: Option<String>) -> Self {
+        let b = &skin.dialogue.box_;
+        Self::framed(b.frame.as_ref(), frame_url).unwrap_or_else(|| Self {
+            shadows: shadows(skin, &b.shadow_layers()),
+            ..Self::shaped(
+                skin,
+                Some(b.color.into()),
+                &b.shape,
+                b.radius,
+                Some(b.border_color.into()),
+                b.border_width,
+            )
+        })
+    }
+
+    pub fn nameplate(skin: &Skin, frame_url: Option<String>) -> Self {
+        let p = &skin.dialogue.nameplate;
+        let s = Self::framed(p.frame.as_ref(), frame_url).unwrap_or_else(|| {
+            Self::shaped(
+                skin,
+                Some(p.color.into()),
+                &p.shape,
+                p.radius,
+                p.border_color,
+                p.border_width,
+            )
+        });
+        Self {
+            rotate_deg: p.rotate,
+            ..s
+        }
+    }
+
+    /// A history bubble.
+    pub fn bubble(skin: &Skin, frame_url: Option<String>) -> Self {
+        let h = &skin.history;
+        Self::framed(h.bubble_frame.as_ref(), frame_url).unwrap_or_else(|| {
+            let shape = ShapeSpec {
+                gradient: h.bubble_gradient.clone(),
+                radii: h.bubble_radii,
+                shadows: h.bubble_shadows.clone(),
+                ..ShapeSpec::default()
+            };
+            Self::shaped(
+                skin,
+                Some(h.bubble_color.into()),
+                &shape,
+                h.bubble_radius,
+                h.bubble_border.map(ColorRef::from),
+                h.bubble_border_width,
+            )
+        })
+    }
+
+    /// The pill behind a history row's name, when the skin has one.
+    pub fn history_name_plate(skin: &Skin) -> Option<Self> {
+        let p = skin.history.name_plate.as_ref()?;
+        Some(Self {
+            fill: Some(c(skin.color(p.color))),
+            gradient: p.gradient.as_ref().map(|g| gradient(skin, g)),
+            radii: [p.radius; 4],
+            ..Self::default()
+        })
+    }
+
+    pub fn decor(skin: &Skin, d: &DecorSpec) -> Self {
+        Self {
+            polygon: (d.polygon.len() >= 3).then(|| d.polygon.clone()),
+            rotate_deg: d.rotate,
+            opacity: (d.opacity < 1.0).then_some(d.opacity),
+            ..Self::shaped(
+                skin,
+                d.color,
+                &d.shape,
+                d.radius,
+                d.border_color,
+                d.border_width,
+            )
+        }
+    }
+
+    /// One triangle of a tail.
+    pub fn tail_part(color: [f32; 4], points: &[[f32; 2]]) -> Self {
+        Self {
+            fill: Some(color),
+            polygon: Some(points.to_vec()),
+            ..Self::default()
+        }
+    }
+
+    /// Write this surface into `l`. Leaves position, size and padding alone.
+    pub fn apply(&self, l: &mut LayoutStyle) {
+        if let Some((spec, widths)) = &self.frame {
+            l.paint.border_image = Some(spec.clone());
+            set_border_widths(l, *widths);
+        } else {
+            l.background = self.fill;
+            l.paint.background_image = self.gradient.clone();
+            l.border_radius = Some(self.radii[0]);
+            l.paint.border_radii = (self.radii.iter().any(|r| *r != self.radii[0]))
+                .then(|| self.radii.map(LengthSpec::Px));
+            if let Some(b) = &self.border {
+                set_border_widths(l, b.widths);
+                l.border_color = Some(b.color);
+                l.border_style = Some(match b.style {
+                    BorderStyleSpec::Solid => BorderStyle::Solid,
+                    BorderStyleSpec::Dashed => BorderStyle::Dashed,
+                    BorderStyleSpec::Dotted => BorderStyle::Dotted,
+                });
+            }
+            l.paint.box_shadows = self.shadows.clone();
+        }
+        l.paint.clip_path = self.polygon.as_ref().map(|pts| {
+            ClipPath::Polygon(
+                pts.iter()
+                    .map(|p| ClipPoint {
+                        x: LengthSpec::Percent(p[0]),
+                        y: LengthSpec::Percent(p[1]),
+                    })
+                    .collect(),
+            )
+        });
+        if self.rotate_deg != 0.0 {
+            l.transform = Some(affine(0.0, 0.0, self.rotate_deg, 1.0));
+        }
+        if let Some(o) = self.opacity {
+            l.opacity = Some(o);
+        }
+    }
+}
+
+/// Translate by `(dx, dy)`, rotating (degrees clockwise) and scaling about
+/// the transform origin.
+pub fn affine(dx: f32, dy: f32, deg: f32, scale: f32) -> PaintTransform {
+    let (s, co) = deg.to_radians().sin_cos();
+    PaintTransform {
+        a: co * scale,
+        b: s * scale,
+        c: -s * scale,
+        d: co * scale,
+        e: dx,
+        f: dy,
+    }
+}
+
+/// `percent`% of the parent plus `px`, as a NanaUI length.
+pub fn calc(percent: f32, px: f32) -> LengthSpec {
+    if percent == 0.0 {
+        LengthSpec::Px(px)
+    } else if px == 0.0 {
+        LengthSpec::Percent(percent)
+    } else {
+        LengthSpec::CalcPercentOffset {
+            percent,
+            offset_px: px,
+        }
+    }
+}
+
+pub fn len(l: nanatype_theme::Len) -> LengthSpec {
+    match l {
+        nanatype_theme::Len::Px(v) => LengthSpec::Px(v),
+        nanatype_theme::Len::Percent(v) => LengthSpec::Percent(v),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nanatype_model::Rgba8;
+    use nanatype_theme::{GradientSpec, NineSlice, ShadowSpec};
+
+    #[test]
+    fn box_surface_carries_gradient_radii_and_every_shadow_layer() {
+        let mut skin = Skin::default();
+        let b = &mut skin.dialogue.box_;
+        b.shape.gradient = Some(GradientSpec {
+            stops: vec![(0.0, Rgba8::WHITE.into()), (1.0, Rgba8::BLACK.into())],
+            ..GradientSpec::default()
+        });
+        b.shape.radii = Some([4.0, 18.0, 18.0, 18.0]);
+        b.glow = Some(Rgba8::WHITE);
+        b.inner_border_color = Some(Rgba8::BLACK);
+        b.shape.shadows = vec![ShadowSpec {
+            color: Rgba8::BLACK.into(),
+            dx: 0.0,
+            dy: 4.0,
+            blur: 0.0,
+            spread: 0.0,
+            inset: false,
+        }];
+        let s = Surface::dialogue_box(&skin, None);
+        assert_eq!(s.shadows.len(), 3);
+        assert!(s.shadows[0].inset);
+        let mut l = LayoutStyle::default();
+        s.apply(&mut l);
+        assert!(matches!(
+            l.paint.background_image,
+            Some(BackgroundImage::Gradient(CssGradient::Linear(_)))
+        ));
+        assert_eq!(
+            l.paint.border_radii,
+            Some([4.0, 18.0, 18.0, 18.0].map(LengthSpec::Px))
+        );
+    }
+
+    #[test]
+    fn a_box_colour_override_turns_off_the_gradient() {
+        let mut skin = Skin::default();
+        skin.dialogue.box_.shape.gradient = Some(GradientSpec {
+            stops: vec![(0.0, Rgba8::WHITE.into()), (1.0, Rgba8::BLACK.into())],
+            ..GradientSpec::default()
+        });
+        let overrides = nanatype_settings::SkinOverrides {
+            box_color: Some(Rgba8::rgb(1, 2, 3)),
+            ..Default::default()
+        };
+        let s = crate::skin_theme::with_overrides(&skin, &overrides);
+        assert!(s.dialogue.box_.shape.gradient.is_none());
+        assert_eq!(
+            s.color(nanatype_theme::ColorRef::Role(
+                nanatype_theme::ColorRole::Box
+            )),
+            Rgba8::rgb(1, 2, 3)
+        );
+    }
+
+    #[test]
+    fn frames_draw_at_slice_times_scale() {
+        let frame = NineSlice {
+            image: "f.png".into(),
+            slice: [8, 4, 8, 4],
+            scale: 2.0,
+            repeat: false,
+        };
+        let (_, widths) = nine_slice(&frame, "file:///f.png".into());
+        assert_eq!(widths, [16.0, 8.0, 16.0, 8.0]);
+    }
+}

@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod files;
+mod geometry;
 mod load;
 mod manifest;
 mod registry;
@@ -21,9 +22,10 @@ pub use files::{
     DirFiles, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, MemoryFiles, SkinFiles, ZipFiles,
     clean_path,
 };
+pub use geometry::*;
 pub use load::{
-    BaseResolver, LoadedSkin, MANIFEST, MAX_IMAGE_SIDE, Severity, SkinDiagnostic, SkinOrigin,
-    deep_merge, load, read_manifest,
+    BaseResolver, LoadedSkin, MANIFEST, MAX_DECOR, MAX_IMAGE_SIDE, MAX_SHADOWS, MAX_STOPS,
+    SKIN_TAGS, Severity, SkinDiagnostic, SkinOrigin, deep_merge, load, read_manifest,
 };
 pub use manifest::*;
 pub use registry::{DEFAULT_SKIN, InstallOutcome, SkinEntry, SkinRegistry};

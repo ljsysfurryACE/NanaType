@@ -202,6 +202,20 @@ skins-installed = Installed “{ $name }”
 skins-replaced = Updated “{ $name }” from { $previous }
 skins-import-failed = The skin could not be imported
 skins-fallback = Skin “{ $id }” could not load; using the default skin
+skins-preview = Preview
+skins-preview-show = Preview this skin
+skins-preview-name = Nana
+skins-preview-line = Hi everyone! Typing [b]live[/b] again today, with [wave]waves[/wave], [rainbow]rainbows[/rainbow] and a little [shake]shake[/shake].
+skins-filter-all = All
+skins-tag-light = Light
+skins-tag-dark = Dark
+skins-tag-classic = Classic
+skins-tag-streaming = Streaming
+skins-tag-game = Game
+skins-tag-retro = Retro
+skins-tag-cute = Cute
+skins-tag-elegant = Elegant
+skins-tag-minimal = Minimal
 
 ## Windows
 windows-input = Input

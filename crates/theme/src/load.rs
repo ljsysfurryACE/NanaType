@@ -3,16 +3,22 @@
 //! compile. Unknown fields only warn so newer packs still load.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use toml::{Table, Value};
 
 use crate::files::{FileError, SkinFiles, clean_path};
-use crate::manifest::{FileKind, SKIN_SCHEMA, Skin};
+use crate::manifest::{FileKind, GradientSpec, Len, SKIN_SCHEMA, ShadowSpec, ShapeSpec, Skin};
 
 pub const MANIFEST: &str = "skin.toml";
 pub const MAX_IMAGE_SIDE: usize = 8192;
 const MAX_BASE_DEPTH: usize = 8;
+
+/// [`Skin::default`] as a TOML table, the bottom layer every skin merges onto.
+static DEFAULT_TABLE: LazyLock<Table> = LazyLock::new(|| match Value::try_from(Skin::default()) {
+    Ok(Value::Table(t)) => t,
+    other => panic!("the default skin serializes to a table: {other:?}"),
+});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
@@ -152,13 +158,21 @@ fn unknown_keys(raw: &Table, known: &Table, prefix: &str, out: &mut Vec<SkinDiag
         };
         match known.get(key) {
             None => out.push(SkinDiagnostic::warning(field, "unknown field is ignored")),
-            Some(Value::Table(k)) => {
-                if let Value::Table(r) = value {
-                    unknown_keys(r, k, &field, out);
-                }
-            }
-            Some(_) => {}
+            Some(k) => unknown_in_value(value, k, &field, out),
         }
+    }
+}
+
+fn unknown_in_value(raw: &Value, known: &Value, field: &str, out: &mut Vec<SkinDiagnostic>) {
+    match (raw, known) {
+        (Value::Table(r), Value::Table(k)) => unknown_keys(r, k, field, out),
+        // Arrays of tables (`[[dialogue.decor]]`) pair up item by item.
+        (Value::Array(r), Value::Array(k)) => {
+            for (i, (r, k)) in r.iter().zip(k).enumerate() {
+                unknown_in_value(r, k, &format!("{field}.{i}"), out);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -207,7 +221,10 @@ pub fn load(
             }
         }
     }
-    let mut merged = Table::new();
+    // Start from the full default skin so a partial nested table (say
+    // `[history.text]` with only a colour) keeps that field's own defaults
+    // rather than the generic ones of its type.
+    let mut merged = DEFAULT_TABLE.clone();
     for table in chain.iter().rev() {
         deep_merge(&mut merged, table);
     }
@@ -339,6 +356,7 @@ fn validate(skin: &Skin, files: &dyn SkinFiles, app_version: &str, out: &mut Vec
             "must be 1–2000",
         ));
     }
+    validate_shapes(skin, out);
 
     for (field, path, kind) in skin.referenced_files() {
         let path = match clean_path(path) {
@@ -400,5 +418,289 @@ fn validate(skin: &Skin, files: &dyn SkinFiles, app_version: &str, out: &mut Vec
                 }
             }
         }
+    }
+}
+
+/// Most shadow layers one shape can paint.
+pub const MAX_SHADOWS: usize = 4;
+/// Most stops one gradient can have.
+pub const MAX_STOPS: usize = 8;
+pub const MAX_DECOR: usize = 16;
+/// The picker's tag vocabulary; the picker ignores other tags.
+pub const SKIN_TAGS: &[&str] = &[
+    "classic",
+    "streaming",
+    "game",
+    "retro",
+    "cute",
+    "elegant",
+    "minimal",
+];
+
+fn in_range(v: f32, lo: f32, hi: f32) -> bool {
+    v.is_finite() && (lo..=hi).contains(&v)
+}
+
+fn check_gradient(field: &str, g: Option<&GradientSpec>, out: &mut Vec<SkinDiagnostic>) {
+    let Some(g) = g else { return };
+    if !(2..=MAX_STOPS).contains(&g.stops.len()) {
+        out.push(SkinDiagnostic::error(
+            field,
+            format!("a gradient needs 2–{MAX_STOPS} stops"),
+        ));
+    }
+    if g.stops.iter().any(|(p, _)| !in_range(*p, 0.0, 1.0))
+        || g.stops.windows(2).any(|w| w[1].0 < w[0].0)
+    {
+        out.push(SkinDiagnostic::error(
+            field,
+            "stop positions must be 0–1 and must not decrease",
+        ));
+    }
+    if !g.angle.is_finite() || !g.center.iter().all(|c| in_range(*c, -200.0, 300.0)) {
+        out.push(SkinDiagnostic::error(
+            field,
+            "angle must be finite and center -200–300%",
+        ));
+    }
+}
+
+fn check_corners(field: &str, radii: [f32; 4], out: &mut Vec<SkinDiagnostic>) {
+    if !radii.iter().all(|v| in_range(*v, 0.0, 2000.0)) {
+        out.push(SkinDiagnostic::error(field, "radius must be 0–2000"));
+    }
+}
+
+fn check_borders(field: &str, widths: [f32; 4], out: &mut Vec<SkinDiagnostic>) {
+    if !widths.iter().all(|v| in_range(*v, 0.0, 64.0)) {
+        out.push(SkinDiagnostic::error(field, "border width must be 0–64"));
+    }
+}
+
+fn check_shadows(field: &str, layers: &[ShadowSpec], out: &mut Vec<SkinDiagnostic>) {
+    if layers.len() > MAX_SHADOWS {
+        out.push(SkinDiagnostic::error(
+            field,
+            format!(
+                "at most {MAX_SHADOWS} shadow layers (inner border, glow and shadow count too)"
+            ),
+        ));
+    }
+    if layers.iter().any(|s| {
+        !in_range(s.blur, 0.0, 200.0)
+            || !in_range(s.spread, -500.0, 500.0)
+            || !in_range(s.dx, -500.0, 500.0)
+            || !in_range(s.dy, -500.0, 500.0)
+    }) {
+        out.push(SkinDiagnostic::error(
+            field,
+            "blur must be 0–200, spread and offsets -500–500",
+        ));
+    }
+}
+
+/// A part's gradient, corners, borders and shadow layers, reported under
+/// `prefix.gradient`, `prefix.radius`, `prefix.border_width` and `prefix.shadows`.
+fn check_shape(
+    prefix: &str,
+    shape: &ShapeSpec,
+    radius: f32,
+    border_width: f32,
+    layers: &[ShadowSpec],
+    out: &mut Vec<SkinDiagnostic>,
+) {
+    check_gradient(&format!("{prefix}.gradient"), shape.gradient.as_ref(), out);
+    check_corners(&format!("{prefix}.radius"), shape.radii(radius), out);
+    check_borders(
+        &format!("{prefix}.border_width"),
+        shape.border_widths(border_width),
+        out,
+    );
+    check_shadows(&format!("{prefix}.shadows"), layers, out);
+}
+
+/// Ranges of the drawn-shape fields: gradients, corners, borders, shadows,
+/// the tail, decorations and the continue indicator.
+fn validate_shapes(skin: &Skin, out: &mut Vec<SkinDiagnostic>) {
+    let d = &skin.dialogue;
+    let b = &d.box_;
+    check_shape(
+        "dialogue.box",
+        &b.shape,
+        b.radius,
+        b.border_width,
+        &b.shadow_layers(),
+        out,
+    );
+    check_borders(
+        "dialogue.box.inner_border_width",
+        [b.inner_border_width; 4],
+        out,
+    );
+    let [top, right, bottom, left] = b.margin;
+    if !b.margin.iter().all(|m| in_range(*m, 0.0, 1024.0))
+        || left + right >= d.region[0]
+        || top + bottom >= d.region[1]
+    {
+        out.push(SkinDiagnostic::error(
+            "dialogue.box.margin",
+            "margins must be 0–1024 and leave room for the box",
+        ));
+    }
+
+    let p = &d.nameplate;
+    check_shape(
+        "dialogue.nameplate",
+        &p.shape,
+        p.radius,
+        p.border_width,
+        &p.shape.shadows,
+        out,
+    );
+    if !in_range(p.rotate, -360.0, 360.0) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.nameplate.rotate",
+            "must be -360–360",
+        ));
+    }
+
+    if let Some(t) = &d.tail
+        && (!in_range(t.at, 0.0, 1.0)
+            || !in_range(t.width, 4.0, 1024.0)
+            || !in_range(t.length, 2.0, 512.0)
+            || !in_range(t.lean, -512.0, 512.0))
+    {
+        out.push(SkinDiagnostic::error(
+            "dialogue.tail",
+            "at must be 0–1, width 4–1024, length 2–512 and lean -512–512",
+        ));
+    }
+
+    if d.decor.len() > MAX_DECOR {
+        out.push(SkinDiagnostic::error(
+            "dialogue.decor",
+            format!("at most {MAX_DECOR} decorations"),
+        ));
+    }
+    for (i, dec) in d.decor.iter().enumerate() {
+        let prefix = format!("dialogue.decor.{i}");
+        let f = |k: &str| format!("{prefix}.{k}");
+        let size_ok = dec.size.iter().all(|s| match s {
+            Len::Px(v) => in_range(*v, 0.0, 4096.0),
+            Len::Percent(v) => in_range(*v, 0.0, 400.0),
+        });
+        if !size_ok {
+            out.push(SkinDiagnostic::error(
+                f("size"),
+                "px sizes must be 0–4096 and percentages 0–400",
+            ));
+        }
+        if dec
+            .inset
+            .is_some_and(|i| !i.iter().all(|v| in_range(*v, -4096.0, 4096.0)))
+            || !dec.offset.iter().all(|v| in_range(*v, -4096.0, 4096.0))
+        {
+            out.push(SkinDiagnostic::error(
+                f("offset"),
+                "offsets and insets must be within ±4096",
+            ));
+        }
+        check_shape(
+            &prefix,
+            &dec.shape,
+            dec.radius,
+            dec.border_width,
+            &dec.shape.shadows,
+            out,
+        );
+        if !(dec.polygon.is_empty() || (3..=8).contains(&dec.polygon.len()))
+            || !dec
+                .polygon
+                .iter()
+                .flatten()
+                .all(|v| in_range(*v, -100.0, 200.0))
+        {
+            out.push(SkinDiagnostic::error(
+                f("polygon"),
+                "a polygon needs 3–8 points within -100–200%",
+            ));
+        }
+        if !in_range(dec.rotate, -360.0, 360.0) {
+            out.push(SkinDiagnostic::error(f("rotate"), "must be -360–360"));
+        }
+        if !in_range(dec.opacity, 0.0, 1.0) {
+            out.push(SkinDiagnostic::error(f("opacity"), "must be 0–1"));
+        }
+        if dec.text.chars().count() > 8 {
+            out.push(SkinDiagnostic::error(f("text"), "at most 8 characters"));
+        }
+        if !in_range(dec.text_size, 4.0, 400.0) {
+            out.push(SkinDiagnostic::error(
+                f("text_size"),
+                "font size must be 4–400",
+            ));
+        }
+    }
+
+    let c = &d.continue_;
+    if !(1..=64).contains(&c.frames) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.continue.frames",
+            "must be 1–64",
+        ));
+    }
+    if !in_range(c.fps, 0.5, 60.0) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.continue.fps",
+            "must be 0.5–60",
+        ));
+    }
+    if !in_range(c.period_s, 0.1, 10.0) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.continue.period_s",
+            "must be 0.1–10",
+        ));
+    }
+    if c.image_size
+        .is_some_and(|s| !s.iter().all(|v| in_range(*v, 1.0, 1024.0)))
+    {
+        out.push(SkinDiagnostic::error(
+            "dialogue.continue.image_size",
+            "must be 1–1024",
+        ));
+    }
+
+    let h = &skin.history;
+    check_gradient("history.bubble_gradient", h.bubble_gradient.as_ref(), out);
+    check_corners(
+        "history.bubble_radius",
+        h.bubble_radii.unwrap_or([h.bubble_radius; 4]),
+        out,
+    );
+    check_borders(
+        "history.bubble_border_width",
+        [h.bubble_border_width; 4],
+        out,
+    );
+    check_shadows("history.bubble_shadows", &h.bubble_shadows, out);
+    if let Some(np) = &h.name_plate {
+        check_gradient("history.name_plate.gradient", np.gradient.as_ref(), out);
+        check_corners("history.name_plate.radius", [np.radius; 4], out);
+    }
+    check_borders("history.avatar.ring_width", [h.avatar.ring_width; 4], out);
+
+    let tags = &skin.meta.tags;
+    let bad_tag = |t: &String| {
+        t.is_empty()
+            || t.len() > 24
+            || !t
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    };
+    if tags.len() > 8 || tags.iter().any(bad_tag) {
+        out.push(SkinDiagnostic::warning(
+            "meta.tags",
+            "at most 8 tags of 1–24 characters a-z, 0-9 or `-`",
+        ));
     }
 }

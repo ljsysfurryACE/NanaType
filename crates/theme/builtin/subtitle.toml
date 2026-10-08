@@ -1,0 +1,70 @@
+[meta]
+id = "nanatype.subtitle"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming", "minimal"]
+name = { zh-CN = "字幕", en-US = "Subtitle", ja-JP = "字幕" }
+description = { zh-CN = "没有框，只有粗描边白字，叠在任何画面上都清楚", en-US = "No box, just bold outlined white text that reads over any scene", ja-JP = "枠なし、太い縁取りの白文字だけ。どんな画面でも読みやすい" }
+
+[chrome]
+appearance = "dark"
+accent = "#ffd27f"
+background = "#121214"
+surface = "#1e1e22"
+text = "#f2f2f5"
+muted = "#b4b4c0"
+border = "#3a3a46"
+success = "#64d29a"
+warning = "#ffc85a"
+danger = "#ff7a8a"
+
+[fonts.body]
+weight = 800
+
+[fonts.name]
+weight = 800
+
+[dialogue]
+region = [960, 170]
+padding = [24, 38, 24, 10]
+
+[dialogue.box]
+color = "#00000000"
+border_width = 0
+radius = 0
+
+[dialogue.text]
+color = "#ffffff"
+size = 34
+line_height = 1.35
+align = "center"
+stroke = { color = "#000000", width = 5 }
+shadow = { color = "#00000099", dy = 2, blur = 4 }
+
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#ffd27f"
+size = 20
+padding = [0, 0]
+anchor = "top"
+offset = [0, 6]
+stroke = { color = "#000000", width = 4 }
+
+[dialogue.continue]
+glyph = ""
+
+[dialogue.reveal.entrance]
+kind = "fade"
+ms = 120
+
+[history]
+name_color = "#ffd27f"
+name_stroke = { color = "#000000", width = 3 }
+bubble_color = "#00000066"
+bubble_radius = 8
+time_color = "#c8c8d0"
+
+[history.text]
+color = "#ffffff"
+stroke = { color = "#000000", width = 3 }

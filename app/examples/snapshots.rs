@@ -1,6 +1,8 @@
 //! Render every window's view offscreen to PNG (no desktop windows).
 //!
-//! `cargo run -p nanatype --example snapshots -- <out-dir> [skin-id] [locale]`
+//! `cargo run -p nanatype --example snapshots -- <out-dir> [skin-id|all] [locale]`
+//!
+//! With `all`, every built-in skin is rendered into `<out-dir>/<skin-id>/`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -45,18 +47,38 @@ fn main() {
         .next()
         .and_then(|l| Locale::from_tag(&l))
         .unwrap_or(Locale::ZhCn);
-    std::fs::create_dir_all(&out).unwrap();
     let registry = SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
-    let loaded = registry.load(&skin_id).expect("skin");
-    let skin = loaded.skin.clone();
+    if skin_id == "all" {
+        let ids: Vec<String> = registry.entries().iter().map(|e| e.id.clone()).collect();
+        for id in ids {
+            render(&registry, &out.join(&id), &id, locale);
+        }
+    } else {
+        render(&registry, &out, &skin_id, locale);
+    }
+}
+
+fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
+    std::fs::create_dir_all(out).unwrap();
+    let loaded = registry.load(skin_id).expect("skin");
+    let skin = Arc::new(nanatype::skin_theme::prepare(
+        &loaded.skin,
+        &Default::default(),
+        &Default::default(),
+    ));
     let mut settings = Settings::default();
     settings.general.speaker_name = "奈奈".into();
+    settings.skin.id = skin_id.to_owned();
     settings.history.show_time = true;
     let theme = nanatype::skin_theme::compile(
         &skin,
         skin.chrome.appearance == nanatype_theme::Appearance::Dark,
     );
     let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), locale);
+    ui.skins
+        .set(Arc::new(nanatype::ui::skin_rows(registry, locale)));
+    ui.asset_urls
+        .set(Arc::new(nanatype::assets::skin_urls(&*loaded.files)));
 
     let mut core = Core::new(settings.clone(), skin.clone());
     for line in [
@@ -93,7 +115,7 @@ fn main() {
         (d.region[0] + d.overscan * 2.0) as u32,
         (d.region[1] + d.overscan * 2.0) as u32,
     );
-    shot("display", &out, w, h, theme.clone(), |doc, id| {
+    shot("display", out, w, h, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || {
                 dialogue::dialogue_box(ui, dialogue::Source::Display, None)
@@ -104,14 +126,14 @@ fn main() {
         + d.region[1]
         + d.overscan * 2.0
         + nanatype::windows::STATUS_H) as u32;
-    shot("input", &out, w, ih, theme.clone(), |doc, id| {
+    shot("input", out, w, ih, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();
     });
     shot(
         "history",
-        &out,
+        out,
         skin.history.width as u32,
         skin.history.height as u32,
         theme.clone(),
@@ -125,7 +147,7 @@ fn main() {
         ui.page.set(page);
         shot(
             &format!("settings-{page:?}"),
-            &out,
+            out,
             920,
             660,
             theme.clone(),

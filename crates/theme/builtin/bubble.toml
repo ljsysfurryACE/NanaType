@@ -1,0 +1,85 @@
+[meta]
+id = "nanatype.bubble"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming", "cute"]
+name = { zh-CN = "气泡", en-US = "Bubble", ja-JP = "バブル" }
+description = { zh-CN = "粗描边圆润对话气泡，带小尾巴和倾斜名牌", en-US = "A chunky outlined speech bubble with a tail and a tilted name tag", ja-JP = "太い縁取りの丸い吹き出しに、しっぽと傾いた名札" }
+
+[chrome]
+accent = "#ff7aa8"
+background = "#fff6f9"
+surface = "#ffffff"
+text = "#2b2b3a"
+muted = "#64647a"
+border = "#e6d6de"
+
+[fonts.body]
+weight = 700
+
+[fonts.name]
+weight = 800
+
+[fonts.accent]
+families = ["Segoe UI Symbol", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[dialogue]
+region = [760, 220]
+padding = [30, 30, 30, 18]
+
+[dialogue.box]
+color = "#ffffff"
+border_color = "#2b2b3a"
+border_width = 4
+radius = 30
+margin = [0, 0, 26, 0]
+shadows = [{ color = "#2b2b3a40", dy = 6 }]
+
+[dialogue.tail]
+side = "bottom"
+at = 0.14
+width = 34
+length = 24
+lean = -10
+
+# Sparkle on the top-right corner.
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-22, -14]
+size = [26, 26]
+text = "✦"
+text_color = "#ffb020"
+text_size = 24
+rotate = 12
+
+[dialogue.text]
+color = "#2b2b3a"
+
+[dialogue.nameplate]
+color = "#ff7aa8"
+text_color = "#ffffff"
+radius = 999
+padding = [14, 3]
+offset = [28, -18]
+border_color = "border"
+border_width = 3
+rotate = -3
+
+[dialogue.continue]
+color = "#ff7aa8"
+offset = [-26, -12]
+
+[history]
+name_color = "#ff5c95"
+bubble_color = "#ffffff"
+bubble_border = "#2b2b3a"
+bubble_border_width = 3
+bubble_radius = 18
+bubble_radii = [4, 18, 18, 18]
+bubble_shadows = [{ color = "#2b2b3a40", dy = 3 }]
+avatar = { shape = "circle", size = 40, ring_color = "#2b2b3a", ring_width = 3 }
+
+[history.text]
+color = "#2b2b3a"

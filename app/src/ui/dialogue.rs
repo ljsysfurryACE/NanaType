@@ -7,25 +7,28 @@
 //! and the per-character effects are glyph presentation evaluated on the GPU,
 //! so nothing reshapes while a line plays.
 
-use std::f32::consts::TAU;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use std::collections::HashMap;
 
 use nana_ui::runtime::view::{AnyView, IntoView, dynamic, widget};
-use nana_ui::runtime::{NodeStyle, RichTextView, Stack, Text};
+use nana_ui::runtime::{NodeStyle, RichTextView, Stack, Text, TextHorizontalAlignment};
 use nana_ui_core::{
-    AlignSpec, BackgroundImage, BackgroundImageFit, BorderImageSlice, BorderImageSpec,
-    BoxShadowSpec, LayoutStyle, LengthSpec, OverflowSpec, PaintTransform, PointerEventsSpec,
-    PositionSpec, TextShadowSpec, TextStrokeSpec,
+    AlignSpec, BackgroundImage, BackgroundImageFit, BackgroundPosition, BackgroundRepeat,
+    JustifySpec, LayoutStyle, LengthSpec, OverflowSpec, PointerEventsSpec, PositionSpec,
 };
 use nanatype_core::Reveal;
-use nanatype_model::{Document, Entrance, Inline, Rgba8};
+use nanatype_model::{Document, Entrance, EntranceKind, Inline, Rgba8};
 use nanatype_theme::{
-    EffectDefaults, NineSlice, Side, Skin, TextShadowSpec as SkinShadow,
-    TextStrokeSpec as SkinStroke,
+    Anchor, ColorRef, ColorRole, ContinueMotion, DecorLayer, DecorSpec, DecorWhen, Edge,
+    EffectDefaults, Side, Skin, TextAlign, TextShadowSpec as SkinShadow,
+    TextStrokeSpec as SkinStroke, anchor_frac, continue_motion, place, sprite_frame, tail_geometry,
 };
 
 use super::rich::{Env, Look, RevealPlan, effect_table, to_rich};
-use super::{Ui, c};
+use super::surface::{self, Surface, affine, calc, len};
+use super::{Ui, c, restyle};
 
 /// Base text look a document is drawn with (skin dialogue text or history text).
 #[derive(Clone, PartialEq)]
@@ -43,6 +46,7 @@ pub struct Base {
     pub effects: EffectDefaults,
     pub entrance: Entrance,
     pub reduced_motion: bool,
+    pub align: TextAlign,
 }
 
 impl Base {
@@ -66,6 +70,7 @@ impl Base {
             effects: skin.effects.clone(),
             entrance,
             reduced_motion: reduced,
+            align: t.align,
         }
     }
 
@@ -112,22 +117,16 @@ impl Base {
             self.size * self.line_height,
         ));
         if let Some(s) = &self.shadow {
-            l.paint.text_shadows = vec![TextShadowSpec {
-                offset_x: s.dx,
-                offset_y: s.dy,
-                blur_radius: s.blur,
-                color: c(s.color),
-                paint_color: None,
-            }];
+            surface::text_shadow(l, s);
         }
         if let Some(s) = &self.stroke {
-            l.paint.text_stroke = Some(TextStrokeSpec {
-                width: s.width,
-                color: Some(c(s.color)),
-                paint_color: None,
-            });
-            l.paint.paint_order_stroke_first = true;
+            surface::text_stroke(l, s);
         }
+        st.text_horizontal_alignment = match self.align {
+            TextAlign::Start => TextHorizontalAlignment::Start,
+            TextAlign::Center => TextHorizontalAlignment::Center,
+            TextAlign::End => TextHorizontalAlignment::End,
+        };
         st
     }
 }
@@ -175,75 +174,42 @@ pub fn document(ui: Ui, doc: &Document, base: &Base, timing: Timing) -> AnyView 
     widget(view).into_any()
 }
 
-fn nine_slice(frame: &NineSlice, url: String) -> BorderImageSpec {
-    let mut spec = BorderImageSpec::from_source(BackgroundImage::url(url));
-    spec.slice = frame.slice.map(|v| BorderImageSlice::Number(v as f32));
-    spec.fill = true;
-    spec
-}
-
-/// The box chrome (fill, border, glow, frame image) for the skin.
-fn box_layout(skin: &Skin, l: &mut LayoutStyle, frame_url: Option<String>) {
-    let b = &skin.dialogue.box_;
-    if let (Some(frame), Some(url)) = (&b.frame, frame_url) {
-        l.paint.border_image = Some(nine_slice(frame, url));
-        l.border_top_width = Some(frame.slice[0] as f32 * frame.scale);
-        l.border_right_width = Some(frame.slice[1] as f32 * frame.scale);
-        l.border_bottom_width = Some(frame.slice[2] as f32 * frame.scale);
-        l.border_left_width = Some(frame.slice[3] as f32 * frame.scale);
-        return;
-    }
-    l.background = Some(c(b.color));
-    l.border_radius = Some(b.radius);
-    if b.border_width > 0.0 {
-        l.border_width = Some(b.border_width);
-        l.border_color = Some(c(b.border_color));
-        l.border_style = Some(nana_ui_core::BorderStyle::Solid);
-    }
-    let mut shadows = Vec::new();
-    if let Some(inner) = b.inner_border_color {
-        // A second border drawn just inside the first.
-        shadows.push(BoxShadowSpec {
-            paint_color: None,
-            offset_x: 0.0,
-            offset_y: 0.0,
-            blur_radius: 0.0,
-            spread_radius: b.inner_border_width.max(1.0),
-            color: c(inner),
-            inset: true,
-        });
-    }
-    if let Some(glow) = b.glow {
-        shadows.push(BoxShadowSpec {
-            paint_color: None,
-            offset_x: 0.0,
-            offset_y: 0.0,
-            blur_radius: b.glow_blur,
-            spread_radius: 0.0,
-            color: c(glow),
-            inset: false,
-        });
-    }
-    if let Some(s) = &b.shadow {
-        shadows.push(BoxShadowSpec {
-            paint_color: None,
-            offset_x: s.dx,
-            offset_y: s.dy,
-            blur_radius: s.blur,
-            spread_radius: 0.0,
-            color: c(s.color),
-            inset: false,
-        });
-    }
-    l.paint.box_shadows = shadows;
-}
 /// What a dialogue box shows.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Source {
     /// The typewriter: the display view with its reveal.
     Display,
     /// The input window: the editor sits where the text goes.
     Draft,
+    /// The skin picker's sample: a fixed line, nothing animating on the box.
+    Preview,
+}
+
+/// Everything a box is built from, so the skin picker can draw a skin that
+/// is not the active one.
+#[derive(Clone)]
+pub struct BoxCtx {
+    pub skin: Arc<Skin>,
+    /// `skin:<path>` → URL for the skin's images.
+    pub urls: Arc<HashMap<String, String>>,
+    pub source: Source,
+    /// The speaker a preview shows.
+    pub preview_name: String,
+}
+
+impl BoxCtx {
+    fn active(ui: Ui, source: Source) -> Self {
+        Self {
+            skin: ui.skin.get_untracked(),
+            urls: ui.asset_urls.get_untracked(),
+            source,
+            preview_name: String::new(),
+        }
+    }
+
+    fn url(&self, path: &str) -> Option<String> {
+        self.urls.get(&format!("skin:{path}")).cloned()
+    }
 }
 
 /// A complete dialogue box filling its parent (region + overscan). In the
@@ -251,7 +217,7 @@ pub enum Source {
 /// keeps its selection and undo history.
 pub fn dialogue_box(ui: Ui, source: Source, editor: Option<AnyView>) -> AnyView {
     if let Some(editor) = editor {
-        return box_view(ui, source, editor).into_any();
+        return box_view(ui, BoxCtx::active(ui, source), editor).into_any();
     }
     let key = move || {
         let skin = ui.skin.get();
@@ -263,108 +229,146 @@ pub fn dialogue_box(ui: Ui, source: Source, editor: Option<AnyView>) -> AnyView 
             ui.portraits.with(|p| Arc::as_ptr(p) as usize),
         )
     };
-    dynamic(key, move |_| box_view(ui, source, content(ui).into_any())).into_any()
+    dynamic(key, move |_| {
+        box_view(ui, BoxCtx::active(ui, source), content(ui).into_any())
+    })
+    .into_any()
 }
 
-fn box_view(ui: Ui, source: Source, content: AnyView) -> impl IntoView {
-    let skin = ui.skin.get_untracked();
+/// A still box showing `doc` in `ctx.skin`, for the skin picker.
+pub fn preview_box(ui: Ui, ctx: BoxCtx, doc: &Document) -> AnyView {
+    let entrance = Entrance {
+        kind: EntranceKind::None,
+        ms: 0,
+    };
+    let base = Base::dialogue(&ctx.skin, entrance, ui.reduced_motion.get_untracked());
+    let text = document(ui, doc, &base, Timing::Static);
+    box_view(ui, ctx, text).into_any()
+}
+
+/// An absolutely placed overlay that never takes the pointer.
+fn overlay(l: &mut LayoutStyle) {
+    l.position = PositionSpec::Absolute;
+    l.pointer_events = Some(PointerEventsSpec::None);
+}
+
+/// A layer covering the box that puts its child at `anchor`; the child then
+/// moves by a paint transform, so content-sized parts (the name plate, the
+/// continue mark) anchor anywhere without knowing their own size.
+fn anchor_layer(anchor: Anchor, z: i32) -> Stack {
+    const ALIGN: [AlignSpec; 3] = [AlignSpec::Start, AlignSpec::Center, AlignSpec::End];
+    const JUSTIFY: [JustifySpec; 3] = [JustifySpec::Start, JustifySpec::Center, JustifySpec::End];
+    let [fx, fy] = anchor_frac(anchor).map(|f| (f * 2.0) as usize);
+    Stack::overlay_layer()
+        .align(ALIGN[fy])
+        .justify(JUSTIFY[fx])
+        .with_layout(move |l| {
+            // Parts sit on and past the box edge.
+            l.overflow_x = OverflowSpec::Visible;
+            l.overflow_y = OverflowSpec::Visible;
+            l.z_index = Some(z);
+        })
+}
+
+/// The box and everything around it:
+///
+/// ```text
+/// outer (overscan + margin)
+///  └ frame (the box's border box; fade and shake move all of it)
+///     ├ decor below ├ tail shadow
+///     ├ box └ text
+///     ├ tail ├ decor above ├ portrait ├ name plate ├ continue mark
+/// ```
+fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
+    let skin = ctx.skin.clone();
+    let source = ctx.source;
     let d = &skin.dialogue;
     let overscan = d.overscan;
-    let frame_url = ui.asset_urls.with_untracked(|urls| {
-        d.box_
-            .frame
-            .as_ref()
-            .and_then(|f| urls.get(&format!("skin:{}", f.image)).cloned())
-    });
+    let [mt, mr, mb, ml] = d.box_.margin;
     let width_fraction = d.box_.width_fraction;
     let padding = d.padding;
-    let skin_box = skin.clone();
-    let plate = nameplate(ui, source);
-    let portrait = portrait(ui);
-    let cont = continue_indicator(ui, source);
-    widget(Stack::fill_column(0.0).with_layout(move |l| {
-        l.padding_left = Some(LengthSpec::Px(overscan));
-        l.padding_right = Some(LengthSpec::Px(overscan));
-        l.padding_top = Some(LengthSpec::Px(overscan));
-        l.padding_bottom = Some(LengthSpec::Px(overscan));
+    let box_surface =
+        Surface::dialogue_box(&skin, d.box_.frame.as_ref().and_then(|f| ctx.url(&f.image)));
+    let (tail_below, tail_above) = tail(&ctx);
+    let below = decor_views(ui, &ctx, DecorLayer::Below);
+    let above = decor_views(ui, &ctx, DecorLayer::Above);
+    let plate = nameplate(ui, &ctx);
+    let portrait = portrait(ui, &ctx);
+    let cont = continue_indicator(ui, &ctx);
+
+    let mut outer = widget(Stack::fill_column(0.0).with_layout(move |l| {
+        l.padding_left = Some(LengthSpec::Px(overscan + ml));
+        l.padding_right = Some(LengthSpec::Px(overscan + mr));
+        l.padding_top = Some(LengthSpec::Px(overscan + mt));
+        l.padding_bottom = Some(LengthSpec::Px(overscan + mb));
         l.align_items = AlignSpec::Center;
-    }))
-    .bind(move |s: &mut Stack| {
-        let editing = source == Source::Display
-            && ui
+    }));
+    if source == Source::Display {
+        outer = outer.bind(move |s: &mut Stack| {
+            let editing = ui
                 .settings
                 .with(|x| x.overlays.display.lock == nanatype_settings::Lock::EditLayout);
-        let accent = c(ui.skin.with(|k| k.chrome.accent));
-        let mut taken = std::mem::replace(s, Stack::row(0.0));
-        taken = taken.with_layout(|l| edit_outline(l, editing, accent));
-        *s = taken;
-    })
-    .children(
-        widget(
-            Stack::fill_column(0.0)
-                .width(LengthSpec::Percent(width_fraction * 100.0))
-                .with_layout(move |l| {
-                    l.position = PositionSpec::Relative;
-                    box_layout(&skin_box, l, frame_url);
-                    l.padding_left = Some(LengthSpec::Px(padding[0]));
-                    l.padding_top = Some(LengthSpec::Px(padding[1]));
-                    l.padding_right = Some(LengthSpec::Px(padding[2]));
-                    l.padding_bottom = Some(LengthSpec::Px(padding[3]));
-                    l.overflow_x = OverflowSpec::Visible;
-                    l.overflow_y = OverflowSpec::Visible;
-                }),
-        )
-        .bind(move |s: &mut Stack| {
+            let accent = c(ui.skin.with(|k| k.chrome.accent));
+            restyle(s, |l| edit_outline(l, editing, accent));
+        });
+    }
+
+    let mut frame = widget(
+        Stack::fill_column(0.0)
+            .width(LengthSpec::Percent(width_fraction * 100.0))
+            .with_layout(|l| {
+                l.position = PositionSpec::Relative;
+                l.overflow_x = OverflowSpec::Visible;
+                l.overflow_y = OverflowSpec::Visible;
+            }),
+    );
+    if source == Source::Display {
+        frame = frame.bind(move |s: &mut Stack| {
             // Whole-box fade and screen shake.
             let view = ui.display.get();
             let now = ui.now.get();
-            let (opacity, dx, dy) = if source == Source::Display {
-                let fade = view
-                    .fade
-                    .map(|(at, ms)| {
-                        1.0 - (now.saturating_sub(at) as f32 / ms.max(1) as f32).clamp(0.0, 1.0)
-                    })
-                    .unwrap_or(1.0);
-                let opacity = if view.empty { 0.0 } else { fade };
-                let (dx, dy) = match view.shake {
-                    Some(sh) if now < sh.at_ms + u64::from(sh.ms) && !ui.reduced_motion.get() => {
-                        let left = 1.0 - (now - sh.at_ms) as f32 / sh.ms.max(1) as f32;
-                        let step = now / 16;
-                        (
-                            noise(1, step) * sh.amp * left,
-                            noise(2, step) * sh.amp * left,
-                        )
-                    }
-                    _ => (0.0, 0.0),
-                };
-                (opacity, dx, dy)
-            } else {
-                (1.0, 0.0, 0.0)
+            let fade = view
+                .fade
+                .map(|(at, ms)| {
+                    1.0 - (now.saturating_sub(at) as f32 / ms.max(1) as f32).clamp(0.0, 1.0)
+                })
+                .unwrap_or(1.0);
+            let opacity = if view.empty { 0.0 } else { fade };
+            let (dx, dy) = match view.shake {
+                Some(sh) if now < sh.at_ms + u64::from(sh.ms) && !ui.reduced_motion.get() => {
+                    let left = 1.0 - (now - sh.at_ms) as f32 / sh.ms.max(1) as f32;
+                    let step = now / 16;
+                    (
+                        noise(1, step) * sh.amp * left,
+                        noise(2, step) * sh.amp * left,
+                    )
+                }
+                _ => (0.0, 0.0),
             };
-            let mut taken = std::mem::replace(s, Stack::row(0.0));
-            taken = taken.with_layout(|l| {
+            restyle(s, |l| {
                 l.opacity = Some(opacity);
-                l.transform = (dx != 0.0 || dy != 0.0).then_some(PaintTransform {
-                    a: 1.0,
-                    b: 0.0,
-                    c: 0.0,
-                    d: 1.0,
-                    e: dx,
-                    f: dy,
-                });
+                l.transform = (dx != 0.0 || dy != 0.0).then_some(affine(dx, dy, 0.0, 1.0));
             });
-            *s = taken;
-        })
-        .children((
-            portrait,
-            plate,
-            widget(Stack::fill_column(0.0).with_layout(|l| {
-                l.overflow_y = OverflowSpec::Hidden;
-            }))
-            .children(content),
-            cont,
-        )),
-    )
+        });
+    }
+
+    let the_box = widget(Stack::fill_column(0.0).with_layout(move |l| {
+        box_surface.apply(l);
+        l.padding_left = Some(LengthSpec::Px(padding[0]));
+        l.padding_top = Some(LengthSpec::Px(padding[1]));
+        l.padding_right = Some(LengthSpec::Px(padding[2]));
+        l.padding_bottom = Some(LengthSpec::Px(padding[3]));
+    }))
+    .children(
+        widget(Stack::fill_column(0.0).with_layout(|l| {
+            l.overflow_y = OverflowSpec::Hidden;
+        }))
+        .children(content),
+    );
+
+    outer.children(frame.children((
+        below, tail_below, the_box, tail_above, above, portrait, plate, cont,
+    )))
 }
 
 /// A dashed frame and a faint fill while a window is in layout mode, so it
@@ -408,86 +412,99 @@ fn noise(i: u32, step: u64) -> f32 {
     (x as u32) as f32 / u32::MAX as f32 * 2.0 - 1.0
 }
 
-fn nameplate(ui: Ui, source: Source) -> impl IntoView {
-    let skin = ui.skin.get_untracked();
-    let p = skin.dialogue.nameplate.clone();
-    let (ox, oy) = content_origin(&skin);
-    let body_family = skin.fonts.name.families.first().cloned();
-    let name = move || match source {
+/// The speaker's name for the box's source, tracked.
+fn speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> String + Send + 'static {
+    let source = ctx.source;
+    let preview = ctx.preview_name.clone();
+    move || match source {
         Source::Display => ui.display.with(|v| v.speaker.name.clone()),
         Source::Draft => ui.settings.with(|s| s.general.speaker_name.clone()),
-    };
+        Source::Preview => preview.clone(),
+    }
+}
+
+/// Whether a speaker is showing (the typewriter hides when empty), tracked.
+fn has_speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> bool + Send + 'static {
+    let source = ctx.source;
+    let preview = !ctx.preview_name.trim().is_empty();
+    move || match source {
+        Source::Display => ui
+            .display
+            .with(|v| !v.empty && !v.speaker.name.trim().is_empty()),
+        Source::Draft => ui
+            .settings
+            .with(|s| !s.general.speaker_name.trim().is_empty()),
+        Source::Preview => preview,
+    }
+}
+
+fn nameplate(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
+    let skin = ctx.skin.clone();
+    let p = skin.dialogue.nameplate.clone();
+    let plate = Surface::nameplate(&skin, p.frame.as_ref().and_then(|f| ctx.url(&f.image)));
     let mut st = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut st.layout);
         l.font_size = Some(p.size);
         l.font_weight = Some(skin.fonts.name.weight.max(600));
-        l.font_family = body_family;
+        l.font_family = skin.fonts.name.families.first().cloned();
         l.color = Some(c(p.text_color));
+        l.white_space_nowrap = true;
         if let Some(stroke) = &p.stroke {
-            l.paint.text_shadow = Some(TextShadowSpec {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                blur_radius: stroke.width * 1.5,
-                color: c(stroke.color),
-                paint_color: None,
-            });
+            surface::text_stroke(l, stroke);
+        }
+        if let Some(s) = &p.text_shadow {
+            surface::text_shadow(l, s);
         }
     }
     let visible = p.visible;
-    widget(
-        Stack::row(0.0)
-            .padding_xy(p.padding[0], p.padding[1])
-            .with_layout(move |l| {
-                l.position = PositionSpec::Absolute;
-                l.offset_left = Some(LengthSpec::Px(p.offset[0] - ox));
-                l.offset_top = Some(LengthSpec::Px(p.offset[1] - oy));
-                l.background = Some(c(p.color));
-                l.border_radius = Some(p.radius);
-                l.z_index = Some(2);
-            }),
-    )
-    .visible(move || {
-        visible
-            && !name().trim().is_empty()
-            && !(source == Source::Display && ui.display.with(|v| v.empty))
-    })
-    .children(widget(Text::new("").style(st)).bind(move |t: &mut Text| {
-        let n = match source {
-            Source::Display => ui.display.with(|v| v.speaker.name.clone()),
-            Source::Draft => ui.settings.with(|s| s.general.speaker_name.clone()),
-        };
-        if t.value != n {
-            t.value = n;
-        }
-    }))
+    let name = speaker(ui, ctx);
+    let named = has_speaker(ui, ctx);
+    let [ox, oy] = p.offset;
+    let rotate = p.rotate;
+    widget(anchor_layer(p.anchor, 3))
+        .visible(move || visible && named())
+        .children(
+            widget(
+                Stack::row(0.0)
+                    .padding_xy(p.padding[0], p.padding[1])
+                    .with_layout(move |l| {
+                        plate.apply(l);
+                        l.transform = Some(affine(ox, oy, rotate, 1.0));
+                    }),
+            )
+            .children(widget(Text::new("").style(st)).bind(move |t: &mut Text| {
+                let n = name();
+                if t.value != n {
+                    t.value = n;
+                }
+            })),
+        )
 }
 
-fn portrait(ui: Ui) -> impl IntoView {
-    let skin = ui.skin.get_untracked();
-    let p = skin.dialogue.portrait.clone();
+fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
+    let p = ctx.skin.dialogue.portrait.clone();
+    let source = ctx.source;
     let [w, h] = p.size;
-    let pad = skin.dialogue.padding;
     widget(
         Stack::row(0.0)
             .width(LengthSpec::Px(w))
             .height(LengthSpec::Px(h))
             .with_layout(move |l| {
-                l.position = PositionSpec::Absolute;
-                l.offset_bottom = Some(LengthSpec::Px(p.offset[1] - pad[3]));
+                overlay(l);
+                l.offset_bottom = Some(LengthSpec::Px(p.offset[1]));
                 match p.side {
-                    Side::Left => {
-                        l.offset_left = Some(LengthSpec::Px(-w * 0.5 + p.offset[0] - pad[0]))
-                    }
-                    Side::Right => {
-                        l.offset_right = Some(LengthSpec::Px(-w * 0.5 - p.offset[0] - pad[2]))
-                    }
+                    Side::Left => l.offset_left = Some(LengthSpec::Px(-w * 0.5 + p.offset[0])),
+                    Side::Right => l.offset_right = Some(LengthSpec::Px(-w * 0.5 - p.offset[0])),
                 }
                 l.border_radius = Some(p.radius);
-                l.pointer_events = Some(PointerEventsSpec::None);
             }),
     )
-    .visible(move || ui.skin.with(|s| s.dialogue.portrait.visible) && !ui.display.with(|v| v.empty))
+    .visible(move || {
+        source != Source::Preview
+            && ui.skin.with(|s| s.dialogue.portrait.visible)
+            && !(source == Source::Display && ui.display.with(|v| v.empty))
+    })
     .bind(move |s: &mut Stack| {
         let variant = ui.display.with(|v| v.portrait.clone());
         let url = ui.portraits.with(|map| {
@@ -497,77 +514,220 @@ fn portrait(ui: Ui) -> impl IntoView {
                 .or_else(|| map.get("default"))
                 .cloned()
         });
-        let mut taken = std::mem::replace(s, Stack::row(0.0));
-        taken = taken.with_layout(|l| {
+        restyle(s, |l| {
             l.paint.background_image =
                 url.map(|u| BackgroundImage::url_with_fit(u, BackgroundImageFit::Contain));
         });
-        *s = taken;
     })
 }
 
-fn continue_indicator(ui: Ui, source: Source) -> impl IntoView {
-    let skin = ui.skin.get_untracked();
-    let cs = skin.dialogue.continue_.clone();
-    let url = cs.image.as_ref().map(|i| format!("skin:{i}"));
-    let image = url.and_then(|u| ui.asset_urls.with_untracked(|m| m.get(&u).cloned()));
+fn decor_view(ui: Ui, ctx: &BoxCtx, dec: &DecorSpec) -> AnyView {
+    let skin = &ctx.skin;
+    let shape = Surface::decor(skin, dec);
+    let placement = place(dec.anchor, dec.offset, dec.size);
+    let [width, height] = dec.size.map(len);
+    let inset = dec.inset;
+    let mut el = widget(
+        Stack::row(0.0)
+            .align(AlignSpec::Center)
+            .justify(JustifySpec::Center)
+            .with_layout(move |l| {
+                overlay(l);
+                match inset {
+                    Some([t, r, b, left]) => {
+                        l.offset_top = Some(LengthSpec::Px(t));
+                        l.offset_right = Some(LengthSpec::Px(r));
+                        l.offset_bottom = Some(LengthSpec::Px(b));
+                        l.offset_left = Some(LengthSpec::Px(left));
+                    }
+                    None => {
+                        l.offset_left = Some(calc(placement.left.percent, placement.left.px));
+                        l.offset_top = Some(calc(placement.top.percent, placement.top.px));
+                        l.width = Some(width);
+                        l.height = Some(height);
+                    }
+                }
+                shape.apply(l);
+            }),
+    );
+    if dec.when == DecorWhen::Speaker {
+        el = el.visible(has_speaker(ui, ctx));
+    }
+    if dec.text.is_empty() {
+        return el.into_any();
+    }
+    let font = skin.fonts.role(dec.font);
     let mut st = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut st.layout);
-        l.font_size = Some(cs.size);
-        l.color = Some(c(cs.color));
+        l.font_size = Some(dec.text_size);
+        l.font_weight = Some(font.weight);
+        l.font_family = font.families.first().cloned();
+        l.color = Some(c(skin.color(dec.text_color)));
+        l.white_space_nowrap = true;
+        l.line_height = Some(nana_ui_core::LineHeightSpec::Absolute(dec.text_size * 1.2));
     }
-    let size = cs.size;
-    let bob = cs.bob_px;
-    let child: AnyView = match image {
-        Some(u) => widget(
+    el.children(widget(Text::new(dec.text.clone()).decorative().style(st)))
+        .into_any()
+}
+
+fn decor_views(ui: Ui, ctx: &BoxCtx, layer: DecorLayer) -> Vec<AnyView> {
+    ctx.skin
+        .dialogue
+        .decor
+        .iter()
+        .filter(|d| d.layer == layer)
+        .map(|d| decor_view(ui, ctx, d))
+        .collect()
+}
+
+/// The tail's shadow triangles (drawn under the box) and its border and
+/// fill triangles (drawn over the box border, so the tail opens into it).
+fn tail(ctx: &BoxCtx) -> (Vec<AnyView>, Vec<AnyView>) {
+    let skin = &ctx.skin;
+    let Some(t) = &skin.dialogue.tail else {
+        return (Vec::new(), Vec::new());
+    };
+    let b = &skin.dialogue.box_;
+    let edge = t.side;
+    let border = b.border_widths()[edge.index()];
+    let g = tail_geometry(t, border);
+    let fill = c(skin.color(t.color.unwrap_or(ColorRef::Role(ColorRole::Box))));
+    let along = t.at * 100.0;
+    let [x, y, w, h] = g.rect;
+    let node = move |dx: f32, dy: f32, shape: Surface| -> AnyView {
+        widget(
             Stack::row(0.0)
-                .width(LengthSpec::Px(size * 1.4))
-                .height(LengthSpec::Px(size * 1.4))
+                .width(LengthSpec::Px(w))
+                .height(LengthSpec::Px(h))
                 .with_layout(move |l| {
-                    l.paint.background_image = Some(BackgroundImage::url_with_fit(
-                        u,
-                        BackgroundImageFit::Contain,
-                    ));
+                    overlay(l);
+                    let (left, top) = match edge {
+                        Edge::Bottom => (calc(along, x + dx), calc(100.0, y + dy)),
+                        Edge::Top => (calc(along, x + dx), LengthSpec::Px(y + dy)),
+                        Edge::Right => (calc(100.0, x + dx), calc(along, y + dy)),
+                        Edge::Left => (LengthSpec::Px(x + dx), calc(along, y + dy)),
+                    };
+                    l.offset_left = Some(left);
+                    l.offset_top = Some(top);
+                    shape.apply(l);
                 }),
         )
-        .into_any(),
-        None => widget(Text::new(cs.glyph.clone()).decorative().style(st)).into_any(),
+        .into_any()
     };
-    let pad = skin.dialogue.padding;
-    widget(Stack::row(0.0).with_layout(move |l| {
-        l.position = PositionSpec::Absolute;
-        l.offset_right = Some(LengthSpec::Px(14.0 - pad[2]));
-        l.offset_bottom = Some(LengthSpec::Px(8.0 - pad[3]));
-    }))
-    .visible(move || {
-        source == Source::Display && ui.display.with(|v| v.continue_indicator && !v.empty)
-    })
-    .bind(move |s: &mut Stack| {
-        let now = ui.now.get();
-        let dy = if ui.reduced_motion.get() {
-            0.0
-        } else {
-            ((now as f32 / 1000.0) * TAU * 1.2).sin().abs() * -bob
-        };
-        let mut taken = std::mem::replace(s, Stack::row(0.0));
-        taken = taken.with_layout(|l| {
-            l.transform = Some(PaintTransform {
-                a: 1.0,
-                b: 0.0,
-                c: 0.0,
-                d: 1.0,
-                e: 0.0,
-                f: dy,
+    let mut below = Vec::new();
+    if t.shadow {
+        // Hard outer shadows have a crisp outline the tail can repeat.
+        for s in b.shadow_layers() {
+            if s.blur == 0.0 && s.spread == 0.0 && !s.inset {
+                let color = c(skin.color(s.color));
+                below.push(node(s.dx, s.dy, Surface::tail_part(color, &g.outer)));
+            }
+        }
+    }
+    let mut above = Vec::new();
+    if border > 0.0 {
+        above.push(node(
+            0.0,
+            0.0,
+            Surface::tail_part(c(b.border_color), &g.outer),
+        ));
+    }
+    above.push(node(0.0, 0.0, Surface::tail_part(fill, &g.inner)));
+    (below, above)
+}
+
+fn continue_indicator(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
+    let source = ctx.source;
+    let cs = ctx.skin.dialogue.continue_.clone();
+    let image = cs.image.as_ref().and_then(|i| ctx.url(i));
+    let hidden = image.is_none() && cs.glyph.is_empty();
+    let frames = cs.frames.max(1);
+    let fps = cs.fps;
+    let child: AnyView = match image {
+        Some(u) => {
+            let [iw, ih] = cs.image_size.unwrap_or([cs.size * 1.4; 2]);
+            let sheet: Vec<BackgroundImage> = (0..frames).map(|i| sprite(&u, frames, i)).collect();
+            let first = sheet[0].clone();
+            let mut el = widget(
+                Stack::row(0.0)
+                    .width(LengthSpec::Px(iw))
+                    .height(LengthSpec::Px(ih))
+                    .with_layout(move |l| l.paint.background_image = Some(first)),
+            );
+            if frames > 1 && source == Source::Display {
+                let shown = AtomicU32::new(0);
+                el = el.bind(move |s: &mut Stack| {
+                    let f = sprite_frame(frames, fps, ui.now.get() as f32 / 1000.0);
+                    if shown.swap(f, Ordering::Relaxed) != f {
+                        let image = sheet[f as usize].clone();
+                        restyle(s, |l| l.paint.background_image = Some(image));
+                    }
+                });
+            }
+            el.into_any()
+        }
+        None => {
+            let mut st = NodeStyle::default();
+            {
+                let l = Arc::make_mut(&mut st.layout);
+                l.font_size = Some(cs.size);
+                l.color = Some(c(cs.color));
+                l.white_space_nowrap = true;
+            }
+            widget(Text::new(cs.glyph.clone()).decorative().style(st)).into_any()
+        }
+    };
+    let [ox, oy] = cs.offset;
+    let (motion, bob, period) = (cs.motion, cs.bob_px, cs.period_s);
+    let mut mark =
+        widget(Stack::row(0.0).with_layout(move |l| l.transform = Some(affine(ox, oy, 0.0, 1.0))));
+    if source == Source::Display && motion != ContinueMotion::None {
+        mark = mark.bind(move |s: &mut Stack| {
+            let (dy, opacity, scale) = if ui.reduced_motion.get() {
+                (0.0, 1.0, 1.0)
+            } else {
+                continue_motion(motion, bob, period, ui.now.get() as f32 / 1000.0)
+            };
+            restyle(s, |l| {
+                l.transform = Some(affine(ox, oy + dy, 0.0, scale));
+                l.opacity = Some(opacity);
             });
         });
-        *s = taken;
-    })
-    .children(child)
+    }
+    widget(anchor_layer(cs.anchor, 3))
+        .visible(move || {
+            !hidden
+                && match source {
+                    Source::Display => ui.display.with(|v| v.continue_indicator && !v.empty),
+                    Source::Draft => false,
+                    Source::Preview => true,
+                }
+        })
+        .children(mark.children(child))
+}
+
+/// Frame `i` of a horizontal sprite sheet of `frames` frames.
+fn sprite(url: &str, frames: u32, i: u32) -> BackgroundImage {
+    if frames <= 1 {
+        return BackgroundImage::url_with_fit(url.to_owned(), BackgroundImageFit::Contain);
+    }
+    BackgroundImage::Url {
+        url: url.to_owned(),
+        fit: BackgroundImageFit::Length,
+        size_width: Some(LengthSpec::Percent(frames as f32 * 100.0)),
+        size_height: Some(LengthSpec::Percent(100.0)),
+        position: BackgroundPosition {
+            x: LengthSpec::Percent(i as f32 / (frames - 1) as f32 * 100.0),
+            y: LengthSpec::Percent(0.0),
+        },
+        repeat: BackgroundRepeat::NoRepeat,
+        sampling: nana_ui_core::ImageSampling::Resample,
+    }
 }
 
 /// Whether the display needs frames for the box itself (fade, shake, the
-/// continue indicator). Text reveal and effects request their own frames.
+/// continue mark). Text reveal and effects request their own frames.
 pub fn display_animating(ui: Ui, now: u64) -> bool {
     let view = ui.display.get_untracked();
     if view.empty {
@@ -583,7 +743,11 @@ pub fn display_animating(ui: Ui, now: u64) -> bool {
     {
         return true;
     }
-    view.continue_indicator && !ui.reduced_motion.get_untracked()
+    let moves = ui.skin.with_untracked(|s| {
+        let c = &s.dialogue.continue_;
+        c.motion != ContinueMotion::None || (c.image.is_some() && c.frames > 1)
+    });
+    view.continue_indicator && moves && !ui.reduced_motion.get_untracked()
 }
 
 pub fn has_effects(doc: &Document) -> bool {
@@ -595,11 +759,4 @@ pub fn has_effects(doc: &Document) -> bool {
             Inline::Marker(_) => false,
         })
     })
-}
-
-/// Absolute children are placed from the box's content edge; skin offsets
-/// are from its border edge.
-fn content_origin(skin: &Skin) -> (f32, f32) {
-    let pad = skin.dialogue.padding;
-    (pad[0], pad[1])
 }

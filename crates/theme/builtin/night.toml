@@ -1,10 +1,11 @@
 [meta]
 id = "nanatype.night"
-version = "1.0.0"
+version = "2.0.0"
 author = "NanaType"
 license = "CC0-1.0"
+tags = ["classic"]
 name = { zh-CN = "夜色", en-US = "Night", ja-JP = "夜色" }
-description = { zh-CN = "深色半透明框与发光描边", en-US = "Dark translucent box with a glowing edge", ja-JP = "発光する縁取りの半透明ダーク" }
+description = { zh-CN = "深蓝玻璃底、霓虹描边与流光下划线", en-US = "Deep-blue glass with a neon edge and a glowing underline", ja-JP = "深い青のガラスにネオンの縁取りと光るライン" }
 
 [chrome]
 appearance = "dark"
@@ -18,29 +19,55 @@ success = "#48d296"
 warning = "#ffc85a"
 danger = "#ff7a96"
 
+[dialogue]
+padding = [26, 26, 26, 16]
+
 [dialogue.box]
-color = "#101c2ce6"
+color = "#0b1220f0"
 border_color = "#5cb8ff"
 border_width = 1.5
+radius = 16
 glow = "#5cb8ff80"
 glow_blur = 14
+gradient = { stops = [[0, "#101c2cf2"], [1, "#0b1220f2"]] }
+shadows = [{ color = "#5cb8ff30", blur = 14, inset = true }]
+
+# Neon underline fading out at both ends.
+[[dialogue.decor]]
+anchor = "bottom"
+offset = [0, 1]
+size = ["70%", 2]
+gradient = { angle = 90, stops = [[0, "#55ccff00"], [0.3, "#55ccff"], [0.7, "#a07cff"], [1, "#a07cff00"]] }
+shadows = [{ color = "#5cb8ff99", blur = 8 }]
 
 [dialogue.text]
 color = "#bae0ff"
-shadow = { color = "#5cb8ff66", blur = 6 }
+shadow = { color = "#5cb8ff88", blur = 6 }
 
 [dialogue.nameplate]
-color = "#5cb8ff"
-text_color = "#0b1a2a"
+color = "#0b1220"
+text_color = "#e4f4ff"
+radius = 6
+padding = [12, 3]
+offset = [20, -15]
+border_color = "#5cb8ff"
+border_width = 1.5
+shadows = [{ color = "#5cb8ff66", blur = 10 }]
+text_shadow = { color = "#5cb8ff", blur = 8 }
 
 [dialogue.continue]
 color = "#5cb8ff"
+motion = "blink"
+period_s = 1.0
 
 [history]
 name_color = "#5cb8ff"
-bubble_color = "#101c2ce0"
+bubble_color = "#0b1220e6"
 bubble_border = "#5cb8ff66"
+bubble_radius = 12
+bubble_shadows = [{ color = "#5cb8ff33", blur = 10 }]
 time_color = "#84a0bc"
+avatar = { shape = "circle", size = 40, ring_color = "#5cb8ff", ring_width = 1.5 }
 
 [history.text]
 color = "#d4ebff"

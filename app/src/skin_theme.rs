@@ -5,7 +5,8 @@
 //! accent, focus) are mixed from the few colours a skin states. User
 //! overrides from the settings are applied on top of the skin first.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use nana_ui::CompiledTheme;
 use nana_ui::theme::{AccentRamp, SemanticColor, SemanticPalette, ThemeDefinition, ThemeId};
@@ -22,10 +23,13 @@ pub fn with_overrides(skin: &Skin, o: &SkinOverrides) -> Skin {
     }
     if let Some(c) = o.name_color {
         s.dialogue.nameplate.color = c;
+        s.dialogue.nameplate.shape.gradient = None;
         s.history.name_color = c;
     }
     if let Some(c) = o.box_color {
+        // A gradient would paint over the chosen colour.
         s.dialogue.box_.color = c;
+        s.dialogue.box_.shape.gradient = None;
     }
     if let Some(c) = o.accent {
         s.chrome.accent = c;
@@ -38,6 +42,40 @@ pub fn with_overrides(skin: &Skin, o: &SkinOverrides) -> Skin {
         s.dialogue.region = region;
     }
     s
+}
+
+/// The skin as drawn: the user's personalisation applied, and each font
+/// role's family resolved. `bundled` are the families registered from the
+/// skin's own font files (body, name, accent), which always come first.
+pub fn prepare(base: &Skin, overrides: &SkinOverrides, bundled: &[Option<String>; 3]) -> Skin {
+    let mut skin = with_overrides(base, overrides);
+    for (spec, family) in skin.fonts.roles_mut().into_iter().zip(bundled) {
+        if let Some(family) = family {
+            spec.families.insert(0, family.clone());
+        }
+        // NanaUI takes a single family name, so the fallback list is resolved
+        // here: the first installed family goes first.
+        if let Some(i) = spec.families.iter().position(|f| installed(f))
+            && i > 0
+        {
+            let family = spec.families.remove(i);
+            spec.families.insert(0, family);
+        }
+    }
+    skin
+}
+
+/// Whether the text engine shapes with `family` itself rather than a
+/// fallback. Cached: the answer only changes when fonts are installed.
+fn installed(family: &str) -> bool {
+    static CACHE: LazyLock<Mutex<HashMap<String, bool>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    *cache.entry(family.to_owned()).or_insert_with(|| {
+        nana_ui::shaped_face_families(family, "Aa字")
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case(family))
+    })
 }
 
 pub fn rgba(c: Rgba8) -> [f32; 4] {

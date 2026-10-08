@@ -199,6 +199,20 @@ skins-installed = 已安装「{ $name }」
 skins-replaced = 已将「{ $name }」从 { $previous } 更新
 skins-import-failed = 皮肤无法导入
 skins-fallback = 皮肤「{ $id }」无法加载，已改用默认皮肤
+skins-preview = 预览
+skins-preview-show = 预览这款皮肤
+skins-preview-name = 奈奈
+skins-preview-line = 大家好！今天也来[b]打字[/b]啦～[wave]波浪[/wave]、[rainbow]彩虹[/rainbow]和[shake]抖动[/shake]都可以哦。
+skins-filter-all = 全部
+skins-tag-light = 浅色
+skins-tag-dark = 深色
+skins-tag-classic = 经典
+skins-tag-streaming = 直播
+skins-tag-game = 游戏
+skins-tag-retro = 复古
+skins-tag-cute = 可爱
+skins-tag-elegant = 雅致
+skins-tag-minimal = 简约
 
 ## 窗口
 windows-input = 输入框

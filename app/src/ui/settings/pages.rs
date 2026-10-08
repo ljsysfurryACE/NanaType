@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use nana_ui::icons_tabler as ti;
-use nana_ui::runtime::view::{AnyView, IntoView, dynamic, widget};
-use nana_ui::runtime::{Activate, Button, IconButton, Stack, StatusBadge, Text};
+use nana_ui::runtime::view::{AnyView, IntoView, Signal, dynamic, signal, widget};
+use nana_ui::runtime::{Activate, Button, Chip, IconButton, Stack, StatusBadge, Text};
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
-use nana_ui_core::{AlignSpec, LengthSpec, SemanticColorRole};
+use nana_ui_core::{
+    AlignSpec, BackgroundImage, CssGradient, GradientStop, LengthSpec, LinearGradient,
+    OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, TransformOrigin,
+};
 use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind};
 use nanatype_playback::QueuePolicy;
@@ -17,7 +21,8 @@ use super::Page;
 use super::controls::*;
 use crate::msg::{FileTarget, GlobalAction, Msg};
 use crate::services::hotkeys::HotkeyState;
-use crate::ui::{I18N, Ui};
+use crate::ui::dialogue::{self, BoxCtx, Source};
+use crate::ui::{I18N, SkinRow, Ui};
 use crate::windows::WindowKind;
 
 pub fn page(ui: Ui, page: Page) -> AnyView {
@@ -512,18 +517,23 @@ fn playback(ui: Ui) -> AnyView {
 }
 
 fn skins(ui: Ui) -> AnyView {
+    let filter: Signal<Option<String>> = signal(None);
+    let previewing: Signal<Option<String>> = signal(None);
     let list = dynamic(
         move || {
             (
                 ui.skins.with(|s| Arc::as_ptr(s) as usize),
                 ui.settings.with(|s| s.skin.id.clone()),
+                filter.get(),
             )
         },
-        move |(_, active)| {
+        move |(_, active, shown)| {
+            let locale = ui.locale.get_untracked();
             let rows: Vec<AnyView> = ui
                 .skins
                 .get_untracked()
                 .iter()
+                .filter(|skin| matches_filter(skin, shown.as_deref()))
                 .map(|skin| {
                     let id = skin.id.clone();
                     let selected = skin.id == *active;
@@ -544,6 +554,9 @@ fn skins(ui: Ui) -> AnyView {
                     };
                     let detail = match &skin.error {
                         Some(e) => format!("{} · {e}", ui.now_t("skins-broken")),
+                        None if !skin.description.is_empty() && skin.builtin => {
+                            skin.description.clone()
+                        }
                         None if skin.builtin => ui.now_t("skins-builtin"),
                         None => format!(
                             "{} · {}",
@@ -560,10 +573,24 @@ fn skins(ui: Ui) -> AnyView {
                         ),
                     };
                     let usable = skin.error.is_none();
-                    let (eid, did, rid) = (id.clone(), id.clone(), id.clone());
+                    let (eid, did, rid, pid) = (id.clone(), id.clone(), id.clone(), id.clone());
                     let folder = skin.folder.clone();
                     let builtin = skin.builtin;
+                    let looked = id.clone();
                     let actions = widget(Stack::row(4.0)).children((
+                        widget(
+                            IconButton::new(ti::EYE, ui.now_t("skins-preview-show"))
+                                .size(ControlSize::Small)
+                                .disabled(!usable)
+                                .with_tooltip(ui.now_t("skins-preview-show")),
+                        )
+                        .bind(move |b: &mut IconButton| {
+                            b.selected = previewing.with(|p| match p {
+                                Some(p) => *p == looked,
+                                None => ui.settings.with(|s| s.skin.id == looked),
+                            });
+                        })
+                        .on_cx(move |_, _: &Activate, _| previewing.set(Some(pid.clone()))),
                         widget(
                             IconButton::new(ti::COPY, ui.now_t("skins-duplicate"))
                                 .size(ControlSize::Small)
@@ -618,8 +645,11 @@ fn skins(ui: Ui) -> AnyView {
                             swatch(skin.text_color),
                             swatch(skin.accent),
                         )),
-                        widget(Stack::column(2.0).width(LengthSpec::Fill))
-                            .children((label(skin.name.clone()), hint(detail))),
+                        widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
+                            widget(Stack::row(6.0).align(AlignSpec::Center))
+                                .children((label(skin.name.clone()), badges(locale, skin))),
+                            hint(detail),
+                        )),
                         actions,
                         if selected {
                             widget(
@@ -653,7 +683,17 @@ fn skins(ui: Ui) -> AnyView {
                 .children(primary(ui, "skins-import", || {
                     Msg::PickFile(FileTarget::ImportSkin)
                 })),
-            section(ui, "skins-active", vec![list.into_any()]),
+            section(ui, "skins-preview", vec![skin_preview(ui, previewing)]),
+            section(
+                ui,
+                "skins-active",
+                vec![
+                    widget(Stack::column(0.0).padding_xy(16.0, 10.0))
+                        .children(skin_filters(ui, filter))
+                        .into_any(),
+                    list.into_any(),
+                ],
+            ),
             section(
                 ui,
                 "skins-overrides",
@@ -769,6 +809,209 @@ fn skins(ui: Ui) -> AnyView {
             ),
         ))
         .into_any()
+}
+
+/// Width the skin preview is scaled down to fit.
+const PREVIEW_W: f32 = 600.0;
+
+/// `light`, `dark` or a tag from [`nanatype_theme::SKIN_TAGS`], localized.
+fn tag_label(locale: Locale, tag: &str) -> String {
+    I18N.t_in(locale, &format!("skins-tag-{tag}"))
+}
+
+/// The light/dark badge and the tag badges of a skin that loads.
+fn badges(locale: Locale, row: &SkinRow) -> Vec<AnyView> {
+    if row.error.is_some() {
+        return Vec::new();
+    }
+    let tone = if row.dark { "dark" } else { "light" };
+    std::iter::once(tone)
+        .chain(row.tags.iter().map(String::as_str))
+        .map(|t| {
+            widget(StatusBadge::new(tag_label(locale, t), StatusTone::Neutral).compact(true))
+                .into_any()
+        })
+        .collect()
+}
+
+/// Whether `row` passes the picker's filter (`light`, `dark` or a tag).
+fn matches_filter(row: &SkinRow, filter: Option<&str>) -> bool {
+    match filter {
+        None => true,
+        Some("light") => !row.dark,
+        Some("dark") => row.dark,
+        Some(tag) => row.tags.iter().any(|t| t == tag),
+    }
+}
+
+/// Chips that narrow the list: all, light, dark, then every tag in use.
+fn skin_filters(ui: Ui, filter: Signal<Option<String>>) -> AnyView {
+    dynamic(
+        move || {
+            (
+                filter.get(),
+                ui.skins.with(|s| Arc::as_ptr(s) as usize),
+                ui.locale.get(),
+            )
+        },
+        move |(current, _, locale)| {
+            let rows = ui.skins.get_untracked();
+            let mut keys: Vec<Option<String>> =
+                vec![None, Some("light".into()), Some("dark".into())];
+            for tag in nanatype_theme::SKIN_TAGS {
+                if rows.iter().any(|r| r.tags.iter().any(|t| t == tag)) {
+                    keys.push(Some((*tag).to_owned()));
+                }
+            }
+            let chips: Vec<AnyView> = keys
+                .into_iter()
+                .map(|key| {
+                    let text = match &key {
+                        None => I18N.t_in(*locale, "skins-filter-all"),
+                        Some(tag) => tag_label(*locale, tag),
+                    };
+                    let selected = *current == key;
+                    widget(Chip::new(text).selected(selected).size(ControlSize::Small))
+                        .on_cx(move |_, _: &Activate, _| filter.set(key.clone()))
+                        .into_any()
+                })
+                .collect();
+            widget(Stack::row(6.0).wrap(true))
+                .children(chips)
+                .into_any()
+        },
+    )
+    .into_any()
+}
+
+/// A live sample of the previewed skin (the active one by default) with the
+/// user's personalisation, scaled to fit the page.
+fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
+    let key = move || {
+        // The overrides and the active skin both show up as a new `ui.skin`.
+        (
+            previewing.get(),
+            ui.settings.with(|s| s.skin.id.clone()),
+            ui.skins.with(|s| Arc::as_ptr(s) as usize),
+            ui.skin.with(|s| Arc::as_ptr(s) as usize),
+            ui.locale.get(),
+        )
+    };
+    dynamic(key, move |(want, active, _, _, locale)| {
+        let locale = *locale;
+        let id = want.clone().unwrap_or_else(|| active.clone());
+        let rows = ui.skins.get_untracked();
+        let row = rows.iter().find(|r| r.id == id).cloned();
+        let other = row
+            .as_ref()
+            .filter(|r| r.id != *active)
+            .and_then(|r| r.skin.clone().map(|s| (r.clone(), s)));
+        let is_active = other.is_none();
+        let (skin, urls) = match &other {
+            None => (ui.skin.get_untracked(), ui.asset_urls.get_untracked()),
+            Some((row, base)) => {
+                let skin = ui.settings.with_untracked(|s| {
+                    crate::skin_theme::prepare(base, &s.skin.overrides, &Default::default())
+                });
+                let urls = row.folder.as_ref().map_or_else(HashMap::new, |f| {
+                    crate::assets::skin_urls(&nanatype_theme::DirFiles::new(f))
+                });
+                (Arc::new(skin), Arc::new(urls))
+            }
+        };
+        let d = &skin.dialogue;
+        let (w, h) = (
+            d.region[0] + d.overscan * 2.0,
+            d.region[1] + d.overscan * 2.0,
+        );
+        let scale = (PREVIEW_W / w).min(1.0);
+        let ctx = BoxCtx {
+            skin: skin.clone(),
+            urls,
+            source: Source::Preview,
+            preview_name: I18N.t_in(locale, "skins-preview-name"),
+        };
+        let doc = nanatype_markup::parse(&I18N.t_in(locale, "skins-preview-line")).doc;
+        let sample = dialogue::preview_box(ui, ctx, &doc);
+        // A dark and a light half, so boxless and translucent skins read on both.
+        let backdrop = BackgroundImage::Gradient(CssGradient::Linear(LinearGradient {
+            angle_deg: 115.0,
+            stops: [
+                (0.0, [0.18, 0.2, 0.25, 1.0]),
+                (0.5, [0.18, 0.2, 0.25, 1.0]),
+                (0.5, [0.85, 0.87, 0.91, 1.0]),
+                (1.0, [0.85, 0.87, 0.91, 1.0]),
+            ]
+            .map(|(position, color)| GradientStop {
+                paint_color: None,
+                position,
+                color,
+            })
+            .to_vec(),
+        }));
+        let stage = widget(
+            Stack::row(0.0)
+                .width(LengthSpec::Px(w * scale))
+                .height(LengthSpec::Px(h * scale))
+                .with_layout(move |l| {
+                    l.position = PositionSpec::Relative;
+                    l.overflow_x = OverflowSpec::Hidden;
+                    l.overflow_y = OverflowSpec::Hidden;
+                    l.border_radius = Some(10.0);
+                    l.paint.background_image = Some(backdrop);
+                }),
+        )
+        .children(
+            widget(
+                Stack::fill_column(0.0)
+                    .width(LengthSpec::Px(w))
+                    .height(LengthSpec::Px(h))
+                    .with_layout(move |l| {
+                        l.position = PositionSpec::Absolute;
+                        l.offset_left = Some(LengthSpec::Px(0.0));
+                        l.offset_top = Some(LengthSpec::Px(0.0));
+                        l.pointer_events = Some(PointerEventsSpec::None);
+                        l.transform = Some(crate::ui::surface::affine(0.0, 0.0, 0.0, scale));
+                        l.transform_origin = Some(TransformOrigin {
+                            x: LengthSpec::Px(0.0),
+                            y: LengthSpec::Px(0.0),
+                        });
+                    }),
+            )
+            .children(sample),
+        );
+        let (name, description, badges) = match &row {
+            Some(r) => (r.name.clone(), r.description.clone(), badges(locale, r)),
+            None => (skin.display_name(locale.tag()), String::new(), Vec::new()),
+        };
+        let apply_id = id.clone();
+        let caption = widget(
+            Stack::bar(12.0)
+                .align(AlignSpec::Center)
+                .width(LengthSpec::Px(w * scale)),
+        )
+        .children((
+            widget(Stack::column(4.0).grow(1.0).shrink(1.0)).children((
+                widget(Stack::row(6.0).align(AlignSpec::Center)).children((label(name), badges)),
+                (!description.is_empty()).then(|| hint(description)),
+            )),
+            (!is_active).then(|| {
+                widget(
+                    Button::new(I18N.t_in(locale, "common-apply"))
+                        .kind(ButtonKind::Primary)
+                        .size(ControlSize::Small),
+                )
+                .on_cx(move |_, _: &Activate, cx| {
+                    let id = apply_id.clone();
+                    cx.dispatch_program_all(edit(move |s| s.skin.id = id));
+                })
+            }),
+        ));
+        widget(Stack::column(10.0).padding_xy(16.0, 12.0))
+            .children((stage, caption))
+            .into_any()
+    })
+    .into_any()
 }
 
 fn window_section(ui: Ui, kind: WindowKind, title: &'static str) -> AnyView {

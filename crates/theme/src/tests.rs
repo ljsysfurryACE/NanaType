@@ -63,7 +63,12 @@ fn errors(result: Result<LoadedSkin, Vec<SkinDiagnostic>>) -> Vec<String> {
 #[test]
 fn every_builtin_loads_without_warnings() {
     let registry = SkinRegistry::new(None, APP);
-    assert_eq!(registry.entries().len(), 5);
+    assert_eq!(registry.entries().len(), 14);
+    let mut ids: Vec<&str> = registry.entries().iter().map(|e| e.id.as_str()).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 14);
+    assert!(registry.load(DEFAULT_SKIN).is_ok());
     for entry in registry.entries() {
         assert!(entry.loads(), "{}: {:?}", entry.id, entry.errors);
         assert!(
@@ -72,8 +77,19 @@ fn every_builtin_loads_without_warnings() {
             entry.id,
             entry.warnings
         );
-        let skin = registry.load(&entry.id).unwrap();
-        assert!(!skin.skin.display_name("ja-JP").is_empty());
+        let skin = registry.load(&entry.id).unwrap().skin;
+        for locale in ["zh-CN", "en-US", "ja-JP"] {
+            assert!(skin.meta.name.contains_key(locale), "{} {locale}", entry.id);
+            assert!(
+                skin.meta.description.contains_key(locale),
+                "{} {locale}",
+                entry.id
+            );
+        }
+        assert!(!skin.meta.tags.is_empty(), "{}", entry.id);
+        for tag in &skin.meta.tags {
+            assert!(SKIN_TAGS.contains(&tag.as_str()), "{}: {tag}", entry.id);
+        }
     }
     let night = registry.load("nanatype.night").unwrap();
     assert_eq!(night.skin.chrome.appearance, Appearance::Dark);
@@ -83,6 +99,259 @@ fn every_builtin_loads_without_warnings() {
     );
     // Untouched fields keep the defaults.
     assert_eq!(night.skin.dialogue.region, [760.0, 200.0]);
+    // A partial `[history.text]` keeps the history defaults, not the dialogue's.
+    assert_eq!(night.skin.history.text.size, 18.0);
+    let bubble = registry.load("nanatype.bubble").unwrap();
+    assert!(bubble.skin.dialogue.tail.is_some());
+    let ink = registry.load("nanatype.ink").unwrap();
+    assert!(ink.skin.dialogue.decor.len() > 2);
+}
+
+#[test]
+fn new_shape_fields_parse_without_warnings() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_skin(
+        tmp.path(),
+        r##"
+[meta]
+id = "x"
+tags = ["cute"]
+[dialogue.box]
+gradient = { kind = "radial", circle = true, stops = [[0, "#fff"], [0.5, "box"], [1.0, "#00000080"]] }
+radii = [4, 18, 18, 18]
+border_widths = [0, 0, 0, 4]
+border_style = "dashed"
+shadows = [{ color = "#000", dx = 4, dy = 4 }, { color = "accent", blur = 8, inset = true }]
+margin = [0, 0, 24, 0]
+[dialogue.tail]
+side = "left"
+at = 0.5
+[[dialogue.decor]]
+anchor = "bottom_right"
+size = [4, "56%"]
+polygon = [[0, 0], [100, 0], [50, 100]]
+text = "✦"
+text_color = "name_text"
+when = "speaker"
+[[dialogue.decor]]
+inset = [5, 5, 5, 5]
+border_color = "border"
+border_width = 1
+[dialogue.nameplate]
+anchor = "top_right"
+rotate = -3
+border_color = "#000"
+border_width = 2
+text_shadow = { color = "#000", blur = 4 }
+[dialogue.continue]
+anchor = "bottom"
+offset = [0, -6]
+motion = "pulse"
+[dialogue.text]
+align = "center"
+[history]
+bubble_radii = [0, 8, 8, 8]
+name_plate = { color = "accent", radius = 6 }
+avatar = { shape = "circle", ring_color = "#fff", ring_width = 2 }
+"##,
+        &[],
+    );
+    let loaded = load_dir(tmp.path()).unwrap();
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    let d = &loaded.skin.dialogue;
+    let g = d.box_.shape.gradient.as_ref().unwrap();
+    assert_eq!(g.kind, GradientKind::Radial);
+    assert_eq!(g.stops[1], (0.5, ColorRef::Role(ColorRole::Box)));
+    assert_eq!(d.decor[0].size, [Len::Px(4.0), Len::Percent(56.0)]);
+    assert_eq!(d.decor[0].text_color, ColorRef::Role(ColorRole::NameText));
+    assert_eq!(d.tail.as_ref().unwrap().side, Edge::Left);
+    assert_eq!(d.continue_.motion, ContinueMotion::Pulse);
+    assert_eq!(d.text.align, TextAlign::Center);
+    assert_eq!(loaded.skin.meta.tags, ["cute"]);
+}
+
+#[test]
+fn a_legacy_manifest_keeps_its_old_meaning() {
+    let skin = Skin::default();
+    let d = &skin.dialogue;
+    assert!(d.tail.is_none());
+    assert!(d.decor.is_empty());
+    assert!(d.box_.shape.gradient.is_none());
+    assert_eq!(d.box_.margin, [0.0; 4]);
+    assert_eq!(d.continue_.offset, [-14.0, -8.0]);
+    assert_eq!(d.continue_.motion, ContinueMotion::Bob);
+    assert_eq!(d.nameplate.anchor, Anchor::TopLeft);
+}
+
+#[test]
+fn colour_refs_and_lengths_parse() {
+    #[derive(serde::Deserialize)]
+    struct T {
+        c: ColorRef,
+        l: Len,
+    }
+    let t: T = toml::from_str(
+        r##"c = "#ff000080"
+l = 24"##,
+    )
+    .unwrap();
+    assert_eq!(t.c, ColorRef::Rgba(Rgba8::rgba(255, 0, 0, 128)));
+    assert_eq!(t.l, Len::Px(24.0));
+    let t: T = toml::from_str(
+        r#"c = "name_text"
+l = "50%""#,
+    )
+    .unwrap();
+    assert_eq!(t.c, ColorRef::Role(ColorRole::NameText));
+    assert_eq!(t.l, Len::Percent(50.0));
+    let t: T = toml::from_str(
+        r#"c = "box"
+l = 24.5"#,
+    )
+    .unwrap();
+    assert_eq!(t.l, Len::Px(24.5));
+    for bad in [
+        r#"c = "boxy"
+l = 1"#,
+        r#"c = "box"
+l = "50""#,
+        r#"c = "box"
+l = "abc%""#,
+    ] {
+        assert!(toml::from_str::<T>(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn unknown_keys_inside_decor_warn() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_skin(
+        tmp.path(),
+        r#"[meta]
+id = "x"
+[[dialogue.decor]]
+text = "a"
+[[dialogue.decor]]
+sparkle = true
+"#,
+        &[],
+    );
+    let skin = load_dir(tmp.path()).unwrap();
+    assert_eq!(skin.warnings.len(), 1, "{:?}", skin.warnings);
+    assert_eq!(skin.warnings[0].field, "dialogue.decor.1.sparkle");
+}
+
+#[test]
+fn too_many_decorations_fail() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut manifest = String::from("[meta]\nid = \"x\"\n");
+    for _ in 0..17 {
+        manifest.push_str("[[dialogue.decor]]\nradius = 1\n");
+    }
+    write_skin(tmp.path(), &manifest, &[]);
+    assert!(errors(load_dir(tmp.path())).contains(&"dialogue.decor".to_owned()));
+}
+
+#[test]
+fn decor_lists_replace_on_inheritance() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("a");
+    write_skin(
+        &dir,
+        r#"[meta]
+id = "a"
+base = "nanatype.ink"
+[[dialogue.decor]]
+text = "x"
+"#,
+        &[],
+    );
+    let skin = load_dir(&dir).unwrap();
+    assert_eq!(skin.skin.dialogue.decor.len(), 1);
+    // Tags are inherited; identity is not.
+    assert_eq!(skin.skin.meta.tags, ["elegant"]);
+    let dir = tmp.path().join("b");
+    write_skin(
+        &dir,
+        r#"[meta]
+id = "b"
+base = "nanatype.ink"
+[dialogue]
+decor = []
+"#,
+        &[],
+    );
+    assert!(load_dir(&dir).unwrap().skin.dialogue.decor.is_empty());
+}
+
+#[test]
+fn tails_open_into_the_box() {
+    let tail = TailSpec::default();
+    let g = tail_geometry(&tail, 4.0);
+    // Bottom tail: the fill triangle's base sits above the outer one so it
+    // covers the box border, and its tip stays inside the outline.
+    assert!(g.inner[0][1] < g.outer[0][1]);
+    assert!(g.inner[2][1] < g.outer[2][1]);
+    assert!(g.inner[0][0] > g.outer[0][0] && g.inner[1][0] < g.outer[1][0]);
+    let flat = tail_geometry(&tail, 0.0);
+    assert_eq!(flat.inner, flat.outer);
+    // Other sides mirror the same shape.
+    let top = tail_geometry(
+        &TailSpec {
+            side: Edge::Top,
+            ..TailSpec::default()
+        },
+        4.0,
+    );
+    assert_eq!(top.outer[2][1], 100.0 - g.outer[2][1]);
+    assert!(top.rect[1] < 0.0);
+    let right = tail_geometry(
+        &TailSpec {
+            side: Edge::Right,
+            ..TailSpec::default()
+        },
+        4.0,
+    );
+    assert_eq!(right.outer[2], [g.outer[2][1], g.outer[2][0]]);
+    assert_eq!(right.rect[2], g.rect[3]);
+}
+
+#[test]
+fn placement_follows_the_anchor() {
+    let p = place(Anchor::TopLeft, [5.0, 6.0], [Len::Px(10.0), Len::Px(10.0)]);
+    assert_eq!(
+        (p.left.percent, p.left.px, p.top.percent, p.top.px),
+        (0.0, 5.0, 0.0, 6.0)
+    );
+    let p = place(
+        Anchor::BottomRight,
+        [-2.0, 0.0],
+        [Len::Px(10.0), Len::Px(20.0)],
+    );
+    assert_eq!((p.left.percent, p.left.px), (100.0, -12.0));
+    assert_eq!((p.top.percent, p.top.px), (100.0, -20.0));
+    let p = place(
+        Anchor::Center,
+        [0.0, 0.0],
+        [Len::Percent(50.0), Len::Px(4.0)],
+    );
+    assert_eq!((p.left.percent, p.left.px), (25.0, 0.0));
+    assert_eq!((p.top.percent, p.top.px), (50.0, -2.0));
+}
+
+#[test]
+fn continue_motion_and_sprites() {
+    for i in 0..20 {
+        let t = i as f32 * 0.07;
+        let (dy, o, s) = continue_motion(ContinueMotion::Bob, 3.0, 0.8, t);
+        assert!((-3.0..=0.0).contains(&dy) && o == 1.0 && s == 1.0);
+        let (_, o, _) = continue_motion(ContinueMotion::Blink, 3.0, 0.8, t);
+        assert!(o == 1.0 || o == 0.15);
+    }
+    assert_eq!(sprite_frame(4, 8.0, 0.0), 0);
+    assert_eq!(sprite_frame(4, 8.0, 0.1), 0);
+    assert_eq!(sprite_frame(4, 8.0, 0.25), 2);
+    assert_eq!(sprite_frame(1, 8.0, 9.0), 0);
 }
 
 #[test]
@@ -188,6 +457,90 @@ fn validation_fails_closed() {
             "dialogue.continue.image",
             "[meta]\nid = \"x\"\n[dialogue.continue]\nimage = \"c.png\"\n",
             &[("c.png", b"garbage".to_vec())],
+        ),
+        (
+            "dialogue.box.gradient",
+            r##"[meta]
+id = "x"
+[dialogue.box]
+gradient = { stops = [[0, "#fff"]] }
+"##,
+            &[],
+        ),
+        (
+            "dialogue.box.gradient",
+            r##"[meta]
+id = "x"
+[dialogue.box]
+gradient = { stops = [[0.6, "#fff"], [0.2, "#000"]] }
+"##,
+            &[],
+        ),
+        (
+            "dialogue.box.radius",
+            r##"[meta]
+id = "x"
+[dialogue.box]
+radii = [1, 2, -3, 4]
+"##,
+            &[],
+        ),
+        (
+            "dialogue.box.shadows",
+            r##"[meta]
+id = "x"
+[dialogue.box]
+glow = "#fff"
+inner_border_color = "#fff"
+shadow = { color = "#000" }
+shadows = [{ color = "#000" }, { color = "#000" }]
+"##,
+            &[],
+        ),
+        (
+            "dialogue.box.margin",
+            r##"[meta]
+id = "x"
+[dialogue.box]
+margin = [100, 0, 100, 0]
+"##,
+            &[],
+        ),
+        (
+            "dialogue.decor.0.polygon",
+            r##"[meta]
+id = "x"
+[[dialogue.decor]]
+polygon = [[0, 0], [1, 1]]
+"##,
+            &[],
+        ),
+        (
+            "dialogue.continue.frames",
+            r##"[meta]
+id = "x"
+[dialogue.continue]
+frames = 0
+"##,
+            &[],
+        ),
+        (
+            "dialogue.continue.fps",
+            r##"[meta]
+id = "x"
+[dialogue.continue]
+fps = 0
+"##,
+            &[],
+        ),
+        (
+            "dialogue.tail",
+            r##"[meta]
+id = "x"
+[dialogue.tail]
+at = 1.5
+"##,
+            &[],
         ),
     ];
     for (field, manifest, files) in cases {

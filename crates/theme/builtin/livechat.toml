@@ -1,0 +1,79 @@
+[meta]
+id = "nanatype.livechat"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming"]
+name = { zh-CN = "直播弹幕", en-US = "Live Chat", ja-JP = "ライブチャット" }
+description = { zh-CN = "仿直播评论栏：圆形头像、名字胶囊与白色消息气泡", en-US = "Like a stream chat: round avatar, name pill and white message bubbles", ja-JP = "配信コメント欄風：丸いアイコン、名前ピル、白い吹き出し" }
+
+[chrome]
+accent = "#23ade5"
+background = "#f2f7fb"
+surface = "#ffffff"
+text = "#1f2a36"
+muted = "#5a6b7c"
+border = "#d4e2ec"
+
+[fonts.accent]
+families = ["Segoe UI Symbol", "Microsoft YaHei UI", "PingFang SC"]
+weight = 700
+
+[dialogue]
+region = [800, 200]
+padding = [20, 42, 22, 14]
+
+[dialogue.box]
+color = "#ffffff"
+border_width = 0
+radius = 18
+radii = [4, 18, 18, 18]
+width_fraction = 0.9
+margin = [0, 0, 0, 60]
+shadows = [{ color = "#1f2a3633", dy = 4, blur = 14 }]
+
+# The round "avatar" left of the bubble.
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [-56, -2]
+size = [44, 44]
+radius = 22
+gradient = { angle = 135, stops = [[0, "#7ed0ff"], [1, "#ff9ec4"]] }
+border_color = "#ffffff"
+border_width = 2
+shadows = [{ color = "#1f2a3633", dy = 2, blur = 6 }]
+text = "♪"
+text_color = "#ffffff"
+text_size = 20
+
+[dialogue.text]
+color = "#1f2a36"
+size = 26
+
+[dialogue.nameplate]
+color = "#23ade5"
+text_color = "#ffffff"
+size = 14
+radius = 999
+padding = [10, 2]
+offset = [18, 12]
+
+[dialogue.continue]
+color = "#23ade5"
+size = 14
+
+[history]
+name_color = "#23ade5"
+name_size = 13
+bubble_color = "#ffffff"
+bubble_radius = 14
+bubble_radii = [4, 14, 14, 14]
+bubble_border_width = 0
+bubble_shadows = [{ color = "#1f2a3626", dy = 2, blur = 8 }]
+name_plate = { color = "#23ade5", text_color = "#ffffff", radius = 9, padding = [8, 1] }
+avatar = { shape = "circle", size = 40, ring_color = "#ffffff", ring_width = 2 }
+show_time = true
+time_color = "#8aa0b4"
+
+[history.text]
+color = "#1f2a36"

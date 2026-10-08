@@ -31,7 +31,7 @@ use crate::services::persist::Persist;
 use crate::services::sounds::{self, Bank};
 use crate::services::tray::Tray;
 use crate::skin_theme;
-use crate::ui::{I18N, Notice, SkinRow, StickerRow, Ui};
+use crate::ui::{I18N, Notice, StickerRow, Ui};
 use crate::windows::{self, WindowKind, WindowManager};
 
 /// Send-key mode shared with the editor's key handler.
@@ -329,42 +329,7 @@ impl App {
 
     fn refresh_skin_rows(&mut self) {
         let locale = self.ui.locale.get_untracked();
-        let rows = self
-            .registry
-            .entries()
-            .iter()
-            .map(|e| {
-                let loaded = self.registry.load(&e.id).ok();
-                let skin = loaded.as_ref().map(|l| l.skin.clone());
-                SkinRow {
-                    id: e.id.clone(),
-                    name: skin
-                        .as_ref()
-                        .map(|s| s.display_name(locale.tag()))
-                        .unwrap_or_else(|| e.id.clone()),
-                    author: e.author.clone(),
-                    version: e.version.clone(),
-                    builtin: e.is_builtin(),
-                    error: e.errors.first().map(|d| d.to_string()),
-                    folder: match &e.origin {
-                        nanatype_theme::SkinOrigin::Directory(p) => Some(p.clone()),
-                        _ => None,
-                    },
-                    accent: skin
-                        .as_ref()
-                        .map(|s| skin_theme::rgba(s.chrome.accent))
-                        .unwrap_or([0.5; 4]),
-                    box_color: skin
-                        .as_ref()
-                        .map(|s| skin_theme::rgba(s.dialogue.box_.color))
-                        .unwrap_or([0.5; 4]),
-                    text_color: skin
-                        .as_ref()
-                        .map(|s| skin_theme::rgba(s.dialogue.text.color))
-                        .unwrap_or([0.5; 4]),
-                }
-            })
-            .collect();
+        let rows = crate::ui::skin_rows(&self.registry, locale);
         self.ui.skins.set(Arc::new(rows));
     }
 
@@ -387,15 +352,7 @@ impl App {
     /// Asset URLs for skin files and stickers, for the views.
     fn refresh_assets(&mut self) {
         self.assets.scan(&self.settings.assets.sticker_dirs);
-        let mut urls = HashMap::new();
-        if let Some(root) = self.loaded.files.root() {
-            for path in self.loaded.files.list() {
-                urls.insert(
-                    format!("skin:{path}"),
-                    crate::assets::file_url(&root.join(&path)),
-                );
-            }
-        }
+        let mut urls = crate::assets::skin_urls(&*self.loaded.files);
         let stickers: Vec<StickerRow> = self
             .assets
             .stickers
@@ -507,20 +464,11 @@ impl App {
     }
 
     fn apply_skin(&mut self) {
-        let mut skin = skin_theme::with_overrides(&self.loaded.skin, &self.settings.skin.overrides);
-        for (spec, family) in [
-            &mut skin.fonts.body,
-            &mut skin.fonts.name,
-            &mut skin.fonts.accent,
-        ]
-        .into_iter()
-        .zip(&self.skin_families)
-        {
-            if let Some(family) = family {
-                spec.families.insert(0, family.clone());
-            }
-        }
-        let skin = Arc::new(skin);
+        let skin = Arc::new(skin_theme::prepare(
+            &self.loaded.skin,
+            &self.settings.skin.overrides,
+            &self.skin_families,
+        ));
         self.skin = skin.clone();
         let dark = skin_theme::dark_mode(&skin, self.settings.skin.chrome, self.system_dark);
         self.theme = skin_theme::compile(&skin, dark);

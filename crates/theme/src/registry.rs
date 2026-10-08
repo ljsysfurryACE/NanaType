@@ -11,7 +11,7 @@ use crate::files::{DirFiles, FileError, MemoryFiles, SkinFiles, ZipFiles, clean_
 use crate::load::{
     BaseResolver, LoadedSkin, MANIFEST, Severity, SkinDiagnostic, SkinOrigin, load, read_manifest,
 };
-use crate::manifest::Localized;
+use crate::manifest::{Localized, Skin};
 
 pub const DEFAULT_SKIN: &str = "nanatype.halo";
 
@@ -41,6 +41,42 @@ const BUILTINS: &[Builtin] = &[
         id: "nanatype.rpg",
         manifest: include_str!("../builtin/rpg.toml"),
     },
+    Builtin {
+        id: "nanatype.vanilla",
+        manifest: include_str!("../builtin/vanilla.toml"),
+    },
+    Builtin {
+        id: "nanatype.bubble",
+        manifest: include_str!("../builtin/bubble.toml"),
+    },
+    Builtin {
+        id: "nanatype.subtitle",
+        manifest: include_str!("../builtin/subtitle.toml"),
+    },
+    Builtin {
+        id: "nanatype.livechat",
+        manifest: include_str!("../builtin/livechat.toml"),
+    },
+    Builtin {
+        id: "nanatype.comic",
+        manifest: include_str!("../builtin/comic.toml"),
+    },
+    Builtin {
+        id: "nanatype.terminal",
+        manifest: include_str!("../builtin/terminal.toml"),
+    },
+    Builtin {
+        id: "nanatype.pixel",
+        manifest: include_str!("../builtin/pixel.toml"),
+    },
+    Builtin {
+        id: "nanatype.sakura",
+        manifest: include_str!("../builtin/sakura.toml"),
+    },
+    Builtin {
+        id: "nanatype.ink",
+        manifest: include_str!("../builtin/ink.toml"),
+    },
 ];
 
 fn builtin_files(b: &Builtin) -> Arc<dyn SkinFiles> {
@@ -58,6 +94,8 @@ pub struct SkinEntry {
     /// Errors that keep the skin from loading; empty when it loads.
     pub errors: Vec<SkinDiagnostic>,
     pub warnings: Vec<SkinDiagnostic>,
+    /// The skin as loaded by the last scan.
+    pub skin: Option<Arc<Skin>>,
 }
 
 impl SkinEntry {
@@ -174,6 +212,7 @@ impl SkinRegistry {
                 origin,
                 errors: Vec::new(),
                 warnings: loaded.warnings,
+                skin: Some(loaded.skin),
             },
             Err(errors) => SkinEntry {
                 id,
@@ -190,6 +229,7 @@ impl SkinRegistry {
                     .into_iter()
                     .filter(|d| d.severity == Severity::Warning)
                     .collect(),
+                skin: None,
             },
         }
     }

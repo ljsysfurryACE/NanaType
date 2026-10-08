@@ -1,0 +1,104 @@
+[meta]
+id = "nanatype.ink"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["elegant"]
+name = { zh-CN = "水墨", en-US = "Ink Wash", ja-JP = "水墨" }
+description = { zh-CN = "宣纸底色、浓淡笔触与朱红印章，配楷书", en-US = "Rice paper, brush strokes and a red seal, set in a brush-script face", ja-JP = "和紙の地に筆の線と朱の落款、楷書体で" }
+
+[chrome]
+accent = "#b0302a"
+background = "#f6f1e6"
+surface = "#fdfaf3"
+text = "#222222"
+muted = "#5e574c"
+border = "#d8cfbd"
+
+[fonts.body]
+families = ["LXGW WenKai", "KaiTi", "STKaiti", "Kaiti SC", "SimSun"]
+weight = 400
+
+[fonts.name]
+families = ["LXGW WenKai", "KaiTi", "STKaiti", "Kaiti SC", "SimSun"]
+weight = 700
+
+[fonts.accent]
+families = ["LXGW WenKai", "KaiTi", "STKaiti", "Kaiti SC", "SimSun"]
+weight = 700
+
+[dialogue]
+padding = [28, 40, 64, 18]
+
+[dialogue.box]
+color = "#f6f0e2f5"
+border_width = 0
+radius = 4
+gradient = { kind = "radial", stops = [[0, "#faf6eef7"], [1, "#ece4d4f2"]] }
+shadows = [{ color = "#2222221f", dy = 4, blur = 16 }]
+
+# Upper brush stroke, thin and tapering.
+[[dialogue.decor]]
+anchor = "top"
+offset = [0, 5]
+size = ["92%", 3]
+radius = 2
+gradient = { angle = 90, stops = [[0, "#22222200"], [0.12, "#222222"], [0.7, "#333333e6"], [1, "#22222200"]] }
+
+# Lower brush stroke, heavier.
+[[dialogue.decor]]
+anchor = "bottom"
+offset = [10, -6]
+size = ["86%", 5]
+radius = 3
+gradient = { angle = 90, stops = [[0, "#11111100"], [0.2, "#333333d9"], [0.85, "#111111"], [1, "#11111100"]] }
+
+# Red seal.
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-20, 16]
+size = [32, 32]
+radius = 4
+color = "#b0302a"
+rotate = -6
+text = "印"
+text_color = "#fff3ea"
+text_size = 18
+
+[dialogue.text]
+color = "#222222"
+size = 30
+
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#222222"
+size = 20
+radius = 0
+padding = [8, 0]
+offset = [24, 12]
+border_color = "#b0302a"
+border_widths = [0, 0, 0, 3]
+
+[dialogue.continue]
+glyph = "〆"
+color = "#b0302a"
+size = 18
+offset = [-22, -12]
+
+[dialogue.reveal.entrance]
+kind = "fade"
+ms = 220
+
+[history]
+name_color = "#222222"
+bubble_color = "#f6f0e2f2"
+bubble_radius = 4
+bubble_border_width = 0
+bubble_gradient = { kind = "radial", stops = [[0, "#faf6eef5"], [1, "#ece4d4f0"]] }
+bubble_shadows = [{ color = "#2222221a", dy = 2, blur = 8 }, { color = "#b0302a", dx = 3, inset = true }]
+avatar = { shape = "square", size = 40, ring_color = "#b0302a", ring_width = 2 }
+time_color = "#8a8070"
+
+[history.text]
+color = "#222222"
+size = 19

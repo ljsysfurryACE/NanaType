@@ -7,13 +7,12 @@ use std::sync::Arc;
 
 use nana_ui::runtime::view::{AnyView, IntoView, Transition, computed, dynamic, each, widget};
 use nana_ui::runtime::{NodeStyle, ScrollAxes, ScrollView, Stack, Text};
-use nana_ui_core::{
-    AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec, TextShadowSpec,
-};
+use nana_ui_core::{AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec};
 use nanatype_model::Entrance;
 use nanatype_theme::{AvatarShape, HistoryEntrance};
 
 use super::dialogue::{Base, Timing, document};
+use super::surface::{self, Surface};
 use super::{Ui, c};
 use crate::assets::file_url;
 
@@ -67,6 +66,11 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         }
     });
     let accent = c(skin.chrome.accent);
+    let ring = h
+        .avatar
+        .ring_color
+        .filter(|_| h.avatar.ring_width > 0.0)
+        .map(|col| (h.avatar.ring_width, c(skin.color(col))));
     let mut initial_style = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut initial_style.layout);
@@ -86,6 +90,11 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
                 .with_layout(move |l| {
                     l.border_radius = Some(radius);
                     l.flex_shrink = Some(0.0);
+                    if let Some((w, col)) = ring {
+                        l.border_width = Some(w);
+                        l.border_color = Some(col);
+                        l.border_style = Some(nana_ui_core::BorderStyle::Solid);
+                    }
                     l.overflow_x = OverflowSpec::Hidden;
                     l.overflow_y = OverflowSpec::Hidden;
                     match url {
@@ -117,16 +126,15 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         l.font_size = Some(h.name_size);
         l.font_weight = Some(700);
         l.color = Some(c(h.name_color));
+        if let Some(p) = &h.name_plate {
+            l.color = Some(c(skin.color(p.text_color)));
+        }
         if let Some(stroke) = &h.name_stroke {
-            l.paint.text_shadow = Some(TextShadowSpec {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                blur_radius: stroke.width * 1.5,
-                color: c(stroke.color),
-                paint_color: None,
-            });
+            surface::text_stroke(l, stroke);
         }
     }
+    let name_plate = Surface::history_name_plate(&skin);
+    let plate_pad = h.name_plate.as_ref().map_or([0.0; 2], |p| p.padding);
     let mut time_style = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut time_style.layout);
@@ -136,19 +144,28 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
     let show_name = settings.history.show_name && !row.item.author.is_empty();
     let show_time = settings.history.show_time;
     let header = widget(Stack::row(6.0).align(AlignSpec::Center)).children((
-        show_name.then(|| widget(Text::new(row.item.author.clone()).style(name_style))),
+        show_name.then(|| {
+            let plate = name_plate.clone();
+            widget(
+                Stack::row(0.0)
+                    .padding_xy(plate_pad[0], plate_pad[1])
+                    .with_layout(move |l| {
+                        if let Some(p) = &plate {
+                            p.apply(l);
+                        }
+                    }),
+            )
+            .children(widget(Text::new(row.item.author.clone()).style(name_style)))
+        }),
         show_time.then(|| widget(Text::new(local_hm(row.item.at)).style(time_style))),
     ));
 
-    let bubble_color = c(h.bubble_color);
-    let bubble_border = h.bubble_border.map(c);
-    let radius = h.bubble_radius;
     let pad = h.bubble_padding;
-    let frame = h.bubble_frame.clone();
-    let frame_url = frame.as_ref().and_then(|f| {
+    let frame_url = h.bubble_frame.as_ref().and_then(|f| {
         ui.asset_urls
             .with_untracked(|m| m.get(&format!("skin:{}", f.image)).cloned())
     });
+    let bubble_surface = Surface::bubble(&skin, frame_url);
     let body = dynamic(
         move || {
             ui.history.with(|rows| {
@@ -192,26 +209,7 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
             .padding_xy(pad[0], pad[1])
             .with_layout(move |l| {
                 l.max_width = Some(LengthSpec::Px(col_w));
-                match (&frame, frame_url) {
-                    (Some(f), Some(url)) => {
-                        let mut spec =
-                            nana_ui_core::BorderImageSpec::from_source(BackgroundImage::url(url));
-                        spec.slice = f
-                            .slice
-                            .map(|v| nana_ui_core::BorderImageSlice::Number(v as f32));
-                        spec.fill = true;
-                        l.paint.border_image = Some(spec);
-                    }
-                    _ => {
-                        l.background = Some(bubble_color);
-                        l.border_radius = Some(radius);
-                        if let Some(b) = bubble_border {
-                            l.border_width = Some(1.0);
-                            l.border_color = Some(b);
-                            l.border_style = Some(nana_ui_core::BorderStyle::Solid);
-                        }
-                    }
-                }
+                bubble_surface.apply(l);
             }),
     )
     .children(body);
