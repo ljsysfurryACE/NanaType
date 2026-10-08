@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
   # NanaUI integration branch the app builds against (sibling checkout).
   NANAUI_REF: nanatype/integration
-  SPOUT_REF: nanatype/gpu-dx11-shared
+  SPOUT_REF: master
 
 jobs:
   test:
