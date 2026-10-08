@@ -7,8 +7,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # NanaUI integration branch the app builds against (sibling checkout).
-  NANAUI_REF: nanatype/integration
+  # NanaUI branch the app builds against (sibling checkout).
+  NANAUI_REF: main
   SPOUT_REF: master
 
 jobs:
