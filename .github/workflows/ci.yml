@@ -7,9 +7,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # NanaUI branch the app builds against (sibling checkout).
-  NANAUI_REF: main
-  SPOUT_REF: master
 
 jobs:
   test:
@@ -20,34 +17,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: NanaType
-      - uses: actions/checkout@v4
-        with:
-          repository: sena-nana/NanaUI
-          ref: ${{ env.NANAUI_REF }}
-          path: sena-nana/NanaUI-app
-      - uses: actions/checkout@v4
-        with:
-          repository: sena-nana/nanalive-spout
-          ref: ${{ env.SPOUT_REF }}
-          path: sena-nana/nanalive-spout
-          submodules: recursive
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.98"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: NanaType
       - name: Format
-        working-directory: NanaType
         run: cargo fmt --all -- --check
       - name: Clippy
-        working-directory: NanaType
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
       - name: Test
-        working-directory: NanaType
         run: cargo test --workspace
 
   package:

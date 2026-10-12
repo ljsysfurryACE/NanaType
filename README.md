@@ -46,14 +46,7 @@
 
 ## 构建
 
-需要 Rust 1.98+ 和 Windows 10 SDK（图标与版本资源）。NanaType 依赖相邻目录中的 NanaUI：
-
-```
-workspace/
-  NanaType/
-  sena-nana/NanaUI-app/      NanaUI（nanatype/integration 分支）
-  sena-nana/nanalive-spout/  Spout2 发送端（gpu-dx11-shared 特性）
-```
+需要 Rust 1.98+ 和 Windows 10 SDK（图标与版本资源）。NanaUI 与 nanalive-spout（Spout2 发送端）以固定 rev 通过 GitHub 远程仓库引用，首次构建时 cargo 会自动拉取，无需本地检出；构建 nanalive-spout 需要 git 可用（会拉取 Spout2 子模块）。
 
 ```bash
 cargo run -p nanatype

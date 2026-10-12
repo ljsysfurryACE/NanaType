@@ -2794,6 +2794,7 @@ dependencies = [
 [[package]]
 name = "nanalive-spout"
 version = "0.1.1"
+source = "git+https://github.com/sena-nana/nanalive-spout?rev=106e124cdbe3a5eb9ee104715ee1d54c3903b217#106e124cdbe3a5eb9ee104715ee1d54c3903b217"
 dependencies = [
  "nanalive-spout-sys",
  "windows 0.61.3",
@@ -2802,6 +2803,7 @@ dependencies = [
 [[package]]
 name = "nanalive-spout-sys"
 version = "0.1.1"
+source = "git+https://github.com/sena-nana/nanalive-spout?rev=106e124cdbe3a5eb9ee104715ee1d54c3903b217#106e124cdbe3a5eb9ee104715ee1d54c3903b217"
 dependencies = [
  "cc",
 ]
