@@ -535,3 +535,15 @@ int-vts-authorized = 許可済み
 int-vts-map-empty = 接続して許可すると VTS のホットキーが一覧に出ます
 skins-more = その他の操作
 ## end wave3-settings
+
+## wave4-skins
+skins-view-grid = カード
+skins-view-list = リスト
+windows-lock-locked-short = ロック
+windows-lock-tip = ロック：クリックは下のウィンドウに透過します。操作可能：クリックやスクロールができます。レイアウト調整：ドラッグで移動・サイズ変更します。
+windows-background-tip = 透明：OBS 用にアルファを保ちます。クロマキー：アルファのないキャプチャ向けにウィンドウを緑で塗りつぶします。
+windows-reset-tip = リセットボタンでウィンドウをスキンが決める位置とサイズに戻します
+windows-input-na = 「—」は対象外：入力ウィンドウは常に操作可能で、キャプチャされません。
+history-window-link = ウィンドウとキャプチャ
+history-window-link-hint = 履歴ウィンドウの表示・ロック・サイズ、OBS への送出
+## end wave4-skins

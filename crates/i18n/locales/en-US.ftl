@@ -541,3 +541,15 @@ int-vts-authorized = Authorized
 int-vts-map-empty = Connect and authorize to list your VTS hotkeys
 skins-more = More actions
 ## end wave3-settings
+
+## wave4-skins
+skins-view-grid = Cards
+skins-view-list = List
+windows-lock-locked-short = Locked
+windows-lock-tip = Locked: clicks pass through to the window below. Interactive: you can click and scroll it. Edit layout: drag to move and resize.
+windows-background-tip = Transparent keeps the alpha for OBS. Chroma key fills the window green, for a capture that has no alpha.
+windows-reset-tip = The reset button puts the window back where the skin places it, at the skin's size
+windows-input-na = “—” does not apply: the input window is always interactive and is not captured.
+history-window-link = Window & capture
+history-window-link-hint = Show, lock and size the history window, or send it to OBS
+## end wave4-skins

@@ -4,6 +4,7 @@
 
 mod controls;
 mod pages;
+mod skin_grid;
 
 pub use controls::links_pulsing;
 
