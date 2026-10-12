@@ -12,22 +12,25 @@ use nana_ui::runtime::view::{
     segmented_option, signal, widget, with_refs,
 };
 use nana_ui::runtime::{
-    ActionMenu, ActionMenuItem, Activate, Button, ColorChanged, ColorField, Divider, IconButton,
-    NodeStyle, Popover, PopoverClosed, PopoverToggled, RangeField, RangeInput, RichAttrMask,
-    RichSelectionAttrs, RichTextEditor, RichTextEditorEvent, Stack, Text, TextArea, TextChanged,
-    TextInput, TextSubmitted,
+    ActionMenu, ActionMenuItem, Activate, Button, ColorChanged, ColorField, Divider,
+    FocusWithinChanged, IconButton, IconGlyph, NodeStyle, Popover, PopoverClosed, PopoverToggled,
+    RangeField, RangeInput, RichAttrMask, RichSelectionAttrs, RichTextEditor, RichTextEditorEvent,
+    Stack, Text, TextArea, TextChanged, TextInput, TextSubmitted,
 };
 use nana_ui::{ButtonKind, ControlSize, PopoverPlacement};
-use nana_ui_core::{AlignSpec, LengthSpec, PointerEventsSpec, PositionSpec, SemanticColorRole};
+use nana_ui_core::{
+    AlignSpec, LengthSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, SquareSize,
+};
 use nanatype_core::Cmd;
 use nanatype_i18n::{Arg, Locale};
 use nanatype_model::{
     AssetRef, Atom, AtomKind, ContinuousKind, EntranceKind, Inline, Marker, Pace, Rgba8, Shadow,
     Stroke, VtsAction,
 };
-use nanatype_settings::{InputMode, SendKey, Settings};
+use nanatype_settings::{ChromeMode, InputMode, SendKey, Settings};
 
 use super::dialogue::{Base, Source, dialogue_box};
+use super::rich::{ChipKind, MarkerLook};
 use super::{I18N, Ui, c, restyle};
 use crate::msg::{FileTarget, MarkupEdit, Msg, Tool};
 use crate::windows::{STATUS_H, TOOLBAR_H, WindowKind};
@@ -63,6 +66,70 @@ fn marker(m: Marker) -> Msg {
     Msg::Tool(Tool::Insert(Inline::Marker(m)))
 }
 
+/// Toolbar glyphs: one size for every tool, centred in a 28px target.
+const GLYPH: f32 = 14.0;
+
+/// The toolbar's resting ink: the chrome's text at 75%, while the window
+/// wears the skin's own chrome. `None` (another light or dark mode is
+/// forced) leaves the theme's muted ink.
+fn tool_ink(ui: Ui) -> Option<[f32; 4]> {
+    let skin = ui.skin.get_untracked();
+    let chrome = &skin.chrome;
+    let dark = chrome.appearance == nanatype_theme::Appearance::Dark;
+    let own = match ui.settings.with_untracked(|s| s.skin.chrome) {
+        ChromeMode::Skin => true,
+        ChromeMode::Light => !dark,
+        ChromeMode::Dark => dark,
+        ChromeMode::System => false,
+    };
+    own.then(|| {
+        let text = chrome.palette.get("text").copied().unwrap_or(chrome.text);
+        let [r, g, b, _] = c(text);
+        [r, g, b, 0.75]
+    })
+}
+
+/// A toolbar icon button: the shared glyph size in a 28px square, in the
+/// toolbar ink.
+fn tool_button(
+    icon: nana_ui::runtime::Icon,
+    label: String,
+    tip: String,
+    ink: Option<[f32; 4]>,
+) -> IconButton {
+    // Large is the size whose glyph is GLYPH; the square stays 28px.
+    let mut b = IconButton::new(icon, label)
+        .size(ControlSize::Large)
+        .with_tooltip(tip);
+    b.style.square = Some(SquareSize::IconButton);
+    if let Some(ink) = ink {
+        b = b.colors_from_style();
+        paint_tool(&mut b.style, ink, false);
+    }
+    b
+}
+
+/// Rest a toolbar button in `ink`, or in the soft accent while pressed.
+fn paint_tool(style: &mut NodeStyle, ink: [f32; 4], selected: bool) {
+    if selected {
+        style.background = Some(SemanticColorRole::AccentSoft);
+        style.foreground = Some(SemanticColorRole::AccentOnSoft);
+        Arc::make_mut(&mut style.layout).color = None;
+    } else {
+        style.background = None;
+        style.foreground = None;
+        Arc::make_mut(&mut style.layout).color = Some(ink);
+    }
+}
+
+/// "Bold · Ctrl+B": a tooltip with the tool's shortcut.
+fn with_shortcut(label: String, keys: Option<&str>) -> String {
+    match keys {
+        Some(k) => format!("{label} · {k}"),
+        None => label,
+    }
+}
+
 /// An icon button with a tooltip that sends `msg()`.
 fn tool(
     ui: Ui,
@@ -70,33 +137,40 @@ fn tool(
     label: &'static str,
     msg: impl Fn() -> Msg + Send + 'static,
 ) -> AnyView {
-    widget(
-        IconButton::new(icon, ui.now_t(label))
-            .size(ControlSize::Small)
-            .with_tooltip(ui.now_t(label)),
-    )
+    widget(tool_button(
+        icon,
+        ui.now_t(label),
+        ui.now_t(label),
+        tool_ink(ui),
+    ))
     .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
     .into_any()
 }
 
 /// A toolbar toggle (bold, italic…) shown pressed while the whole selection
-/// has the attribute.
+/// has the attribute; its tooltip names its shortcut.
 fn toggle(
     ui: Ui,
     icon: nana_ui::runtime::Icon,
     label: &'static str,
+    keys: Option<&'static str>,
     tool_of: fn() -> Tool,
     pressed: fn(&RichSelectionAttrs) -> bool,
 ) -> AnyView {
-    widget(
-        IconButton::new(icon, ui.now_t(label))
-            .size(ControlSize::Small)
-            .with_tooltip(ui.now_t(label)),
-    )
+    let ink = tool_ink(ui);
+    widget(tool_button(
+        icon,
+        ui.now_t(label),
+        with_shortcut(ui.now_t(label), keys),
+        ink,
+    ))
     .bind(move |b: &mut IconButton| {
         let on = !ui.source_mode.get() && ui.sel_attrs.with(pressed);
         if b.selected != on {
             b.selected = on;
+            if let Some(ink) = ink {
+                paint_tool(&mut b.style, ink, on);
+            }
         }
     })
     .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(act(tool_of())))
@@ -123,23 +197,82 @@ fn is_strike(a: &RichSelectionAttrs) -> bool {
 
 /// Swaps the editor for the draft's markup source.
 fn source_toggle(ui: Ui) -> AnyView {
-    widget(
-        IconButton::new(ti::CODE, ui.now_t("tb-source"))
-            .size(ControlSize::Small)
-            .with_tooltip(ui.now_t("tb-source")),
-    )
+    let ink = tool_ink(ui);
+    widget(tool_button(
+        ti::CODE,
+        ui.now_t("tb-source"),
+        ui.now_t("tb-source"),
+        ink,
+    ))
     .bind(move |b: &mut IconButton| {
         let on = ui.source_mode.get();
         if b.selected != on {
             b.selected = on;
+            if let Some(ink) = ink {
+                paint_tool(&mut b.style, ink, on);
+            }
         }
     })
     .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::ToggleSource))
     .into_any()
 }
 
+/// A menu trigger's face: the toolbar glyph, and a label when given. A
+/// trigger pads its content by 10px a side, so a bare glyph sits in an 8px
+/// box it overhangs, which keeps the trigger 28px square like the buttons.
+fn trigger_face(
+    icon: nana_ui::runtime::Icon,
+    label: Option<String>,
+    ink: Option<[f32; 4]>,
+) -> AnyView {
+    let mut glyph = IconGlyph::new(icon).size(GLYPH).decorative();
+    if let Some(ink) = ink {
+        glyph.style.foreground = None;
+        Arc::make_mut(&mut glyph.style.layout).color = Some(ink);
+    }
+    match label {
+        Some(label) => {
+            let mut st = text_style(12.0, 500);
+            {
+                let l = Arc::make_mut(&mut st.layout);
+                l.white_space_nowrap = true;
+                l.color = ink;
+            }
+            let mut text = Text::new(label).decorative().style(st);
+            if ink.is_none() {
+                text = text.color(SemanticColorRole::Muted);
+            }
+            widget(Stack::row(4.0).align(AlignSpec::Center))
+                .children((widget(glyph), widget(text)))
+                .into_any()
+        }
+        None => {
+            let overhang = (GLYPH - 8.0) / 2.0;
+            let l = Arc::make_mut(&mut glyph.style.layout);
+            l.position = PositionSpec::Relative;
+            l.offset_left = Some(LengthSpec::Px(-overhang));
+            widget(Stack::row(0.0).align(AlignSpec::Center).with_layout(|l| {
+                l.width = Some(LengthSpec::Px(8.0));
+                l.min_width = Some(LengthSpec::Px(8.0));
+                l.flex_shrink = Some(0.0);
+            }))
+            .children(widget(glyph))
+            .into_any()
+        }
+    }
+}
+
+fn text_style(size: f32, weight: u16) -> NodeStyle {
+    let mut st = NodeStyle::default();
+    let l = Arc::make_mut(&mut st.layout);
+    l.font_size = Some(size);
+    l.font_weight = Some(weight);
+    st
+}
+
 /// A popover whose open state the app keeps, so items can close it.
 fn popover(
+    ui: Ui,
     icon: nana_ui::runtime::Icon,
     label: String,
     width: f32,
@@ -148,11 +281,12 @@ fn popover(
 ) -> AnyView {
     widget(
         Popover::new()
-            .trigger_icon(icon, label)
+            .trigger(label)
             .placement(PopoverPlacement::Bottom)
             .width(width)
             .bare_trigger(true),
     )
+    .trigger(trigger_face(icon, None, tool_ink(ui)))
     .bind(move |p: &mut Popover| p.open = open.get())
     .on(move |e: &PopoverToggled| open.set(e.open))
     .on(move |_: &PopoverClosed| open.set(false))
@@ -170,22 +304,24 @@ fn item(label: String, open: Signal<bool>, msg: impl Fn() -> Msg + Send + 'stati
         .into_any()
 }
 
+/// An action menu behind a toolbar glyph, labelled beside the glyph when
+/// `labelled` (the menus whose glyph alone does not say what they hold).
 fn menu(
+    ui: Ui,
     icon: nana_ui::runtime::Icon,
     label: String,
+    labelled: bool,
     open: Signal<bool>,
     items: Vec<AnyView>,
 ) -> AnyView {
-    widget(
-        ActionMenu::new()
-            .trigger_icon(icon, label)
-            .bare_trigger(true),
-    )
-    .bind(move |m: &mut ActionMenu| m.popover.open = open.get())
-    .on(move |e: &PopoverToggled| open.set(e.open))
-    .on(move |_: &PopoverClosed| open.set(false))
-    .children(items)
-    .into_any()
+    let face = trigger_face(icon, labelled.then(|| label.clone()), tool_ink(ui));
+    widget(ActionMenu::new().trigger(label).bare_trigger(true))
+        .trigger(face)
+        .bind(move |m: &mut ActionMenu| m.popover.open = open.get())
+        .on(move |e: &PopoverToggled| open.set(e.open))
+        .on(move |_: &PopoverClosed| open.set(false))
+        .children(items)
+        .into_any()
 }
 
 /// A small button painted with a colour.
@@ -451,6 +587,234 @@ fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
         .into_any()
 }
 
+/// A small caption over a group in a toolbar panel.
+fn caption(text: String) -> AnyView {
+    widget(
+        Text::new(text)
+            .style(text_style(11.0, 600))
+            .color(SemanticColorRole::Muted),
+    )
+    .into_any()
+}
+
+/// Outline and shadow: colour swatches for the outline, named looks for the
+/// shadow, each with a way to take it off.
+fn stroke_panel(ui: Ui, open: Signal<bool>) -> AnyView {
+    let accent = ui.skin.get_untracked().chrome.accent;
+    let stroke = move |color: Rgba8| {
+        Tool::Stroke(Some(Stroke {
+            color,
+            width_px: 2.0,
+        }))
+    };
+    // A button that applies `tool` and closes the panel.
+    let press = move |button: Button, tool: Tool| -> AnyView {
+        widget(button)
+            .on_cx(move |_, _: &Activate, cx| {
+                open.set(false);
+                cx.dispatch_program_all(act(tool.clone()));
+            })
+            .into_any()
+    };
+    let swatches: Vec<AnyView> = [
+        ("tb-stroke-white", Rgba8::rgba(255, 255, 255, 255)),
+        ("tb-stroke-black", Rgba8::rgba(0, 0, 0, 255)),
+        ("tb-stroke-accent", accent),
+    ]
+    .into_iter()
+    .map(|(key, color)| press(swatch_button(ui.now_t(key), c(color)), stroke(color)))
+    .collect();
+    let small = |key: &str| Button::new(ui.now_t(key)).size(ControlSize::Small);
+    let drop = Shadow {
+        color: Rgba8::rgba(0, 0, 0, 0x99),
+        dx: 2.0,
+        dy: 2.0,
+        blur: 3.0,
+    };
+    let glow = Shadow {
+        color: accent.with_alpha(220),
+        dx: 0.0,
+        dy: 0.0,
+        blur: 8.0,
+    };
+    widget(Stack::column(8.0).padding(4.0))
+        .children((
+            caption(ui.now_t("tb-stroke")),
+            widget(Stack::row(6.0).align(AlignSpec::Center))
+                .children((swatches, press(small("tb-stroke-none"), Tool::Stroke(None)))),
+            caption(ui.now_t("tb-shadow")),
+            widget(Stack::row(6.0).align(AlignSpec::Center)).children((
+                press(small("tb-shadow-drop"), Tool::Shadow(Some(drop))),
+                press(
+                    small("tb-shadow-glow").icon(ti::SPARKLES),
+                    Tool::Shadow(Some(glow)),
+                ),
+                press(small("tb-shadow-none"), Tool::Shadow(None)),
+            )),
+        ))
+        .into_any()
+}
+
+/// A marker as the editor shows it, for the cheat sheet: the kind's stripe
+/// and glyph, then its markup, on the editor's chip fill.
+fn marker_chip(
+    look: &MarkerLook,
+    kind: ChipKind,
+    icon: nana_ui::runtime::Icon,
+    markup: &str,
+) -> AnyView {
+    let ink = c(look.text);
+    let mut glyph = IconGlyph::new(icon).size(13.0).decorative();
+    glyph.style.foreground = None;
+    Arc::make_mut(&mut glyph.style.layout).color = Some(ink);
+    let mut st = text_style(12.0, 600);
+    {
+        let l = Arc::make_mut(&mut st.layout);
+        l.color = Some(ink);
+        l.white_space_nowrap = true;
+    }
+    let fill = c(look.fill);
+    let hue = c(kind.hue());
+    widget(
+        Stack::row(5.0)
+            .align(AlignSpec::Center)
+            .with_layout(move |l| {
+                l.height = Some(LengthSpec::Px(24.0));
+                l.flex_shrink = Some(0.0);
+                l.background = Some(fill);
+                l.border_radius = Some(4.0);
+                l.padding_right = Some(LengthSpec::Px(8.0));
+                l.overflow_x = nana_ui_core::OverflowSpec::Hidden;
+                l.overflow_y = nana_ui_core::OverflowSpec::Hidden;
+            }),
+    )
+    .children((
+        widget(Stack::row(0.0).with_layout(move |l| {
+            l.width = Some(LengthSpec::Px(3.0));
+            l.height = Some(LengthSpec::Px(24.0));
+            l.flex_shrink = Some(0.0);
+            l.background = Some(hue);
+        })),
+        widget(glyph),
+        widget(Text::new(markup).decorative().style(st)),
+    ))
+    .into_any()
+}
+
+/// One line of the cheat sheet: a fixed-width lead (a chip or keycaps) and
+/// what it does.
+fn sheet_row(lead: AnyView, lead_w: f32, meaning: String) -> AnyView {
+    let mut st = text_style(12.0, 400);
+    Arc::make_mut(&mut st.layout).white_space_nowrap = true;
+    widget(Stack::row(10.0).align(AlignSpec::Center).with_layout(|l| {
+        l.height = Some(LengthSpec::Px(24.0));
+    }))
+    .children((
+        widget(
+            Stack::row(0.0)
+                .align(AlignSpec::Center)
+                .with_layout(move |l| {
+                    l.width = Some(LengthSpec::Px(lead_w));
+                    l.min_width = Some(LengthSpec::Px(lead_w));
+                    l.flex_shrink = Some(0.0);
+                }),
+        )
+        .children(lead),
+        widget(Text::new(meaning).style(st).color(SemanticColorRole::Muted)),
+    ))
+    .into_any()
+}
+
+/// The `?` sheet: the markers the editor shows as chips with what each does,
+/// and the input window's own keys.
+pub fn cheat_sheet(ui: Ui) -> AnyView {
+    let skin = ui.skin.get_untracked();
+    let look = MarkerLook::from_skin(&skin);
+    let t = |k: &str| ui.now_t(k);
+    let markers: Vec<AnyView> = [
+        (ChipKind::Wait, ti::CLOCK, "[wait=500]", "cheat-wait"),
+        (
+            ChipKind::Continue,
+            ti::PLAYER_PLAY,
+            "[pause]",
+            "cheat-pause",
+        ),
+        (ChipKind::Page, ti::PAGE_BREAK, "[page]", "cheat-page"),
+        (
+            ChipKind::Expression,
+            ti::MOOD_SMILE,
+            "[expr=…]",
+            "cheat-expr",
+        ),
+        (ChipKind::Sound, ti::MUSIC, "[se=…]", "cheat-se"),
+        (
+            ChipKind::Picture,
+            ti::STICKER,
+            "[sticker=…]",
+            "cheat-sticker",
+        ),
+        (ChipKind::Mention, ti::AT, "[at=…]", "cheat-at"),
+    ]
+    .into_iter()
+    .map(|(kind, icon, markup, key)| {
+        sheet_row(marker_chip(&look, kind, icon, markup), 124.0, t(key))
+    })
+    .collect();
+    let (send, newline) = match ui.settings.with_untracked(|s| s.general.send_key) {
+        SendKey::Enter => ("Enter", "Shift+Enter"),
+        SendKey::CtrlEnter => ("Ctrl+Enter", "Enter"),
+    };
+    let recall = widget(Stack::row(4.0).align(AlignSpec::Center))
+        .children((
+            super::keycap::chord("Ctrl+↑"),
+            widget(
+                Text::new("/")
+                    .decorative()
+                    .style(text_style(12.0, 500))
+                    .color(SemanticColorRole::Muted),
+            ),
+            super::keycap::keycap("↓"),
+        ))
+        .into_any();
+    let keys: Vec<AnyView> = vec![
+        sheet_row(super::keycap::chord(send), 136.0, t("tb-send")),
+        sheet_row(super::keycap::chord(newline), 136.0, t("cheat-newline")),
+        sheet_row(super::keycap::chord("Ctrl+B"), 136.0, t("tb-bold")),
+        sheet_row(super::keycap::chord("Ctrl+I"), 136.0, t("tb-italic")),
+        sheet_row(super::keycap::chord("Ctrl+U"), 136.0, t("tb-underline")),
+        sheet_row(recall, 136.0, t("cheat-recall")),
+        sheet_row(super::keycap::chord("Esc"), 136.0, t("cheat-hide")),
+    ];
+    let column = |title: String, rows: Vec<AnyView>| {
+        widget(Stack::column(4.0).width(LengthSpec::Shrink))
+            .children((caption(title), rows))
+            .into_any()
+    };
+    widget(Stack::row(20.0).padding(4.0))
+        .children((
+            column(t("cheat-markers"), markers),
+            column(t("cheat-shortcuts"), keys),
+        ))
+        .into_any()
+}
+
+/// A hairline between two groups of toolbar tools, 16px tall.
+fn group_divider() -> AnyView {
+    widget(
+        Stack::row(0.0)
+            .surface(SemanticColorRole::Border)
+            .with_layout(|l| {
+                l.width = Some(LengthSpec::Px(1.0));
+                l.min_width = Some(LengthSpec::Px(1.0));
+                l.height = Some(LengthSpec::Px(16.0));
+                l.flex_shrink = Some(0.0);
+                l.margin_left = Some(LengthSpec::Px(5.0));
+                l.margin_right = Some(LengthSpec::Px(5.0));
+            }),
+    )
+    .into_any()
+}
+
 /// Input windows narrower than this fold their low-frequency tools into "…".
 const COMPACT_BELOW: f32 = 900.0;
 
@@ -459,8 +823,14 @@ fn toolbar(ui: Ui) -> AnyView {
         (
             ui.locale.get(),
             ui.skin.with(|s| Arc::as_ptr(s) as usize),
-            ui.settings
-                .with(|s| (s.general.input_mode, s.assets.phrases.len())),
+            ui.settings.with(|s| {
+                (
+                    s.general.input_mode,
+                    s.general.send_key,
+                    s.skin.chrome,
+                    s.assets.phrases.len(),
+                )
+            }),
         )
     };
     dynamic(key, move |_| {
@@ -475,6 +845,7 @@ fn toolbar(ui: Ui) -> AnyView {
             expr_open,
             phrase_open,
             stroke_open,
+            help_open,
         ] = std::array::from_fn(|_| signal(false));
         let t = |k: &str| ui.now_t(k);
         let skin = ui.skin.get_untracked();
@@ -561,53 +932,6 @@ fn toolbar(ui: Ui) -> AnyView {
                 }));
             }
         }
-        let stroke = |color: Rgba8| {
-            act(Tool::Stroke(Some(Stroke {
-                color,
-                width_px: 2.0,
-            })))
-        };
-        let accent = skin.chrome.accent;
-        let strokes: Vec<AnyView> = vec![
-            item(
-                format!("{} · #ffffff", t("tb-stroke")),
-                stroke_open,
-                move || stroke(Rgba8::rgba(255, 255, 255, 255)),
-            ),
-            item(
-                format!("{} · #000000", t("tb-stroke")),
-                stroke_open,
-                move || stroke(Rgba8::rgba(0, 0, 0, 255)),
-            ),
-            item(
-                format!("{} · {}", t("tb-stroke"), accent),
-                stroke_open,
-                move || stroke(accent),
-            ),
-            item(t("tb-stroke-none"), stroke_open, || act(Tool::Stroke(None))),
-            widget(Divider::horizontal()).into_any(),
-            item(t("tb-shadow"), stroke_open, || {
-                act(Tool::Shadow(Some(Shadow {
-                    color: Rgba8::rgba(0, 0, 0, 0x99),
-                    dx: 2.0,
-                    dy: 2.0,
-                    blur: 3.0,
-                })))
-            }),
-            item(
-                format!("{} · glow", t("tb-shadow")),
-                stroke_open,
-                move || {
-                    act(Tool::Shadow(Some(Shadow {
-                        color: accent.with_alpha(220),
-                        dx: 0.0,
-                        dy: 0.0,
-                        blur: 8.0,
-                    })))
-                },
-            ),
-            item(t("tb-shadow-none"), stroke_open, || act(Tool::Shadow(None))),
-        ];
         let phrases: Vec<AnyView> = if settings.assets.phrases.is_empty() {
             // The menu's empty state: ✦ and one line, then the way to add some.
             vec![
@@ -660,13 +984,31 @@ fn toolbar(ui: Ui) -> AnyView {
                 })
                 .into_any()
         };
+        let divider = group_divider;
+        // Text styling, then colour and size, then the outline and ruby,
+        // then what plays (effects, pacing) and what goes in.
         let mut bar: Vec<AnyView> = vec![
-            toggle(ui, ti::BOLD, "tb-bold", || Tool::Bold, is_bold),
-            toggle(ui, ti::ITALIC, "tb-italic", || Tool::Italic, is_italic),
+            toggle(
+                ui,
+                ti::BOLD,
+                "tb-bold",
+                Some("Ctrl+B"),
+                || Tool::Bold,
+                is_bold,
+            ),
+            toggle(
+                ui,
+                ti::ITALIC,
+                "tb-italic",
+                Some("Ctrl+I"),
+                || Tool::Italic,
+                is_italic,
+            ),
             toggle(
                 ui,
                 ti::UNDERLINE,
                 "tb-underline",
+                Some("Ctrl+U"),
                 || Tool::Underline,
                 is_underline,
             ),
@@ -674,27 +1016,38 @@ fn toolbar(ui: Ui) -> AnyView {
                 ui,
                 ti::STRIKETHROUGH,
                 "tb-strike",
+                None,
                 || Tool::Strike,
                 is_strike,
             ),
+            divider(),
             popover(
+                ui,
                 ti::PALETTE,
                 t("tb-color"),
                 220.0,
                 color_open,
                 color_panel(ui, color_open),
-            )
-            .into_any(),
+            ),
             popover(
+                ui,
                 ti::TEXT_SIZE,
                 t("tb-size"),
                 240.0,
                 size_open,
                 size_panel(ui, size_open),
-            )
-            .into_any(),
+            ),
         ];
+        let stroke = popover(
+            ui,
+            ti::BORDER_OUTER,
+            t("tb-stroke"),
+            250.0,
+            stroke_open,
+            stroke_panel(ui, stroke_open),
+        );
         let ruby = popover(
+            ui,
             ti::LANGUAGE_HIRAGANA,
             t("tb-ruby"),
             240.0,
@@ -702,6 +1055,7 @@ fn toolbar(ui: Ui) -> AnyView {
             ruby_panel(ui, ruby_open),
         );
         let sticker = popover(
+            ui,
             ti::STICKER,
             t("tb-sticker"),
             360.0,
@@ -709,48 +1063,69 @@ fn toolbar(ui: Ui) -> AnyView {
             sticker_panel(ui, sticker_open),
         );
         let expression = popover(
+            ui,
             ti::MOOD_SMILE,
             t("tb-expression"),
             260.0,
             expr_open,
             expression_panel(ui, expr_open),
         );
-        let divider = || widget(Divider::vertical().inset(6.0)).into_any();
-        let effects_menu = menu(ti::SPARKLES, t("tb-effects"), fx_open, effects);
-        let pacing_menu = menu(ti::HOURGLASS, t("tb-pacing"), pace_open, pacing);
-        let clear_format = tool(ui, ti::CLEAR_FORMATTING, "tb-clear-format", || {
-            act(Tool::ClearFormat)
-        });
+        let help = popover(
+            ui,
+            ti::HELP,
+            t("tb-cheatsheet"),
+            620.0,
+            help_open,
+            cheat_sheet(ui),
+        );
+        let effects_menu = menu(ui, ti::SPARKLES, t("tb-effects"), true, fx_open, effects);
+        let pacing_menu = menu(ui, ti::HOURGLASS, t("tb-pacing"), true, pace_open, pacing);
         // The popovers of folded tools stay mounted, invisible and out of the
         // flow, so the "…" menu can open them in place.
         let mut hidden: Vec<AnyView> = Vec::new();
         if compact {
-            bar.extend([divider(), effects_menu, pacing_menu, clear_format]);
-            let mut items: Vec<AnyView> = strokes;
-            items.push(widget(Divider::horizontal()).into_any());
-            items.push(open_item(t("tb-ruby"), ruby_open));
-            items.push(open_item(t("tb-sticker"), sticker_open));
-            items.push(open_item(t("tb-expression"), expr_open));
-            items.push(
+            // Clearing formats folds too, so the labelled menus fit beside
+            // Send in every language.
+            bar.extend([divider(), effects_menu, pacing_menu]);
+            let mut items: Vec<AnyView> = vec![
+                widget(ActionMenuItem::new(t("tb-clear-format")))
+                    .on_cx(move |_, _: &Activate, cx| {
+                        more_open.set(false);
+                        cx.dispatch_program_all(act(Tool::ClearFormat));
+                    })
+                    .into_any(),
+                open_item(t("tb-stroke"), stroke_open),
+                open_item(t("tb-ruby"), ruby_open),
+                open_item(t("tb-sticker"), sticker_open),
+                open_item(t("tb-expression"), expr_open),
                 widget(ActionMenuItem::new(t("tb-source")))
                     .on_cx(move |_, _: &Activate, cx| {
                         more_open.set(false);
                         cx.dispatch_program_all(Msg::ToggleSource);
                     })
                     .into_any(),
-            );
-            items.push(widget(Divider::horizontal()).into_any());
+                widget(Divider::horizontal()).into_any(),
+            ];
             items.extend(inserts);
-            bar.push(menu(ti::DOTS, t("tb-more"), more_open, items));
-            hidden.extend([ruby, sticker, expression]);
+            bar.push(menu(ui, ti::DOTS, t("tb-more"), false, more_open, items));
+            bar.push(help);
+            hidden.extend([stroke, ruby, sticker, expression]);
         } else {
-            bar.push(menu(ti::BORDER_OUTER, t("tb-stroke"), stroke_open, strokes));
-            bar.push(ruby);
-            bar.push(divider());
+            bar.extend([stroke, ruby, divider()]);
             bar.extend([effects_menu, pacing_menu, sticker, expression]);
-            bar.push(menu(ti::TEXT_PLUS, t("tb-insert"), insert_open, inserts));
-            bar.push(clear_format);
+            bar.push(menu(
+                ui,
+                ti::TEXT_PLUS,
+                t("tb-insert"),
+                false,
+                insert_open,
+                inserts,
+            ));
+            bar.push(tool(ui, ti::CLEAR_FORMATTING, "tb-clear-format", || {
+                act(Tool::ClearFormat)
+            }));
             bar.push(source_toggle(ui));
+            bar.push(help);
         }
         bar.push(widget(Stack::spacer()).into_any());
         if !hidden.is_empty() {
@@ -767,8 +1142,16 @@ fn toolbar(ui: Ui) -> AnyView {
         }
         // Pinned right: never shrinks, so Send is not clipped.
         let mut pinned: Vec<AnyView> = vec![
+            group_divider(),
             mode_switch.into_any(),
-            menu(ti::MESSAGE, t("tb-phrases"), phrase_open, phrases),
+            menu(
+                ui,
+                ti::MESSAGE,
+                t("tb-phrases"),
+                false,
+                phrase_open,
+                phrases,
+            ),
             tool(ui, ti::SETTINGS, "window-settings", || Msg::OpenSettings),
         ];
         if mode == InputMode::Compose {
@@ -1054,14 +1437,20 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
         l.cursor = Some(nana_ui_core::CursorSpec::Text);
         st
     };
+    // The placeholder is chrome, not a line: the theme's muted ink with none
+    // of the skin's outline or shadow, so it cannot pass for typed text.
     let placeholder_style = move || {
-        let mut st = Base::editor(&ui.skin.get()).node_style();
+        let mut base = Base::editor(&ui.skin.get());
+        base.shadow = None;
+        base.stroke = None;
+        let mut st = base.node_style();
         let l = Arc::make_mut(&mut st.layout);
         l.position = PositionSpec::Absolute;
         l.offset_left = Some(LengthSpec::Px(0.0));
         l.offset_top = Some(LengthSpec::Px(0.0));
-        l.opacity = Some(0.45);
+        l.color = None;
         l.pointer_events = Some(PointerEventsSpec::None);
+        st.foreground = Some(SemanticColorRole::Muted);
         st
     };
     widget(Stack::fill_column(0.0).with_layout(|l| {
@@ -1142,12 +1531,35 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
     .into_any()
 }
 
+/// While the draft has focus, a 2px ring in the focus accent at 40% just
+/// inside the box's region, outside the skin's own border: the input window
+/// shows where typing goes, and the display (which has no ring) stays clean.
+fn focus_ring(focused: Signal<bool>) -> AnyView {
+    widget(
+        Stack::column(0.0)
+            .outline(SemanticColorRole::FocusBorder, 2.0)
+            .radius_px(6.0)
+            .with_layout(|l| {
+                l.position = PositionSpec::Absolute;
+                l.offset_left = Some(LengthSpec::Px(2.0));
+                l.offset_top = Some(LengthSpec::Px(2.0));
+                l.offset_right = Some(LengthSpec::Px(2.0));
+                l.offset_bottom = Some(LengthSpec::Px(2.0));
+                l.opacity = Some(0.4);
+                l.pointer_events = Some(PointerEventsSpec::None);
+            }),
+    )
+    .visible(move || focused.get())
+    .into_any()
+}
+
 /// The input window. Returns the editor and the source field for key
 /// handling, and the stack the host shows toasts in.
 pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, ToastsRef)> {
     let editor = entity_ref::<RichTextEditor>();
     let source = entity_ref::<TextArea>();
     let toasts = entity_ref::<nana_ui::runtime::ToastStack>();
+    let focused = signal(false);
     let region_h = move || {
         let skin = ui.skin.get();
         let s = ui.settings.get();
@@ -1166,17 +1578,21 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
     )
     .children((
         toolbar(ui),
-        widget(Stack::column(0.0))
+        widget(Stack::column(0.0).with_layout(|l| l.position = PositionSpec::Relative))
             .bind(move |s: &mut Stack| {
                 let h = region_h();
                 let mut taken = std::mem::replace(s, Stack::row(0.0));
                 taken = taken.height(LengthSpec::Px(h));
                 *s = taken;
             })
-            .children(dialogue_box(
-                ui,
-                Source::Draft,
-                Some(editor_area(ui, editor, source)),
+            .on(move |e: &FocusWithinChanged| {
+                if focused.get_untracked() != e.focused {
+                    focused.set(e.focused);
+                }
+            })
+            .children((
+                dialogue_box(ui, Source::Draft, Some(editor_area(ui, editor, source))),
+                focus_ring(focused),
             )),
         status_line(ui),
         super::feedback::toast_stack(toasts, STATUS_H + 4.0, 2),

@@ -9,9 +9,8 @@ use nana_ui::runtime::{
 };
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{
-    AlignSpec, BackgroundImage, BoxShadowSpec, CssGradient, GradientStop, JustifySpec, LengthSpec,
-    LinearGradient, OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole,
-    TransformOrigin,
+    AlignSpec, BackgroundImage, CssGradient, GradientStop, JustifySpec, LengthSpec, LinearGradient,
+    OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, TransformOrigin,
 };
 use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind, Overflow, VtsReset};
@@ -1718,55 +1717,23 @@ fn keycap(
     widget(Stack::row(4.0).align(AlignSpec::Center))
         .visible(shown)
         .children((
-            (i > 0).then(|| {
-                widget(
-                    Text::new("+")
-                        .style(text_style(12.0, 500))
-                        .color(SemanticColorRole::Muted),
-                )
-            }),
-            widget(
-                Stack::row(0.0)
-                    .height(LengthSpec::Px(24.0))
-                    .min_width(LengthSpec::Px(24.0))
-                    .padding_xy(7.0, 0.0)
-                    .align(AlignSpec::Center)
-                    .justify(JustifySpec::Center)
-                    .surface(SemanticColorRole::Surface)
-                    .outline(SemanticColorRole::BorderSoft, 1.0)
-                    .radius_px(6.0)
-                    .with_layout(|l| {
-                        l.paint.box_shadows = vec![BoxShadowSpec {
-                            paint_color: None,
-                            offset_x: 0.0,
-                            offset_y: -2.0,
-                            blur_radius: 0.0,
-                            spread_radius: 0.0,
-                            color: [0.5, 0.55, 0.62, 0.28],
-                            inset: true,
-                        }];
-                    }),
-            )
-            .border(move || {
-                Some(if danger() {
-                    SemanticColorRole::Danger
-                } else {
-                    SemanticColorRole::BorderSoft
+            (i > 0).then(|| widget(crate::ui::keycap::plus())),
+            widget(crate::ui::keycap::face())
+                .border(move || {
+                    Some(if danger() {
+                        SemanticColorRole::Danger
+                    } else {
+                        SemanticColorRole::BorderSoft
+                    })
                 })
-            })
-            .children(
-                widget(
-                    Text::new(String::new())
-                        .style(text_style(12.0, 600))
-                        .color(SemanticColorRole::Text),
-                )
-                .bind(move |t: &mut Text| {
-                    let text = parts().get(i).cloned().unwrap_or_default();
-                    if t.value != text {
-                        t.value = text;
-                    }
-                }),
-            ),
+                .children(widget(crate::ui::keycap::label(String::new())).bind(
+                    move |t: &mut Text| {
+                        let text = parts().get(i).cloned().unwrap_or_default();
+                        if t.value != text {
+                            t.value = text;
+                        }
+                    },
+                )),
         ))
         .into_any()
 }

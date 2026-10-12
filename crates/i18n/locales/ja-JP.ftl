@@ -493,3 +493,23 @@ int-blive-panel-hint = 配信者用のウィンドウで、キャプチャされ
 int-blive-open-panel = コメントパネルを開く
 int-blive-quote-display = ダイアログに返信の引用を表示
 int-blive-quote-display-hint = コメントに返信するとき、テキストの上にそのコメントを表示します
+
+## wave3-input
+tb-cheatsheet = マークアップ早見表
+tb-stroke-white = 白の縁取り
+tb-stroke-black = 黒の縁取り
+tb-stroke-accent = アクセント色の縁取り
+tb-shadow-drop = ドロップ
+tb-shadow-glow = 発光
+cheat-markers = マーカー
+cheat-shortcuts = ショートカット
+cheat-wait = 指定ミリ秒待ってから続ける
+cheat-pause = 続行するまで止める
+cheat-page = 新しいページにする
+cheat-expr = 立ち絵の表情を切り替える
+cheat-se = 効果音を鳴らす
+cheat-sticker = スタンプを挿入
+cheat-at = 視聴者をメンション
+cheat-newline = 改行
+cheat-recall = 前 / 次の台詞
+cheat-hide = 入力ウィンドウを隠す

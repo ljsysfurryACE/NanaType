@@ -244,6 +244,26 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();
     });
+    // The toolbar's `?` sheet as its popover shows it.
+    shot(
+        "input-cheatsheet",
+        out,
+        620,
+        250,
+        theme.clone(),
+        |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || {
+                    nana_ui::runtime::view::widget(
+                        nana_ui::runtime::Stack::column(0.0)
+                            .padding(8.0)
+                            .surface(nana_ui_core::SemanticColorRole::Surface),
+                    )
+                    .children(input::cheat_sheet(ui))
+                })
+                .unwrap();
+        },
+    );
     shot(
         "history",
         out,
@@ -276,6 +296,16 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             },
         );
     }
+
+    // An empty draft shows the editor's placeholder.
+    ui.draft.set(Arc::new(Document::new()));
+    ui.editor_value.set(nana_ui_core::RichText::new(""));
+    ui.reply.set(None);
+    shot("input-empty", out, w, ih, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || input::input_window(ui))
+            .unwrap();
+    });
 
     // The same two pages with every link switched on, one in each state.
     let mut on = settings.clone();

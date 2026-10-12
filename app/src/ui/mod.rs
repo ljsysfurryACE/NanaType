@@ -6,6 +6,7 @@ pub mod dialogue;
 pub mod feedback;
 pub mod history;
 pub mod input;
+pub mod keycap;
 pub mod overflow;
 pub mod quote;
 pub mod rich;
