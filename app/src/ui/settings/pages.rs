@@ -1824,9 +1824,10 @@ fn integrations(ui: Ui) -> AnyView {
         move || ui.status.with(|s| s.vts_hotkeys.clone()),
         move |hotkeys| {
             if hotkeys.is_empty() {
-                return widget(Stack::column(0.0).padding_xy(16.0, 10.0))
-                    .children(hint(ui.now_t("int-vts-map-auto")))
-                    .into_any();
+                return crate::ui::feedback::empty_state(
+                    ui.now_t("empty-vts-hotkeys"),
+                    Some((ui.now_t("int-vts-refresh"), Box::new(|| Msg::VtsRefresh))),
+                );
             }
             let rows: Vec<AnyView> = hotkeys
                 .iter()
@@ -2055,6 +2056,9 @@ fn assets(ui: Ui) -> AnyView {
     let dirs = dynamic(
         move || ui.settings.with(|s| s.assets.sticker_dirs.clone()),
         move |dirs| {
+            if dirs.is_empty() {
+                return crate::ui::feedback::empty_state(ui.now_t("empty-stickers"), None);
+            }
             let rows: Vec<AnyView> = dirs
                 .iter()
                 .enumerate()
@@ -2083,6 +2087,9 @@ fn assets(ui: Ui) -> AnyView {
     let phrases = dynamic(
         move || ui.settings.with(|s| s.assets.phrases.len()),
         move |n| {
+            if *n == 0 {
+                return crate::ui::feedback::empty_state(ui.now_t("empty-phrases"), None);
+            }
             let rows: Vec<AnyView> = (0..*n)
                 .map(|i| {
                     let p = ui.settings.with_untracked(|s| s.assets.phrases[i].clone());

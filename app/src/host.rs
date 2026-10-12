@@ -6,7 +6,11 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use nana_ui::runtime::{DocumentId, Entity, FrameworkError, RichTextEditor, RuntimeDocument};
+use nana_ui::runtime::view::{entity_ref, with_refs};
+use nana_ui::runtime::{
+    DocumentId, Entity, FrameworkError, RichTextEditor, RuntimeDocument, Toast, ToastDismissed,
+    ToastStack,
+};
 use nana_ui::{
     CompiledTheme, DocumentAccessError, FrameDemand, GpuBackendPolicy, MaterialEffect, RoutedInput,
     RuntimeProgram, RuntimeProgramContext, RuntimeProgramUpdate,
@@ -35,6 +39,8 @@ pub struct Host {
     follow: overflow::Follow,
     /// The typewriter's automatic page breaks.
     pager: overflow::Pager,
+    /// The toast stack of each window that has one (settings, input).
+    toasts: HashMap<WindowId, Entity<ToastStack>>,
 }
 
 fn is_modifier(code: &str) -> bool {
@@ -56,6 +62,7 @@ fn is_modifier(code: &str) -> bool {
 impl Host {
     fn finish(&mut self) -> RuntimeProgramUpdate {
         self.drive_editor();
+        self.show_toasts();
         if self.app.theme_changed {
             self.app.theme_changed = false;
             let theme = self.app.theme.clone();
@@ -93,6 +100,59 @@ impl Host {
         }
     }
 
+    /// Push the app's new toasts into the settings window (when open) and
+    /// the input window (while it is visible). A toast that times out or is
+    /// closed comes back as [`Msg::ToastDismissed`].
+    fn show_toasts(&mut self) {
+        let requests = std::mem::take(&mut self.app.toasts);
+        if requests.is_empty() {
+            return;
+        }
+        let input_visible = self.app.input_visible();
+        for request in requests {
+            let mut shown = false;
+            for kind in [WindowKind::Settings, WindowKind::Input] {
+                let wanted = match kind {
+                    WindowKind::Input => input_visible,
+                    _ => request.settings,
+                };
+                let id = kind.id();
+                let (true, Some(stack), Some(doc)) = (
+                    wanted,
+                    self.toasts.get(&id).copied(),
+                    self.docs.get_mut(&id),
+                ) else {
+                    continue;
+                };
+                let toast = Toast::new(request.title.as_str(), request.tone)
+                    .timeout(std::time::Duration::from_millis(request.ms))
+                    .dismissible(true);
+                let cx = doc.context_mut();
+                let pushed = cx.push_toast(stack, toast).and_then(|toast| {
+                    cx.on(toast, move |_, _: &ToastDismissed, vcx| {
+                        vcx.dispatch_program_all(Msg::ToastDismissed(kind, toast));
+                    })
+                });
+                match pushed {
+                    Ok(()) => shown = true,
+                    Err(e) => crate::debug_log(&format!("toast: {e}")),
+                }
+            }
+            // No window to show it in yet (a notice at start-up): keep it
+            // for one that opens while it is still fresh.
+            if !shown && request.at.elapsed() < std::time::Duration::from_millis(request.ms) {
+                self.app.toasts.push(request);
+            }
+        }
+    }
+
+    fn dismiss_toast(&mut self, kind: WindowKind, toast: Entity<Toast>) {
+        let id = kind.id();
+        if let (Some(stack), Some(doc)) = (self.toasts.get(&id).copied(), self.docs.get_mut(&id)) {
+            let _ = doc.context_mut().remove_toast(stack, toast);
+        }
+    }
+
     fn mount(&mut self, id: WindowId, kind: WindowKind) -> Result<(), String> {
         let doc_id = DocumentId::new(id.0 + 1).ok_or("document id")?;
         let mut doc = RuntimeDocument::new(doc_id);
@@ -114,9 +174,15 @@ impl Host {
                     .map_err(err)?;
             }
             WindowKind::Settings => {
-                context
-                    .mount_view_root(doc_id, move || settings::settings_window(ui))
+                let (_, stack) = context
+                    .mount_view_root(doc_id, move || {
+                        let stack = entity_ref::<ToastStack>();
+                        let view =
+                            crate::ui::feedback::with_toasts(settings::settings_window(ui), stack);
+                        with_refs(view, stack)
+                    })
                     .map_err(err)?;
+                self.toasts.insert(id, stack);
             }
             WindowKind::Chat => {
                 context
@@ -124,7 +190,7 @@ impl Host {
                     .map_err(err)?;
             }
             WindowKind::Input => {
-                let (_, (editor, source)) = context
+                let (_, (editor, source, stack)) = context
                     .mount_view_root(doc_id, move || input::input_window(ui))
                     .map_err(err)?;
                 context
@@ -135,6 +201,7 @@ impl Host {
                     .map_err(err)?;
                 self.editor = Some(editor);
                 self.editor_fx = None;
+                self.toasts.insert(id, stack);
             }
         }
         self.docs.insert(id, doc);
@@ -301,6 +368,7 @@ impl RuntimeProgram for Host {
             editor_fx: None,
             follow: overflow::Follow::default(),
             pager: overflow::Pager::default(),
+            toasts: HashMap::new(),
         };
         // The primary window exists before `initialize_window` is ever
         // called, so its document is built here.
@@ -325,7 +393,10 @@ impl RuntimeProgram for Host {
     }
 
     fn update(&mut self, message: Msg, _: &RuntimeProgramContext<Msg>) -> RuntimeProgramUpdate {
-        self.app.update(message);
+        match message {
+            Msg::ToastDismissed(kind, toast) => self.dismiss_toast(kind, toast),
+            message => self.app.update(message),
+        }
         self.finish()
     }
 
@@ -364,6 +435,7 @@ impl RuntimeProgram for Host {
 
     fn discard_window(&mut self, id: WindowId) {
         self.docs.remove(&id);
+        self.toasts.remove(&id);
     }
 
     fn window_event(
@@ -378,6 +450,9 @@ impl RuntimeProgram for Host {
                     self.app.windows.ready(kind, handle.clone());
                     if kind == WindowKind::Chat {
                         self.app.chat_resized(geometry.logical_size.0);
+                    }
+                    if kind == WindowKind::Settings {
+                        self.app.tint_settings_caption();
                     }
                     self.app
                         .windows
@@ -454,6 +529,7 @@ impl RuntimeProgram for Host {
                     self.app.windows.closed(kind);
                 }
                 self.docs.remove(&id);
+                self.toasts.remove(&id);
             }
             WindowEvent::FileDialogCompleted { result, .. } => {
                 self.app.file_chosen(result.id, result.paths);

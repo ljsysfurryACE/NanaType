@@ -22,6 +22,22 @@ tray-skin = Skin
 tray-settings = Settings…
 tray-obs-help = OBS setup…
 tray-quit = Quit NanaType
+tray-action-show-input = Show input window
+tray-action-hide-input = Hide input window
+tray-action-show-display = Show dialogue box
+tray-action-hide-display = Hide dialogue box
+tray-action-show-history = Show history
+tray-action-hide-history = Hide history
+tray-action-show-chat = Open chat panel
+tray-action-hide-chat = Close chat panel
+tray-action-lock = Lock overlays
+tray-action-unlock = Unlock overlays
+tray-action-continue = Continue
+tray-action-sample = Play a sample line
+tray-action-settings = Open settings…
+tray-action-obs = Set up OBS…
+tray-tooltip = NanaType — { $mode } · { $skin }
+tray-tooltip-error = NanaType · ⚠ { $message }
 
 ## Input mode
 mode-compose = Compose & send
@@ -110,6 +126,10 @@ marker-vts = VTS { $name }
 status-queued = Queued (#{ $position })
 status-mirror = Mirroring
 status-sent = Sent
+empty-phrases = No quick phrases yet
+empty-stickers = No sticker folders yet
+empty-open-assets = Add in Settings › Assets
+empty-vts-hotkeys = No VTube Studio hotkeys yet
 
 ## Settings navigation
 settings-general = General

@@ -19,6 +19,22 @@ tray-skin = 皮肤
 tray-settings = 设置…
 tray-obs-help = OBS 接入说明…
 tray-quit = 退出 NanaType
+tray-action-show-input = 显示输入框
+tray-action-hide-input = 隐藏输入框
+tray-action-show-display = 显示对话框
+tray-action-hide-display = 隐藏对话框
+tray-action-show-history = 显示历史记录
+tray-action-hide-history = 隐藏历史记录
+tray-action-show-chat = 打开弹幕面板
+tray-action-hide-chat = 关闭弹幕面板
+tray-action-lock = 锁定叠加窗口
+tray-action-unlock = 解锁叠加窗口
+tray-action-continue = 继续
+tray-action-sample = 播放示例台词
+tray-action-settings = 打开设置…
+tray-action-obs = 接入 OBS…
+tray-tooltip = NanaType — { $mode } · { $skin }
+tray-tooltip-error = NanaType · ⚠ { $message }
 
 ## 输入模式
 mode-compose = 编辑后发送
@@ -107,6 +123,10 @@ marker-vts = VTS { $name }
 status-queued = 已加入队列（第 { $position } 条）
 status-mirror = 镜像中
 status-sent = 已发送
+empty-phrases = 还没有快捷短语
+empty-stickers = 还没有贴纸目录
+empty-open-assets = 去 设置 › 素材 添加
+empty-vts-hotkeys = 还没有读取到 VTube Studio 热键
 
 ## 设置导航
 settings-general = 常规

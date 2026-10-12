@@ -401,10 +401,16 @@ fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
                 move |(q, _)| {
                     let stickers = ui.stickers.get_untracked();
                     if stickers.is_empty() {
-                        return widget(
-                            Text::new(ui.now_t("tb-sticker-empty")).color(SemanticColorRole::Muted),
-                        )
-                        .into_any();
+                        return super::feedback::empty_state(
+                            ui.now_t("empty-stickers"),
+                            Some((
+                                ui.now_t("empty-open-assets"),
+                                Box::new(move || {
+                                    open.set(false);
+                                    Msg::SettingsPage(super::settings::Page::Assets)
+                                }),
+                            )),
+                        );
                     }
                     let q = q.to_lowercase();
                     let cells: Vec<AnyView> = stickers
@@ -600,7 +606,18 @@ fn toolbar(ui: Ui) -> AnyView {
             item(t("tb-shadow-none"), stroke_open, || act(Tool::Shadow(None))),
         ];
         let phrases: Vec<AnyView> = if settings.assets.phrases.is_empty() {
-            vec![widget(ActionMenuItem::new(t("tb-phrases-empty")).disabled(true)).into_any()]
+            // The menu's empty state: ✦ and one line, then the way to add some.
+            vec![
+                widget(
+                    ActionMenuItem::new(t("empty-phrases"))
+                        .leading(ti::SPARKLES)
+                        .disabled(true),
+                )
+                .into_any(),
+                item(t("empty-open-assets"), phrase_open, || {
+                    Msg::SettingsPage(super::settings::Page::Assets)
+                }),
+            ]
         } else {
             settings
                 .assets
@@ -719,10 +736,8 @@ fn toolbar(ui: Ui) -> AnyView {
 
 fn status_line(ui: Ui) -> AnyView {
     let text = move || {
+        // Notices show as toasts above this line.
         let status = ui.status.get();
-        if let Some(n) = status.notices.last() {
-            return (n.text.clone(), n.error);
-        }
         let diags = ui.diagnostics.get();
         if let Some(d) = diags.first() {
             return (d.clone(), true);
@@ -950,10 +965,11 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
 }
 
 /// The input window. Returns the editor and the source field for key
-/// handling.
-pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef)> {
+/// handling, and the stack the host shows toasts in.
+pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, ToastsRef)> {
     let editor = entity_ref::<RichTextEditor>();
     let source = entity_ref::<TextArea>();
+    let toasts = entity_ref::<nana_ui::runtime::ToastStack>();
     let region_h = move || {
         let skin = ui.skin.get();
         let s = ui.settings.get();
@@ -965,6 +981,7 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef)> {
             .surface(SemanticColorRole::Background)
             .radius(nana_ui_core::RadiusTier::Lg)
             .with_layout(|l| {
+                l.position = PositionSpec::Relative;
                 l.overflow_x = nana_ui_core::OverflowSpec::Hidden;
                 l.overflow_y = nana_ui_core::OverflowSpec::Hidden;
             }),
@@ -984,9 +1001,11 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef)> {
                 Some(editor_area(ui, editor, source)),
             )),
         status_line(ui),
+        super::feedback::toast_stack(toasts, STATUS_H + 4.0, 2),
     ));
-    with_refs(view, (editor, source))
+    with_refs(view, (editor, source, toasts))
 }
 
 pub type EditorRef = EntityRef<RichTextEditor>;
 pub type SourceRef = EntityRef<TextArea>;
+pub type ToastsRef = EntityRef<nana_ui::runtime::ToastStack>;

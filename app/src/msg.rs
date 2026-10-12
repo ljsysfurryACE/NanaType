@@ -119,6 +119,13 @@ pub enum Msg {
     VtsRefresh,
     InsertPhrase(usize),
     DismissNotice(u64),
+    /// The tray stops showing error notice `id` in its tooltip.
+    TrayErrorExpired(u64),
+    /// A toast timed out or was closed; the host takes it out of its window.
+    ToastDismissed(
+        WindowKind,
+        nana_ui::runtime::Entity<nana_ui::runtime::Toast>,
+    ),
     /// A scheduled wake from the timer thread.
     Wake {
         epoch: u64,
