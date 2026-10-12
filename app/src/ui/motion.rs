@@ -24,7 +24,8 @@ use nana_ui_core::{DialogTransition, ToastMotion};
 
 /// A control's hover colour.
 pub const HOVER_MS: u64 = 120;
-/// A state change: a badge's tone, a chip, a toast going.
+/// A state change: a chip, a toast going. (Link badges change in place: a
+/// switching block would widen them, see `settings::controls`.)
 pub const STATE_MS: u64 = 160;
 /// An arrival: a step, a chip, a toast, the summoned input window.
 pub const ENTER_MS: u64 = 200;
