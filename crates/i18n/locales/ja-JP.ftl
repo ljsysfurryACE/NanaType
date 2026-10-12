@@ -4,14 +4,14 @@ app-tagline = VTuberのためのタイプライター
 history-count = { $count } 件
 
 ## ウィンドウタイトル
-window-input = 入力
-window-display = ダイアログ
+window-input = 入力ウィンドウ
+window-display = 表示ウィンドウ
 window-history = 履歴
 window-settings = 設定
 
 ## トレイ
-tray-show-input = 入力
-tray-show-display = ダイアログ
+tray-show-input = 入力ウィンドウ
+tray-show-display = 表示ウィンドウ
 tray-show-history = 履歴
 tray-lock-overlays = オーバーレイをロック
 tray-mode = 入力モード
@@ -23,8 +23,8 @@ tray-quit = NanaType を終了
 ## 入力モード
 mode-compose = 編集して送信
 mode-compose-hint = 書き終えてから送信し、タイプライター演出で再生します
-mode-mirror = リアルタイム
-mode-mirror-hint = 入力した内容がそのままダイアログに表示されます
+mode-mirror = ミラー（リアルタイム）
+mode-mirror-hint = 入力した内容がそのまま表示ウィンドウに表示されます
 
 ## ツールバー
 tb-bold = 太字
@@ -105,7 +105,7 @@ marker-portrait = 立ち絵 { $name }
 marker-shake = 揺れ
 marker-vts = VTS { $name }
 status-queued = 待機列に追加（{ $position } 件目）
-status-mirror = リアルタイム表示中
+status-mirror = ミラー中
 status-sent = 送信しました
 
 ## 設定ナビゲーション
@@ -128,7 +128,8 @@ general-speaker-hint = 名前欄と履歴に表示されます。空欄にする
 general-avatar = アイコン
 general-avatar-pick = 画像を選択…
 general-avatar-clear = 削除
-general-presence = 入力ウィンドウ
+general-input-window = 入力ウィンドウ
+general-presence = 動作
 general-presence-resident = 常に表示
 general-presence-summon = ショートカットで呼び出す
 general-presence-hint = 呼び出しモードでは送信または Esc で自動的に隠れます
@@ -162,7 +163,7 @@ playback-queue-finish = 今のセリフを表示しきってから
 playback-queue-queue = 続行キーまで待機
 playback-reduced = 動きを減らす
 playback-reduced-hint = 文字ごとの動きと画面揺れをオフにします
-playback-stagger = リアルタイム時の文字間隔
+playback-stagger = ミラー時の文字間隔
 playback-sound = タイプ音
 playback-volume = 全体の音量
 playback-volume-typing = タイプ音の音量
@@ -224,8 +225,8 @@ skins-tag-elegant = 上品
 skins-tag-minimal = シンプル
 
 ## ウィンドウ
-windows-input = 入力
-windows-display = ダイアログ
+windows-input = 入力ウィンドウ
+windows-display = 表示ウィンドウ
 windows-history = 履歴
 windows-visible = 表示
 windows-lock = 操作
@@ -254,7 +255,7 @@ history-sync-submit = 送信時
 history-sync-reveal = 文字送りと同時
 history-sync-complete = 表示完了後
 history-hide-latest = 最新の一件を隠す
-history-hide-latest-hint = ダイアログに表示中のセリフは、消えるか次のセリフに替わってから履歴に出ます（Echo-Live と同じ）
+history-hide-latest-hint = 表示ウィンドウに表示中のセリフは、消えるか次のセリフに替わってから履歴に出ます（Echo-Live と同じ）
 history-hide-latest-skin = スキンに従う
 history-hide-latest-always = 隠す
 history-hide-latest-never = 隠さない
@@ -263,10 +264,10 @@ history-clear-confirm = この配信の履歴をすべて消去しますか？
 history-empty = 送信したセリフがここに表示されます
 
 ## ショートカット
-hotkeys-summon = 入力を呼び出す
+hotkeys-summon = 入力ウィンドウを呼び出す
 hotkeys-continue = 続行
 hotkeys-skip = セリフをスキップ
-hotkeys-clear = ダイアログを消去
+hotkeys-clear = 表示ウィンドウを消去
 hotkeys-toggle-mode = 入力モードを切り替え
 hotkeys-toggle-overlays = オーバーレイの表示切替
 hotkeys-record = 記録
@@ -281,7 +282,7 @@ hotkeys-local = 入力ウィンドウ内のショートカット
 hotkeys-local-hint = Ctrl+B/I/U で書式、Ctrl+↑/↓ で送信済みのセリフを呼び出し、Esc で入力を隠します
 
 ## 出力
-output-display = ダイアログ
+output-display = 表示ウィンドウ
 output-history = 履歴
 output-spout = Spout2 出力
 output-spout-name = センダー名
@@ -298,8 +299,8 @@ output-sample = サンプルを再生
 output-sample-line = [b]こんにちは！[/b]NanaType の[wave]サンプルセリフ[/wave]です。[wait=300][shake]見えていますか？[/shake]
 output-obs-title = OBS に接続する
 output-obs-spout = OBS 用 Spout2 プラグインを入れ、「Spout2 Capture」ソースを追加して上のセンダー名を選び、合成モードを「乗算済みアルファ」にします。
-output-obs-window = 「ウィンドウキャプチャ」（方式：Windows 10 1903 以降）も使えます。ダイアログの背景は透明です。
-output-obs-mac = macOS では「macOS 画面キャプチャ」でダイアログのウィンドウを選んでください。
+output-obs-window = 「ウィンドウキャプチャ」（方式：Windows 10 1903 以降）も使えます。表示ウィンドウの背景は透明です。
+output-obs-mac = macOS では「macOS 画面キャプチャ」で表示ウィンドウを選んでください。
 
 ## 連携
 int-vts = VTube Studio

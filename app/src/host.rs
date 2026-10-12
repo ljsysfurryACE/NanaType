@@ -37,6 +37,12 @@ pub struct Host {
     pager: overflow::Pager,
 }
 
+/// The tag every document shapes its text in by default, so Han characters
+/// take the active language's glyph shapes instead of the font's first guess.
+fn default_language(tag: &str) -> Option<nana_ui::runtime::LanguageTag> {
+    nana_ui::runtime::LanguageTag::new(tag)
+}
+
 fn is_modifier(code: &str) -> bool {
     matches!(
         code,
@@ -56,6 +62,11 @@ fn is_modifier(code: &str) -> bool {
 impl Host {
     fn finish(&mut self) -> RuntimeProgramUpdate {
         self.drive_editor();
+        let language = self.app.ui.locale.get_untracked().tag();
+        for doc in self.docs.values_mut() {
+            doc.context_mut()
+                .set_default_language(default_language(language));
+        }
         if self.app.theme_changed {
             self.app.theme_changed = false;
             let theme = self.app.theme.clone();
@@ -137,6 +148,9 @@ impl Host {
                 self.editor_fx = None;
             }
         }
+        doc.context_mut().set_default_language(default_language(
+            self.app.ui.locale.get_untracked().tag(),
+        ));
         self.docs.insert(id, doc);
         Ok(())
     }

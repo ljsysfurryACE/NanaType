@@ -8,13 +8,13 @@ history-count = { $count ->
 
 ## Window titles
 window-input = Input
-window-display = Dialogue
+window-display = Display
 window-history = History
 window-settings = Settings
 
 ## Tray
 tray-show-input = Input
-tray-show-display = Dialogue
+tray-show-display = Display
 tray-show-history = History
 tray-lock-overlays = Lock overlays
 tray-mode = Input mode
@@ -27,7 +27,7 @@ tray-quit = Quit NanaType
 mode-compose = Compose & send
 mode-compose-hint = Write the line, then send it to play with the typewriter
 mode-mirror = Live mirror
-mode-mirror-hint = The dialogue follows what you type
+mode-mirror-hint = The display follows what you type
 
 ## Toolbar
 tb-bold = Bold
@@ -131,7 +131,8 @@ general-speaker-hint = Shown on the name plate and in history. Leave empty to hi
 general-avatar = Avatar
 general-avatar-pick = Choose image…
 general-avatar-clear = Remove
-general-presence = Input window
+general-input-window = Input window
+general-presence = Behavior
 general-presence-resident = Always open
 general-presence-summon = Summon with hotkey
 general-presence-hint = In summon mode the input hides after sending or Esc
@@ -228,7 +229,7 @@ skins-tag-minimal = Minimal
 
 ## Windows
 windows-input = Input
-windows-display = Dialogue
+windows-display = Display
 windows-history = History
 windows-visible = Show
 windows-lock = Interaction
@@ -257,7 +258,7 @@ history-sync-submit = When sent
 history-sync-reveal = Typing along
 history-sync-complete = When fully shown
 history-hide-latest = Hide the newest line
-history-hide-latest-hint = The line still on the dialogue box joins the history once the box clears or the next line replaces it, like Echo-Live
+history-hide-latest-hint = The line still on the display window joins the history once the box clears or the next line replaces it, like Echo-Live
 history-hide-latest-skin = As the skin says
 history-hide-latest-always = Hide
 history-hide-latest-never = Don't hide
@@ -269,7 +270,7 @@ history-empty = Lines you send appear here
 hotkeys-summon = Summon input
 hotkeys-continue = Continue
 hotkeys-skip = Skip line
-hotkeys-clear = Clear dialogue
+hotkeys-clear = Clear display
 hotkeys-toggle-mode = Switch input mode
 hotkeys-toggle-overlays = Show/hide overlays
 hotkeys-record = Record
@@ -284,7 +285,7 @@ hotkeys-local = Input window shortcuts
 hotkeys-local-hint = Ctrl+B/I/U for style, Ctrl+↑/↓ to recall sent lines, Esc hides the input
 
 ## Output
-output-display = Dialogue
+output-display = Display
 output-history = History
 output-spout = Spout2 output
 output-spout-name = Sender name
@@ -301,8 +302,8 @@ output-sample = Play a sample line
 output-sample-line = [b]Hello![/b] This is a NanaType [wave]sample line[/wave].[wait=300][shake]Can you see it?[/shake]
 output-obs-title = Set up OBS
 output-obs-spout = Install the Spout2 plugin for OBS, add a “Spout2 Capture” source, pick the sender name above, and set the composite mode to “Premultiplied Alpha”.
-output-obs-window = You can also use “Window Capture” (method: Windows 10 1903 and up); the dialogue window background is transparent.
-output-obs-mac = On macOS use “macOS Screen Capture” and pick the dialogue window.
+output-obs-window = You can also use “Window Capture” (method: Windows 10 1903 and up); the display window background is transparent.
+output-obs-mac = On macOS use “macOS Screen Capture” and pick the display window.
 
 ## Integrations
 int-vts = VTube Studio

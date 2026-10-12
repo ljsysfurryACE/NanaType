@@ -495,6 +495,7 @@ impl App {
             &self.loaded.skin,
             &self.settings.skin.overrides,
             &self.skin_families,
+            self.ui.locale.get_untracked().tag(),
         ));
         self.skin = skin.clone();
         let dark = skin_theme::dark_mode(&skin, self.settings.skin.chrome, self.system_dark);
@@ -683,6 +684,8 @@ impl App {
                 tray.relabel(&I18N, locale);
             }
             self.refresh_skin_rows();
+            // The font stack follows the language.
+            self.apply_skin();
             self.sync_tray_skins();
             for kind in [
                 WindowKind::Display,

@@ -4,14 +4,14 @@ app-tagline = 虚拟主播打字机
 history-count = { $count } 条
 
 ## 窗口标题
-window-input = 输入
-window-display = 对话框
+window-input = 输入框
+window-display = 展示框
 window-history = 历史记录
 window-settings = 设置
 
 ## 托盘
 tray-show-input = 输入框
-tray-show-display = 对话框
+tray-show-display = 展示框
 tray-show-history = 历史记录
 tray-lock-overlays = 锁定叠加窗口
 tray-mode = 输入模式
@@ -128,7 +128,8 @@ general-speaker-hint = 显示在名牌和历史记录中，留空则隐藏名牌
 general-avatar = 头像
 general-avatar-pick = 选择图片…
 general-avatar-clear = 移除
-general-presence = 输入框
+general-input-window = 输入框
+general-presence = 出现方式
 general-presence-resident = 常驻
 general-presence-summon = 快捷键唤出
 general-presence-hint = 唤出模式下，发送或按 Esc 后输入框自动隐藏
@@ -185,11 +186,11 @@ skins-version = 版本 { $version }
 skins-overrides = 个性化
 skins-override-text = 文字颜色
 skins-override-name = 名牌颜色
-skins-override-box = 对话框颜色
+skins-override-box = 展示框颜色
 skins-override-accent = 强调色
 skins-override-size = 文字大小
 skins-override-overflow = 长文本
-skins-override-overflow-hint = 一句话超出对话框高度时的处理方式
+skins-override-overflow-hint = 一句话超出展示框高度时的处理方式
 skins-override-overflow-skin = 跟随皮肤
 skins-override-overflow-clip = 裁掉
 skins-override-overflow-scroll = 跟随滚动
@@ -225,7 +226,7 @@ skins-tag-minimal = 简约
 
 ## 窗口
 windows-input = 输入框
-windows-display = 对话框
+windows-display = 展示框
 windows-history = 历史记录
 windows-visible = 显示
 windows-lock = 交互
@@ -254,7 +255,7 @@ history-sync-submit = 发送时
 history-sync-reveal = 随打字同步
 history-sync-complete = 显示完成后
 history-hide-latest = 隐藏最新一条
-history-hide-latest-hint = 对话框上还显示着的那句先不进历史，对话框清空或换下一句后再出现（同 Echo-Live）
+history-hide-latest-hint = 展示框上还显示着的那句先不进历史，展示框清空或换下一句后再出现（同 Echo-Live）
 history-hide-latest-skin = 跟随皮肤
 history-hide-latest-always = 隐藏
 history-hide-latest-never = 不隐藏
@@ -266,7 +267,7 @@ history-empty = 发送的台词会显示在这里
 hotkeys-summon = 唤出输入框
 hotkeys-continue = 继续
 hotkeys-skip = 跳过当前句
-hotkeys-clear = 清空对话框
+hotkeys-clear = 清空展示框
 hotkeys-toggle-mode = 切换输入模式
 hotkeys-toggle-overlays = 显示/隐藏叠加窗口
 hotkeys-record = 录制
@@ -281,7 +282,7 @@ hotkeys-local = 输入框内快捷键
 hotkeys-local-hint = Ctrl+B/I/U 设置样式，Ctrl+↑/↓ 调出已发送的台词，Esc 隐藏输入框
 
 ## 输出
-output-display = 对话框
+output-display = 展示框
 output-history = 历史记录
 output-spout = Spout2 输出
 output-spout-name = 发送端名称
@@ -298,8 +299,8 @@ output-sample = 播放示例台词
 output-sample-line = [b]你好！[/b]这是 NanaType 的[wave]示例台词[/wave]。[wait=300][shake]看得到吗？[/shake]
 output-obs-title = 在 OBS 中接入
 output-obs-spout = 安装 OBS 的 Spout2 插件，添加「Spout2 Capture」来源，选择上面的发送端名称，并将合成模式设为「预乘 Alpha」。
-output-obs-window = 也可以使用「窗口捕获」（捕获方式选 Windows 10 (1903 及以上)），对话框窗口背景为透明。
-output-obs-mac = macOS 上请使用「macOS 屏幕捕获」并选择对话框窗口。
+output-obs-window = 也可以使用「窗口捕获」（捕获方式选 Windows 10 (1903 及以上)），展示框窗口背景为透明。
+output-obs-mac = macOS 上请使用「macOS 屏幕捕获」并选择展示框窗口。
 
 ## 联动
 int-vts = VTube Studio
@@ -321,7 +322,7 @@ int-vts-mouth-param-hint = 说话时驱动的输入参数（默认 MouthOpen）
 int-vts-mouth-amp = 张嘴幅度
 int-vts-reset = 表情复位
 int-vts-reset-hint = 关闭一句台词中开启的表情
-int-vts-reset-line-end = 台词离开对话框时
+int-vts-reset-line-end = 台词离开展示框时
 int-vts-reset-next-line = 下一句开始时
 int-vts-reset-off = 不复位
 int-osc = OSC

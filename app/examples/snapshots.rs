@@ -151,6 +151,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         &loaded.skin,
         &Default::default(),
         &Default::default(),
+        locale.tag(),
     ));
     let mut settings = Settings::default();
     settings.general.speaker_name = "奈奈".into();

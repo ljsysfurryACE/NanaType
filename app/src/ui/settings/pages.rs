@@ -152,7 +152,7 @@ fn general(ui: Ui) -> AnyView {
             ),
             section(
                 ui,
-                "general-presence",
+                "general-input-window",
                 vec![
                     row(
                         ui,
@@ -948,7 +948,12 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             None => (ui.skin.get_untracked(), ui.asset_urls.get_untracked()),
             Some((row, base)) => {
                 let skin = ui.settings.with_untracked(|s| {
-                    crate::skin_theme::prepare(base, &s.skin.overrides, &Default::default())
+                    crate::skin_theme::prepare(
+                        base,
+                        &s.skin.overrides,
+                        &Default::default(),
+                        locale.tag(),
+                    )
                 });
                 let urls = row.folder.as_ref().map_or_else(HashMap::new, |f| {
                     crate::assets::skin_urls(&nanatype_theme::DirFiles::new(f))
