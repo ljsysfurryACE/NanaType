@@ -448,33 +448,19 @@ fn alpha(rgba: [f32; 4], a: f32) -> [f32; 4] {
 }
 
 /// A settings card: the surface at the card radius on the theme's lifted
-/// shadow. Light chromes drop the outline for the soft blue-tinted shadow
-/// and a 1px white top highlight; dark chromes keep a 1px soft border (a
-/// shadow barely reads on dark) with a faint top highlight.
+/// shadow. Light chromes drop the outline for the soft blue-tinted shadow;
+/// dark chromes keep a 1px soft border, since a shadow barely reads on dark.
 pub struct CardPainter;
 
 impl Painter for CardPainter {
     fn paint(&self, cx: &mut PaintContext<'_>) {
         let rect = cx.bounds();
         let r = cx.radius(RadiusTier::Lg);
-        let dark = cx.theme_appearance() == ThemeAppearance::Dark;
         let mut card = BoxPaint::fill(SemanticColorRole::Surface).shadow(ElevationRole::Surface);
-        if dark {
+        if cx.theme_appearance() == ThemeAppearance::Dark {
             card = card.border(SemanticColorRole::BorderSoft, 1.0);
         }
         cx.rounded_rect(rect, r, card);
-        let mut path = PaintPath::new();
-        path.rounded_rect(rect, [r; 4]);
-        cx.shadow(
-            &path,
-            PaintShadow::Custom {
-                color: alpha([1.0; 4], if dark { 0.08 } else { 1.0 }).into(),
-                offset: [0.0, 1.0],
-                blur: 0.0,
-                spread: 0.0,
-                inset: true,
-            },
-        );
     }
 
     fn paint_key(&self) -> u64 {
@@ -482,52 +468,60 @@ impl Painter for CardPainter {
     }
 }
 
+/// The right end of a call to action's fill (accent → accent.light): up to
+/// 22% toward white, as far as the label keeps 4.5:1 on it.
+fn accent_light(accent: [f32; 4]) -> [f32; 4] {
+    let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let base = Rgba8::rgb(q(accent[0]), q(accent[1]), q(accent[2]));
+    let label = on(base);
+    let end = (0..=11)
+        .rev()
+        .map(|i| mix(base, Rgba8::WHITE, i as f32 * 0.02))
+        .find(|c| contrast(label, *c) >= 4.5)
+        .unwrap_or(base);
+    alpha(rgba(end), accent[3])
+}
+
 /// The view's one primary action: a solid accent fill lightening to the
-/// right (accent → accent.light at 90°), a 1px inner top highlight
-/// `#ffffff40` and an accent-tinted `0 3px 8px accent@33%` shadow.
+/// right (accent → accent.light at 90°) on an accent-tinted
+/// `0 3px 8px accent@33%` shadow, its label in the on-accent colour.
 pub struct CtaPainter;
 
 impl Painter for CtaPainter {
     fn paint(&self, cx: &mut PaintContext<'_>) {
         let state = cx.state();
+        if state.disabled {
+            cx.draw_default();
+            return;
+        }
         let rect = cx.bounds();
         let r = cx.radius(RadiusTier::Sm);
         let mut path = PaintPath::new();
         path.rounded_rect(rect, [r; 4]);
-        if !state.disabled {
-            let accent = cx.color(SemanticColorRole::Accent);
-            let dark = cx.theme_appearance() == ThemeAppearance::Dark;
-            cx.shadow(
-                &path,
-                PaintShadow::Custom {
-                    color: alpha(accent, if dark { 0.25 } else { 0.33 }).into(),
-                    offset: [0.0, 3.0],
-                    blur: if dark { 10.0 } else { 8.0 },
-                    spread: 0.0,
-                    inset: false,
-                },
-            );
-        }
-        // The fill itself (accent, strong accent under the pointer) and the
-        // focus ring stay the framework's.
-        cx.draw_default();
-        if state.disabled {
-            return;
-        }
-        let light = Gradient::linear([rect.x, rect.y], [rect.x + rect.width, rect.y])
-            .stop(0.0, [1.0, 1.0, 1.0, 0.0])
-            .stop(1.0, [1.0, 1.0, 1.0, 0.2]);
-        cx.fill_path(&path, light);
+        let role = if state.hovered || state.pressed {
+            SemanticColorRole::AccentStrong
+        } else {
+            SemanticColorRole::Accent
+        };
+        let accent = cx.color(role);
+        let dark = cx.theme_appearance() == ThemeAppearance::Dark;
         cx.shadow(
             &path,
             PaintShadow::Custom {
-                color: [1.0, 1.0, 1.0, 0.25].into(),
-                offset: [0.0, 1.0],
-                blur: 0.0,
+                color: alpha(accent, if dark { 0.25 } else { 0.33 }).into(),
+                offset: [0.0, 3.0],
+                blur: if dark { 10.0 } else { 8.0 },
                 spread: 0.0,
-                inset: true,
+                inset: false,
             },
         );
+        let fill = Gradient::linear([rect.x, rect.y], [rect.x + rect.width, rect.y])
+            .stop(0.0, accent)
+            .stop(1.0, accent_light(accent));
+        cx.fill_path(&path, fill);
+        // The framework's own look over it: the label and the focus ring
+        // (the node itself has no fill of its own).
+        cx.draw_default();
     }
 
     fn paint_key(&self) -> u64 {
@@ -539,11 +533,12 @@ impl Painter for CtaPainter {
 /// fill, its label in the on-accent colour.
 pub fn cta(button: nana_ui::runtime::Button) -> nana_ui::runtime::Button {
     let mut st = button.style.clone();
+    // The painter draws the fill, so the node has none of its own (a
+    // disabled button shows the plain primary tint instead).
     st.foreground = Some(SemanticColorRole::AccentText);
-    st.background = Some(SemanticColorRole::Accent);
+    st.background = None;
     st.border = None;
-    st.interaction.hovered.background = Some(SemanticColorRole::AccentStrong);
-    st.interaction.pressed.background = Some(SemanticColorRole::AccentStrong);
+    st.interaction.disabled.background = Some(SemanticColorRole::AccentSoft);
     st.painter = Some(CtaPainter.into());
     button.style(st)
 }
