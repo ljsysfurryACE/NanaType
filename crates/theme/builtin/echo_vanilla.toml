@@ -1,0 +1,145 @@
+[meta]
+id = "nanatype.echo_vanilla"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming", "minimal"]
+name = { zh-CN = "Echo-Live 原版", en-US = "Echo-Live Vanilla", ja-JP = "Echo-Live オリジナル" }
+description = { zh-CN = "还原 Echo-Live 的原版主题：白底、顶部灰线、右上角三角、名字左凸，底部灰色菜单栏", en-US = "Echo-Live's vanilla theme: white bar, grey top rule, corner notch, a hanging name and the grey menu row", ja-JP = "Echo-Live のオリジナルテーマを再現：白地に灰色の上線、右上の三角、はみ出す名前、下段の灰色メニュー" }
+
+[chrome]
+accent = "#606266"
+background = "#edeef0"
+surface = "#ffffff"
+text = "#000000"
+muted = "#888888"
+border = "#cccccc"
+
+[fonts.body]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[fonts.name]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+# Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
+# Its columns are 2 : 7 : 3, so the text sits left of centre.
+[dialogue]
+region = [1280, 240]
+padding = [226, 66, 333, 46]
+
+[dialogue.box]
+color = "#ffffff"
+border_color = "#cccccc"
+border_width = 0
+border_widths = [2, 0, 0, 0]
+radius = 0
+
+# The grey notch in the top-right corner.
+[[dialogue.decor]]
+anchor = "top_right"
+size = [14, 14]
+polygon = [[0, 0], [100, 0], [100, 100]]
+color = "#cccccc"
+
+# The menu row: SAVE LOAD Q.SAVE Q.LOAD ⭰ ⯬ 🡄 🡆 ⯮ ⭲ HISTORY ╳.
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [222, -8]
+size = [46, 22]
+text = "SAVE"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [281, -8]
+size = [48, 22]
+text = "LOAD"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [342, -8]
+size = [62, 22]
+text = "Q.SAVE"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [417, -8]
+size = [64, 22]
+text = "Q.LOAD"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [494, -8]
+size = [52, 22]
+text = "« ‹ › »"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [559, -8]
+size = [78, 22]
+text = "HISTORY"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [650, -8]
+size = [18, 22]
+text = "✕"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[dialogue.text]
+color = "#000000"
+size = 27
+
+# The name has its own line and hangs 1em left of the text.
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#000000"
+size = 27
+radius = 0
+padding = [0, 0]
+offset = [200, 13]
+
+[dialogue.continue]
+glyph = ""
+motion = "none"
+
+# 30 ms a character; CJK skips a tick.
+[dialogue.reveal]
+base_ms = 30
+cjk_factor = 2.0
+punct = { comma_ms = 0, stop_ms = 0, ellipsis_ms = 0 }
+
+[dialogue.reveal.entrance]
+kind = "none"
+ms = 0
+
+[history]
+name_color = "#606266"
+bubble_color = "#ffffff"
+bubble_radius = 0
+time_color = "#888888"
+avatar = { shape = "none" }
+
+[history.text]
+color = "#000000"

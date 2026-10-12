@@ -1,0 +1,141 @@
+[meta]
+id = "nanatype.echo_bubble"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming", "cute"]
+name = { zh-CN = "Echo-Live 气泡", en-US = "Echo-Live Bubble", ja-JP = "Echo-Live バブル" }
+description = { zh-CN = "还原 Echo-Live 的气泡主题：白色圆角框、灰色粗边与右下硬投影", en-US = "Echo-Live's bubble theme: a white rounded box with a thick grey border and a hard drop shadow", ja-JP = "Echo-Live のバブルテーマを再現：白い角丸の枠、太い灰色の縁と右下のハードシャドウ" }
+
+[chrome]
+accent = "#888888"
+background = "#f3f3f5"
+surface = "#ffffff"
+text = "#000000"
+muted = "#666666"
+border = "#888888"
+
+[fonts.body]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[fonts.name]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+# Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
+[dialogue]
+region = [1280, 240]
+padding = [66, 70, 50, 50]
+
+# The box gives up 16px (here 11) on the right and bottom for its shadow.
+[dialogue.box]
+color = "#ffffff"
+border_color = "#888888"
+border_width = 5
+radius = 21
+margin = [0, 11, 11, 0]
+shadows = [{ color = "#888888", dx = 11, dy = 11 }]
+
+# SAVE LOAD Q.SAVE Q.LOAD ⭰ ⯬ 🡄 🡆 ⯮ ⭲ HISTORY ╳.
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [62, -12]
+size = [46, 22]
+text = "SAVE"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [121, -12]
+size = [48, 22]
+text = "LOAD"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [182, -12]
+size = [62, 22]
+text = "Q.SAVE"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [257, -12]
+size = [64, 22]
+text = "Q.LOAD"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [334, -12]
+size = [52, 22]
+text = "« ‹ › »"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [399, -12]
+size = [78, 22]
+text = "HISTORY"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [490, -12]
+size = [18, 22]
+text = "✕"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[dialogue.text]
+color = "#000000"
+size = 27
+
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#000000"
+size = 27
+radius = 0
+padding = [0, 0]
+offset = [39, 18]
+
+[dialogue.continue]
+glyph = ""
+motion = "none"
+
+# 30 ms a character; CJK skips a tick.
+[dialogue.reveal]
+base_ms = 30
+cjk_factor = 2.0
+punct = { comma_ms = 0, stop_ms = 0, ellipsis_ms = 0 }
+
+[dialogue.reveal.entrance]
+kind = "none"
+ms = 0
+
+[history]
+name_color = "#555555"
+bubble_color = "#ffffff"
+bubble_border = "#888888"
+bubble_border_width = 3
+bubble_radius = 12
+bubble_shadows = [{ color = "#888888", dx = 4, dy = 4 }]
+time_color = "#888888"
+avatar = { shape = "none" }
+
+[history.text]
+color = "#000000"

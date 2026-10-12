@@ -77,6 +77,22 @@ const BUILTINS: &[Builtin] = &[
         id: "nanatype.ink",
         manifest: include_str!("../builtin/ink.toml"),
     },
+    Builtin {
+        id: "nanatype.echo_vanilla",
+        manifest: include_str!("../builtin/echo_vanilla.toml"),
+    },
+    Builtin {
+        id: "nanatype.echo_glass",
+        manifest: include_str!("../builtin/echo_glass.toml"),
+    },
+    Builtin {
+        id: "nanatype.echo_bubble",
+        manifest: include_str!("../builtin/echo_bubble.toml"),
+    },
+    Builtin {
+        id: "nanatype.echo_void",
+        manifest: include_str!("../builtin/echo_void.toml"),
+    },
 ];
 
 fn builtin_files(b: &Builtin) -> Arc<dyn SkinFiles> {

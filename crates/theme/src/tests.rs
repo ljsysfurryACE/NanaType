@@ -63,11 +63,11 @@ fn errors(result: Result<LoadedSkin, Vec<SkinDiagnostic>>) -> Vec<String> {
 #[test]
 fn every_builtin_loads_without_warnings() {
     let registry = SkinRegistry::new(None, APP);
-    assert_eq!(registry.entries().len(), 14);
+    assert_eq!(registry.entries().len(), 18);
     let mut ids: Vec<&str> = registry.entries().iter().map(|e| e.id.as_str()).collect();
     ids.sort();
     ids.dedup();
-    assert_eq!(ids.len(), 14);
+    assert_eq!(ids.len(), 18);
     assert!(registry.load(DEFAULT_SKIN).is_ok());
     for entry in registry.entries() {
         assert!(entry.loads(), "{}: {:?}", entry.id, entry.errors);
@@ -105,6 +105,9 @@ fn every_builtin_loads_without_warnings() {
     assert!(bubble.skin.dialogue.tail.is_some());
     let ink = registry.load("nanatype.ink").unwrap();
     assert!(ink.skin.dialogue.decor.len() > 2);
+    let echo = registry.load("nanatype.echo_vanilla").unwrap();
+    assert_eq!(echo.skin.dialogue.decor.len(), 8);
+    assert!(echo.skin.dialogue.continue_.glyph.is_empty());
 }
 
 #[test]

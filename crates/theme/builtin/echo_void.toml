@@ -1,0 +1,135 @@
+[meta]
+id = "nanatype.echo_void"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming", "minimal"]
+name = { zh-CN = "Echo-Live 虚空", en-US = "Echo-Live Void", ja-JP = "Echo-Live ヴォイド" }
+description = { zh-CN = "还原 Echo-Live 的虚空主题：完全透明，只有黑色文字与灰色菜单栏", en-US = "Echo-Live's void theme: fully transparent, just black text and the grey menu row", ja-JP = "Echo-Live のヴォイドテーマを再現：完全に透明で、黒い文字と灰色のメニューだけ" }
+
+[chrome]
+accent = "#888888"
+background = "#f3f3f5"
+surface = "#ffffff"
+text = "#000000"
+muted = "#666666"
+border = "#cccccc"
+
+[fonts.body]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[fonts.name]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+# Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
+# Its columns are 1 : 6 : 1.
+[dialogue]
+region = [1280, 240]
+padding = [173, 66, 173, 46]
+
+[dialogue.box]
+color = "#00000000"
+border_width = 0
+radius = 0
+
+# SAVE LOAD Q.SAVE Q.LOAD ⭰ ⯬ 🡄 🡆 ⯮ ⭲ HISTORY ╳.
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [169, -8]
+size = [46, 22]
+text = "SAVE"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [228, -8]
+size = [48, 22]
+text = "LOAD"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [289, -8]
+size = [62, 22]
+text = "Q.SAVE"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [364, -8]
+size = [64, 22]
+text = "Q.LOAD"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [441, -8]
+size = [52, 22]
+text = "« ‹ › »"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [506, -8]
+size = [78, 22]
+text = "HISTORY"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [597, -8]
+size = [18, 22]
+text = "✕"
+text_color = "#888888"
+text_size = 18
+font = "body"
+
+[dialogue.text]
+color = "#000000"
+size = 27
+
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#000000"
+size = 27
+radius = 0
+padding = [0, 0]
+offset = [146, 13]
+
+[dialogue.continue]
+glyph = ""
+motion = "none"
+
+# 30 ms a character; CJK skips a tick.
+[dialogue.reveal]
+base_ms = 30
+cjk_factor = 2.0
+punct = { comma_ms = 0, stop_ms = 0, ellipsis_ms = 0 }
+
+[dialogue.reveal.entrance]
+kind = "none"
+ms = 0
+
+[history]
+name_color = "#606266"
+bubble_color = "#ffffff"
+bubble_radius = 0
+time_color = "#888888"
+avatar = { shape = "none" }
+
+[history.text]
+color = "#000000"

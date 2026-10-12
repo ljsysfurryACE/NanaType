@@ -1,0 +1,152 @@
+[meta]
+id = "nanatype.echo_glass"
+version = "1.0.0"
+author = "NanaType"
+license = "CC0-1.0"
+tags = ["streaming"]
+name = { zh-CN = "Echo-Live 玻璃", en-US = "Echo-Live Glass", ja-JP = "Echo-Live ガラス" }
+description = { zh-CN = "还原 Echo-Live 的玻璃主题：自下而上的黑色渐变、黑边白字，菜单栏靠右", en-US = "Echo-Live's glass theme: a black fade rising from the bottom, outlined white text and a right-aligned menu row", ja-JP = "Echo-Live のガラステーマを再現：下から立ち上がる黒のグラデーション、縁取りの白文字、右寄せメニュー" }
+
+[chrome]
+appearance = "dark"
+accent = "#1a62be"
+background = "#0c0c10"
+surface = "#1a1a20"
+text = "#ffffff"
+muted = "#dddddd"
+border = "#3a3a46"
+success = "#64d29a"
+warning = "#ffc85a"
+danger = "#ff7a8a"
+
+[fonts.body]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+[fonts.name]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+weight = 400
+
+# Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
+# Its columns are 1 : 6 : 1, and the menu row is 4em tall.
+[dialogue]
+region = [1280, 240]
+padding = [173, 66, 173, 80]
+
+[dialogue.box]
+color = "#00000000"
+border_width = 0
+radius = 0
+gradient = { angle = 0, stops = [[0, "#00000099"], [0.5, "#00000099"], [1, "#00000000"]] }
+
+# The menu row's own darker fade.
+[[dialogue.decor]]
+anchor = "bottom"
+size = ["100%", 75]
+gradient = { angle = 0, stops = [[0, "#000000"], [1, "#00000000"]] }
+
+# SAVE LOAD Q.SAVE Q.LOAD ⭰ ⯬ 🡄 🡆 ⯮ ⭲ HISTORY ╳, flush right.
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-569, -26]
+size = [46, 22]
+text = "SAVE"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-508, -26]
+size = [48, 22]
+text = "LOAD"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-433, -26]
+size = [62, 22]
+text = "Q.SAVE"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-356, -26]
+size = [64, 22]
+text = "Q.LOAD"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-291, -26]
+size = [52, 22]
+text = "« ‹ › »"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-200, -26]
+size = [78, 22]
+text = "HISTORY"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-169, -26]
+size = [18, 22]
+text = "✕"
+text_color = "#dddddd"
+text_size = 18
+font = "body"
+
+[dialogue.text]
+color = "#ffffff"
+size = 27
+stroke = { color = "#000000", width = 1.5 }
+shadow = { color = "#000000", blur = 3 }
+
+[dialogue.nameplate]
+color = "#00000000"
+text_color = "#ffffff"
+size = 27
+radius = 0
+padding = [0, 0]
+offset = [146, 13]
+stroke = { color = "#000000", width = 1.5 }
+text_shadow = { color = "#000000", blur = 3 }
+
+[dialogue.continue]
+glyph = ""
+motion = "none"
+
+# 30 ms a character; CJK skips a tick.
+[dialogue.reveal]
+base_ms = 30
+cjk_factor = 2.0
+punct = { comma_ms = 0, stop_ms = 0, ellipsis_ms = 0 }
+
+[dialogue.reveal.entrance]
+kind = "none"
+ms = 0
+
+[history]
+name_color = "#ffffff"
+name_stroke = { color = "#000000", width = 2 }
+bubble_color = "#00000099"
+bubble_radius = 0
+time_color = "#dddddd"
+avatar = { shape = "none" }
+
+[history.text]
+color = "#ffffff"
+stroke = { color = "#000000", width = 1 }

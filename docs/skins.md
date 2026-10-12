@@ -22,6 +22,10 @@
 | `nanatype.pixel` | 掌机像素 | game, retro | 四阶绿色、方角粗框、像素字 |
 | `nanatype.sakura` | 樱花 | cute | 粉色渐变、花瓣点缀、爱心提示 |
 | `nanatype.ink` | 水墨 | elegant | 宣纸、浓淡笔触、朱红印章、楷体 |
+| `nanatype.echo_vanilla` | Echo-Live 原版 | streaming, minimal | 还原 Echo-Live 原版：白底、顶部灰线、右上角三角、名字左凸、底部菜单栏 |
+| `nanatype.echo_glass` | Echo-Live 玻璃 | streaming | 还原 Echo-Live 玻璃：自下而上黑色渐变、黑边白字、菜单栏靠右 |
+| `nanatype.echo_bubble` | Echo-Live 气泡 | streaming, cute | 还原 Echo-Live 气泡：白色圆角框、灰色粗边、右下硬投影 |
+| `nanatype.echo_void` | Echo-Live 虚空 | streaming, minimal | 还原 Echo-Live 虚空：完全透明，只有黑字和灰色菜单栏 |
 
 ![内置皮肤一览](skins-preview.png)
 
