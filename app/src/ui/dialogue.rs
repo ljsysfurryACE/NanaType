@@ -49,12 +49,16 @@ pub struct Base {
     pub reduced_motion: bool,
     pub align: TextAlign,
     pub mention: super::rich::MentionLook,
+    /// The box under the text, for the display's contrast guard and
+    /// skin-aware glows; `None` in the editor.
+    pub ink: Option<super::rich::BoxInk>,
 }
 
 impl Base {
     fn from_text(
         skin: &Skin,
         t: &nanatype_theme::TextSpec,
+        fill: Rgba8,
         entrance: Entrance,
         reduced: bool,
     ) -> Self {
@@ -74,11 +78,13 @@ impl Base {
             reduced_motion: reduced,
             align: t.align,
             mention: super::rich::MentionLook::from_skin(skin),
+            ink: super::rich::BoxInk::new(skin, fill, t),
         }
     }
 
     pub fn dialogue(skin: &Skin, entrance: Entrance, reduced: bool) -> Self {
-        Self::from_text(skin, &skin.dialogue.text, entrance, reduced)
+        let fill = skin.dialogue.box_.color;
+        Self::from_text(skin, &skin.dialogue.text, fill, entrance, reduced)
     }
 
     /// The input editor's text: the dialogue text, nothing animating in.
@@ -87,11 +93,15 @@ impl Base {
             kind: nanatype_model::EntranceKind::None,
             ms: 0,
         };
-        Self::dialogue(skin, entrance, false)
+        Self {
+            ink: None,
+            ..Self::dialogue(skin, entrance, false)
+        }
     }
 
     pub fn history(skin: &Skin, entrance: Entrance, reduced: bool) -> Self {
-        Self::from_text(skin, &skin.history.text, entrance, reduced)
+        let fill = skin.history.bubble_color;
+        Self::from_text(skin, &skin.history.text, fill, entrance, reduced)
     }
 
     pub fn look(&self) -> Look {
@@ -104,6 +114,7 @@ impl Base {
             name: self.name_family.clone(),
             accent: self.accent_family.clone(),
             mention: self.mention.clone(),
+            ink: self.ink.clone(),
         }
     }
 

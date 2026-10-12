@@ -71,6 +71,8 @@ kind = "none"
 ms = 0
 
 [effects]
+# Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.
+contrast_guard = 3.0
 shake_px = 2
 jump_px = 4
 

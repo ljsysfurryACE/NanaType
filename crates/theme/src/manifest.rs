@@ -504,8 +504,83 @@ pub struct Chrome {
     pub success: Rgba8,
     pub warning: Rgba8,
     pub danger: Rgba8,
+    /// The warm second accent for live and attention states (mirroring,
+    /// recording a hotkey, queued lines). Unset: Nana pink, `#e86a92` on a
+    /// light chrome and `#ff8fb1` on a dark one.
+    pub highlight: Option<Rgba8>,
+    /// Colours for when the chrome is drawn dark although the skin is light
+    /// (`[chrome.dark]`), over the Nana-tinted dark counterpart.
+    pub dark: Option<ChromeVariant>,
+    /// Colours for when the chrome is drawn light although the skin is dark
+    /// (`[chrome.light]`), over the Nana light counterpart.
+    pub light: Option<ChromeVariant>,
     /// Any other `SemanticPalette` role by name, for full control.
     pub palette: BTreeMap<String, Rgba8>,
+}
+
+/// `[chrome.dark]` / `[chrome.light]`: the chrome roles for the other
+/// appearance. Every key is optional; the rest come from the counterpart.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChromeVariant {
+    pub accent: Option<Rgba8>,
+    pub background: Option<Rgba8>,
+    pub surface: Option<Rgba8>,
+    pub text: Option<Rgba8>,
+    pub muted: Option<Rgba8>,
+    pub border: Option<Rgba8>,
+    pub success: Option<Rgba8>,
+    pub warning: Option<Rgba8>,
+    pub danger: Option<Rgba8>,
+    pub highlight: Option<Rgba8>,
+}
+
+/// Nana pink, the default highlight on a light chrome.
+pub const HIGHLIGHT_LIGHT: Rgba8 = Rgba8::rgb(232, 106, 146);
+/// Nana pink, the default highlight on a dark chrome.
+pub const HIGHLIGHT_DARK: Rgba8 = Rgba8::rgb(255, 143, 177);
+
+impl Chrome {
+    /// The Nana chrome for one appearance: the manifest defaults when light,
+    /// the Nana-tinted navy when dark. A skin whose own appearance differs
+    /// from the chosen mode is drawn on this counterpart (carrying its accent
+    /// and highlight), never on a plain grey.
+    pub fn nana(dark: bool) -> Self {
+        if !dark {
+            return Self::default();
+        }
+        Self {
+            appearance: Appearance::Dark,
+            accent: Rgba8::rgb(92, 184, 255),
+            background: Rgba8::rgb(15, 23, 36),
+            surface: Rgba8::rgb(24, 35, 58),
+            text: Rgba8::rgb(230, 238, 248),
+            muted: Rgba8::rgb(159, 179, 204),
+            border: Rgba8::rgb(44, 61, 88),
+            success: Rgba8::rgb(72, 210, 150),
+            warning: Rgba8::rgb(255, 200, 90),
+            danger: Rgba8::rgb(255, 122, 150),
+            ..Self::default()
+        }
+    }
+
+    /// The highlight role for a chrome drawn `dark` or light.
+    pub fn highlight_for(&self, dark: bool) -> Rgba8 {
+        self.highlight.unwrap_or(if dark {
+            HIGHLIGHT_DARK
+        } else {
+            HIGHLIGHT_LIGHT
+        })
+    }
+
+    /// The `[chrome.dark]` / `[chrome.light]` table for that appearance.
+    pub fn variant(&self, dark: bool) -> Option<&ChromeVariant> {
+        if dark {
+            self.dark.as_ref()
+        } else {
+            self.light.as_ref()
+        }
+    }
 }
 
 impl Default for Chrome {
@@ -521,6 +596,9 @@ impl Default for Chrome {
             success: Rgba8::rgb(10, 128, 92),
             warning: Rgba8::rgb(163, 100, 0),
             danger: Rgba8::rgb(214, 52, 88),
+            highlight: None,
+            dark: None,
+            light: None,
             palette: BTreeMap::new(),
         }
     }
@@ -1302,6 +1380,10 @@ pub struct EffectDefaults {
     pub rainbow_saturation: f32,
     pub rainbow_lightness: f32,
     pub screen_shake_px: f32,
+    /// Smallest contrast ratio a coloured run may have against the box
+    /// colour before it gets a 1.5px outline in the skin's darkest (or
+    /// lightest) ink. `0` turns the guard off.
+    pub contrast_guard: f32,
 }
 
 impl Default for EffectDefaults {
@@ -1317,6 +1399,7 @@ impl Default for EffectDefaults {
             rainbow_saturation: 0.75,
             rainbow_lightness: 0.6,
             screen_shake_px: 6.0,
+            contrast_guard: 0.0,
         }
     }
 }

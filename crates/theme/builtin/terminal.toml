@@ -115,3 +115,7 @@ avatar = { shape = "square", size = 32, ring_color = "#33ff66", ring_width = 1 }
 color = "#33ff66"
 size = 17
 shadow = { color = "#33ff6660", blur = 4 }
+
+[effects]
+# Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.
+contrast_guard = 3.0

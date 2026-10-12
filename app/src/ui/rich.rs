@@ -39,6 +39,119 @@ pub struct Look {
     pub name: Option<String>,
     pub accent: Option<String>,
     pub mention: MentionLook,
+    /// The box the text is drawn on, for the display's skin-aware text
+    /// effects. `None` in the editor, whose spans must convert back exactly.
+    pub ink: Option<BoxInk>,
+}
+
+/// What a run's own colour, glow and the skin's text shadow are measured
+/// against on the display: the box colour and the skin's inks.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoxInk {
+    /// The box fill (opaque enough to judge contrast against).
+    pub fill: Rgba8,
+    /// `effects.contrast_guard`: runs under this ratio against `fill` get a
+    /// 1.5px outline. `0` = off.
+    pub guard: f32,
+    /// The skin's darkest and lightest ink, for that outline.
+    pub dark: Rgba8,
+    pub light: Rgba8,
+    /// The skin's base text shadow, which a run with its own colour takes in
+    /// that colour instead when the shadow is a tinted glow.
+    pub shadow: Option<nanatype_theme::TextShadowSpec>,
+}
+
+/// Width of the contrast guard's outline (logical px).
+pub const GUARD_STROKE: f32 = 1.5;
+/// A glow on a light box: at most this alpha (55%) …
+const LIGHT_GLOW_ALPHA: u8 = 140;
+/// … and at least this blur, so it reads as light, not a smudge.
+const LIGHT_GLOW_BLUR: f32 = 10.0;
+
+impl BoxInk {
+    /// For text on a box filled `fill` in `skin`; `None` when the fill is too
+    /// transparent to judge contrast against.
+    pub fn new(
+        skin: &nanatype_theme::Skin,
+        fill: Rgba8,
+        base: &nanatype_theme::TextSpec,
+    ) -> Option<Self> {
+        if fill.a < 128 {
+            return None;
+        }
+        let inks = [
+            base.color,
+            skin.dialogue.text.color,
+            skin.chrome.text,
+            skin.dialogue.box_.border_color,
+        ]
+        .map(|c| c.with_alpha(255));
+        let l = |c: &Rgba8| crate::skin_theme::lightness(*c);
+        let dark = inks.iter().min_by(|a, b| l(a).total_cmp(&l(b)));
+        let light = inks.iter().max_by(|a, b| l(a).total_cmp(&l(b)));
+        Some(Self {
+            fill: fill.with_alpha(255),
+            guard: skin.effects.contrast_guard.max(0.0),
+            dark: dark.copied().unwrap_or(Rgba8::BLACK),
+            light: light.copied().unwrap_or(Rgba8::WHITE),
+            shadow: base.shadow.clone(),
+        })
+    }
+
+    fn light_box(&self) -> bool {
+        crate::skin_theme::lightness(self.fill) > 60.0
+    }
+
+    /// The 1.5px outline a run in `color` needs to read on the box, if any:
+    /// whichever ink stands further from the run.
+    pub fn guard_stroke(&self, color: Rgba8) -> Option<Stroke> {
+        use crate::skin_theme::contrast;
+        if self.guard <= 0.0 || color.a < 64 {
+            return None;
+        }
+        let color = color.with_alpha(255);
+        if contrast(color, self.fill) >= self.guard {
+            return None;
+        }
+        let ink = if contrast(self.dark, color) >= contrast(self.light, color) {
+            self.dark
+        } else {
+            self.light
+        };
+        Some(Stroke {
+            color: ink,
+            width_px: GUARD_STROKE,
+        })
+    }
+
+    /// A run's own shadow as drawn: a glow (no offset) on a light box keeps
+    /// its hue but at most 55% alpha and at least 10px blur.
+    pub fn shadow(&self, s: Shadow) -> Shadow {
+        if s.dx == 0.0 && s.dy == 0.0 && s.blur > 0.0 && self.light_box() {
+            return Shadow {
+                color: s.color.with_alpha(s.color.a.min(LIGHT_GLOW_ALPHA)),
+                blur: s.blur.max(LIGHT_GLOW_BLUR),
+                ..s
+            };
+        }
+        s
+    }
+
+    /// The skin's text shadow under a run of its own `color`: a tinted glow
+    /// (terminal's green, night's blue) takes the run's colour at the same
+    /// alpha; a neutral drop shadow stays as it is (`None`).
+    pub fn base_shadow_for(&self, color: Rgba8) -> Option<Shadow> {
+        let s = self.shadow.as_ref()?;
+        if crate::skin_theme::chroma(s.color) < 0.15 {
+            return None;
+        }
+        Some(Shadow {
+            color: color.with_alpha(s.color.a),
+            dx: s.dx,
+            dy: s.dy,
+            blur: s.blur,
+        })
+    }
 }
 
 /// How a mentioned chat viewer is drawn: the skin's `[mention]`.
@@ -268,12 +381,30 @@ fn span_style(style: &Style, effects: &Effects, pace: Pace, look: &Look) -> Rich
     if style.strike == Some(true) {
         s = s.line_through();
     }
-    if let Some(st) = style.stroke {
+    let ink = look.ink.as_ref();
+    // On the display, a run of its own colour that would not read on the box
+    // gets the skin's contrast guard outline (unless it has an outline).
+    let stroke = style.stroke.or_else(|| {
+        let (ink, c) = (ink?, style.color?);
+        ink.guard_stroke(c)
+    });
+    if let Some(st) = stroke {
         s = s.stroke(
             RichTextStroke::new(st.width_px, color(st.color)).placement(TextStrokePlacement::Under),
         );
     }
-    if let Some(sh) = style.shadow {
+    let shadow = match (style.shadow, ink) {
+        (Some(sh), Some(ink)) => Some(Some(ink.shadow(sh))),
+        (Some(sh), None) => Some(Some(sh)),
+        // The skin's tinted text glow follows a run's own colour.
+        (None, Some(ink)) => style.color.and_then(|c| {
+            ink.shadow.as_ref()?;
+            Some(ink.base_shadow_for(c))
+        }),
+        (None, None) => None,
+    };
+    // `None` leaves the node's shadow (a neutral drop shadow, or none).
+    if let Some(Some(sh)) = shadow {
         s = s.shadow(RichTextShadow::new(
             [sh.dx, sh.dy],
             sh.blur,
@@ -619,6 +750,7 @@ mod tests {
             name: Some("Name Font".into()),
             accent: Some("Accent Font".into()),
             mention: MentionLook::default(),
+            ink: None,
         }
     }
 
@@ -716,5 +848,78 @@ mod tests {
             plan.at_ms,
             vec![Some(0), Some(1000), Some(1000), Some(1100), Some(1200)]
         );
+    }
+
+    fn builtin(id: &str) -> nanatype_theme::Skin {
+        let reg = nanatype_theme::SkinRegistry::new(None, "test");
+        (*reg
+            .load(&format!("nanatype.{id}"))
+            .expect("builtin skin loads")
+            .skin)
+            .clone()
+    }
+
+    fn display_spans(skin: &nanatype_theme::Skin, markup: &str) -> Vec<RichSpanStyle> {
+        let base = super::super::dialogue::Base::dialogue(
+            skin,
+            Entrance {
+                kind: EntranceKind::None,
+                ms: 0,
+            },
+            false,
+        );
+        let look = base.look();
+        let doc = nanatype_markup::parse(markup).doc;
+        let urls = HashMap::new();
+        let env = Env {
+            look: &look,
+            urls: &urls,
+            editor: false,
+            locale: Locale::ZhCn,
+        };
+        to_rich(&doc, &env)
+            .spans()
+            .iter()
+            .map(|(_, s)| s.clone())
+            .collect()
+    }
+
+    #[test]
+    fn low_contrast_runs_get_the_guard_outline_in_the_darkest_ink() {
+        let pixel = builtin("pixel");
+        assert_eq!(pixel.effects.contrast_guard, 3.0);
+        let spans = display_spans(&pixel, "[color=#e8f0a0]淡[/color][color=#0f380f]深[/color]");
+        let pale = spans[0].paint.stroke.expect("pale run is outlined");
+        assert_eq!(pale.width_px, GUARD_STROKE);
+        assert_eq!(pale.color, color(Rgba8::rgb(15, 56, 15)));
+        assert!(spans.iter().skip(1).all(|s| s.paint.stroke.is_none()));
+        // Skins without the guard leave runs alone.
+        let night = builtin("night");
+        let spans = display_spans(&night, "[color=#101830]暗[/color]");
+        assert!(spans[0].paint.stroke.is_none());
+    }
+
+    #[test]
+    fn the_editor_never_gets_display_only_effects() {
+        let pixel = builtin("pixel");
+        let look = super::super::dialogue::Base::editor(&pixel).look();
+        assert!(look.ink.is_none());
+    }
+
+    #[test]
+    fn a_tinted_skin_glow_follows_the_runs_own_colour() {
+        let terminal = builtin("terminal");
+        let spans = display_spans(&terminal, "[color=#ff5050]红[/color]");
+        let shadows = spans[0].paint.shadows.as_deref().expect("own shadow");
+        assert_eq!(shadows[0].color, color(Rgba8::rgba(255, 80, 80, 0x80)));
+    }
+
+    #[test]
+    fn a_glow_on_a_light_box_is_soft() {
+        let halo = builtin("halo");
+        let spans = display_spans(&halo, "[shadow=#0876d0,0,0,8]光[/shadow]");
+        let sh = spans[0].paint.shadows.as_deref().unwrap()[0];
+        assert_eq!(sh.blur_px, 10.0);
+        assert_eq!(sh.color, color(Rgba8::rgba(8, 118, 208, 140)));
     }
 }

@@ -62,3 +62,7 @@ avatar = { shape = "square", size = 36 }
 
 [history.text]
 color = "#22263a"
+
+[effects]
+# Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.
+contrast_guard = 3.0

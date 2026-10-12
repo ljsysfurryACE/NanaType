@@ -120,6 +120,7 @@ fn body(ui: Ui, m: &ChatMessage, color: Option<[f32; 4]>) -> AnyView {
         name: None,
         accent: None,
         mention: MentionLook::from_skin(&skin),
+        ink: None,
     };
     let rich = to_rich(
         &m.display_doc(locale),
