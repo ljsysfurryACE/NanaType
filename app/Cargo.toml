@@ -57,4 +57,4 @@ windows = { version = "0.62", features = [
 embed-resource = "3"
 
 [dev-dependencies]
-nana-ui-devtools = { path = "../../sena-nana/NanaUI-app/crates/nana-ui-devtools", features = ["runtime-agent"] }
+nana-ui-devtools = { workspace = true, features = ["runtime-agent"] }
