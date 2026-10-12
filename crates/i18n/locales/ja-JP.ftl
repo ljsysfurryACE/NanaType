@@ -25,6 +25,8 @@ mode-compose = 編集して送信
 mode-compose-hint = 書き終えてから送信し、タイプライター演出で再生します
 mode-mirror = ミラー（リアルタイム）
 mode-mirror-hint = 入力した内容がそのまま表示ウィンドウに表示されます
+mode-compose-short = 編集
+mode-mirror-short = ミラー
 
 ## ツールバー
 tb-bold = 太字
@@ -106,6 +108,7 @@ marker-shake = 揺れ
 marker-vts = VTS { $name }
 status-queued = 待機列に追加（{ $position } 件目）
 status-mirror = ミラー中
+status-queued-chip = 待機 { $position }
 status-sent = 送信しました
 
 ## 設定ナビゲーション

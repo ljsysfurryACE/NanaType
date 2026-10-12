@@ -610,10 +610,17 @@ impl RuntimeProgram for Host {
                     || self.pager.wants_frame()
             }
             Some(WindowKind::History) => history_fading(ui, now),
+            Some(WindowKind::Input) => input::mirror_chip_pulsing(ui),
             _ => false,
         };
         if animating {
-            FrameDemand::Continuous(NonZeroU32::new(60).expect("non-zero"))
+            // The chip's pulse is slow; 30 fps is smooth enough for it.
+            let fps = if WindowKind::from_id(id) == Some(WindowKind::Input) {
+                30
+            } else {
+                60
+            };
+            FrameDemand::Continuous(NonZeroU32::new(fps).expect("non-zero"))
         } else if let Some(at) = match WindowKind::from_id(id) {
             Some(WindowKind::History) => next_history_fade(ui, now),
             Some(WindowKind::Display) => self.follow.next_line_at(),
@@ -639,6 +646,11 @@ impl RuntimeProgram for Host {
         };
         if animating && self.app.ui.now.get_untracked() != now {
             self.app.ui.now.set(now);
+        }
+        if WindowKind::from_id(id) == Some(WindowKind::Input)
+            && input::mirror_chip_pulsing(self.app.ui)
+        {
+            self.app.ui.pulse_ms.set(now);
         }
     }
 }

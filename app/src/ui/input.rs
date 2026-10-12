@@ -28,9 +28,9 @@ use nanatype_model::{
 use nanatype_settings::{InputMode, SendKey, Settings};
 
 use super::dialogue::{Base, Source, dialogue_box};
-use super::{I18N, Ui};
+use super::{I18N, Ui, c, restyle};
 use crate::msg::{FileTarget, MarkupEdit, Msg, Tool};
-use crate::windows::{STATUS_H, TOOLBAR_H};
+use crate::windows::{STATUS_H, TOOLBAR_H, WindowKind};
 
 pub fn marker_label(m: &Marker, locale: Locale) -> String {
     let t = |k: &str| I18N.t_in(locale, k);
@@ -445,6 +445,9 @@ fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
         .into_any()
 }
 
+/// Input windows narrower than this fold their low-frequency tools into "…".
+const COMPACT_BELOW: f32 = 900.0;
+
 fn toolbar(ui: Ui) -> AnyView {
     let key = move || {
         (
@@ -612,14 +615,14 @@ fn toolbar(ui: Ui) -> AnyView {
         };
         let mode = settings.general.input_mode;
         let mode_switch = segmented().children((
-            segmented_option(t("mode-compose"))
+            segmented_option(t("mode-compose-short"))
                 .selected(mode == InputMode::Compose)
                 .on_cx(|_, _: &nana_ui::runtime::SegmentedSelectionRequested, cx| {
                     cx.dispatch_program_all(Msg::Edit(Box::new(|s: &mut Settings| {
                         s.general.input_mode = InputMode::Compose
                     })))
                 }),
-            segmented_option(t("mode-mirror"))
+            segmented_option(t("mode-mirror-short"))
                 .selected(mode == InputMode::Mirror)
                 .on_cx(|_, _: &nana_ui::runtime::SegmentedSelectionRequested, cx| {
                     cx.dispatch_program_all(Msg::Edit(Box::new(|s: &mut Settings| {
@@ -627,13 +630,19 @@ fn toolbar(ui: Ui) -> AnyView {
                     })))
                 }),
         ));
-        widget(
-            Stack::bar(2.0)
-                .height(LengthSpec::Px(TOOLBAR_H))
-                .padding_xy(8.0, 6.0)
-                .align(AlignSpec::Center),
-        )
-        .children(vec![
+        // Below this width the low-frequency tools fold into a "…" menu so
+        // Send and the mode switch always stay on screen.
+        let compact = crate::windows::size_of(WindowKind::Input, &skin, &settings).0 < COMPACT_BELOW;
+        let [more_open] = std::array::from_fn(|_| signal(false));
+        let open_item = |label: String, target: Signal<bool>| -> AnyView {
+            widget(ActionMenuItem::new(label))
+                .on_cx(move |_, _: &Activate, _| {
+                    more_open.set(false);
+                    target.set(true);
+                })
+                .into_any()
+        };
+        let mut bar: Vec<AnyView> = vec![
             toggle(ui, ti::BOLD, "tb-bold", || Tool::Bold, is_bold),
             toggle(ui, ti::ITALIC, "tb-italic", || Tool::Italic, is_italic),
             toggle(
@@ -666,43 +675,92 @@ fn toolbar(ui: Ui) -> AnyView {
                 size_panel(ui, size_open),
             )
             .into_any(),
-            menu(ti::BORDER_OUTER, t("tb-stroke"), stroke_open, strokes).into_any(),
-            popover(
-                ti::LANGUAGE_HIRAGANA,
-                t("tb-ruby"),
-                240.0,
-                ruby_open,
-                ruby_panel(ui, ruby_open),
-            )
-            .into_any(),
-            widget(Divider::vertical().inset(6.0)).into_any(),
-            menu(ti::SPARKLES, t("tb-effects"), fx_open, effects).into_any(),
-            menu(ti::HOURGLASS, t("tb-pacing"), pace_open, pacing).into_any(),
-            popover(
-                ti::STICKER,
-                t("tb-sticker"),
-                360.0,
-                sticker_open,
-                sticker_panel(ui, sticker_open),
-            )
-            .into_any(),
-            popover(
-                ti::MOOD_SMILE,
-                t("tb-expression"),
-                260.0,
-                expr_open,
-                expression_panel(ui, expr_open),
-            )
-            .into_any(),
-            menu(ti::TEXT_PLUS, t("tb-insert"), insert_open, inserts).into_any(),
-            tool(ui, ti::CLEAR_FORMATTING, "tb-clear-format", || {
-                act(Tool::ClearFormat)
-            }),
-            source_toggle(ui),
-            widget(Stack::spacer()).into_any(),
+        ];
+        let ruby = popover(
+            ti::LANGUAGE_HIRAGANA,
+            t("tb-ruby"),
+            240.0,
+            ruby_open,
+            ruby_panel(ui, ruby_open),
+        );
+        let sticker = popover(
+            ti::STICKER,
+            t("tb-sticker"),
+            360.0,
+            sticker_open,
+            sticker_panel(ui, sticker_open),
+        );
+        let expression = popover(
+            ti::MOOD_SMILE,
+            t("tb-expression"),
+            260.0,
+            expr_open,
+            expression_panel(ui, expr_open),
+        );
+        let divider = || widget(Divider::vertical().inset(6.0)).into_any();
+        let effects_menu = menu(ti::SPARKLES, t("tb-effects"), fx_open, effects);
+        let pacing_menu = menu(ti::HOURGLASS, t("tb-pacing"), pace_open, pacing);
+        let clear_format = tool(ui, ti::CLEAR_FORMATTING, "tb-clear-format", || {
+            act(Tool::ClearFormat)
+        });
+        // The popovers of folded tools stay mounted, invisible and out of the
+        // flow, so the "…" menu can open them in place.
+        let mut hidden: Vec<AnyView> = Vec::new();
+        if compact {
+            bar.extend([divider(), effects_menu, pacing_menu, clear_format]);
+            let mut items: Vec<AnyView> = strokes;
+            items.push(widget(Divider::horizontal()).into_any());
+            items.push(open_item(t("tb-ruby"), ruby_open));
+            items.push(open_item(t("tb-sticker"), sticker_open));
+            items.push(open_item(t("tb-expression"), expr_open));
+            items.push(
+                widget(ActionMenuItem::new(t("tb-source")))
+                    .on_cx(move |_, _: &Activate, cx| {
+                        more_open.set(false);
+                        cx.dispatch_program_all(Msg::ToggleSource);
+                    })
+                    .into_any(),
+            );
+            items.push(widget(Divider::horizontal()).into_any());
+            items.extend(inserts);
+            bar.push(menu(ti::DOTS, t("tb-more"), more_open, items));
+            hidden.extend([ruby, sticker, expression]);
+        } else {
+            bar.push(menu(ti::BORDER_OUTER, t("tb-stroke"), stroke_open, strokes));
+            bar.push(ruby);
+            bar.push(divider());
+            bar.extend([effects_menu, pacing_menu, sticker, expression]);
+            bar.push(menu(ti::TEXT_PLUS, t("tb-insert"), insert_open, inserts));
+            bar.push(clear_format);
+            bar.push(source_toggle(ui));
+        }
+        bar.push(widget(Stack::spacer()).into_any());
+        if !hidden.is_empty() {
+            bar.push(
+                widget(Stack::row(0.0).with_layout(|l| {
+                    l.width = Some(LengthSpec::Px(0.0));
+                    l.flex_shrink = Some(0.0);
+                    l.opacity = Some(0.0);
+                    l.pointer_events = Some(PointerEventsSpec::None);
+                }))
+                .children(hidden)
+                .into_any(),
+            );
+        }
+        // Pinned right: never shrinks, so Send is not clipped.
+        let mut pinned: Vec<AnyView> = vec![
             mode_switch.into_any(),
-            menu(ti::MESSAGE, t("tb-phrases"), phrase_open, phrases).into_any(),
-            tool(ui, ti::SETTINGS, "window-settings", || Msg::OpenSettings).into_any(),
+            menu(ti::MESSAGE, t("tb-phrases"), phrase_open, phrases),
+            tool(ui, ti::SETTINGS, "window-settings", || Msg::OpenSettings),
+        ];
+        if mode == InputMode::Compose {
+            let key = match settings.general.send_key {
+                SendKey::Enter => "Enter",
+                SendKey::CtrlEnter => "Ctrl+Enter",
+            };
+            pinned.push(keycap(key));
+        }
+        pinned.push(
             widget(
                 Button::new(t("tb-send"))
                     .icon(ti::SEND)
@@ -711,49 +769,151 @@ fn toolbar(ui: Ui) -> AnyView {
             )
             .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::Core(Cmd::Send)))
             .into_any(),
-        ])
+        );
+        bar.push(
+            widget(Stack::row(2.0).with_layout(|l| {
+                l.flex_shrink = Some(0.0);
+                l.flex_grow = Some(0.0);
+                l.align_items = AlignSpec::Center;
+            }))
+            .children(pinned)
+            .into_any(),
+        );
+        widget(
+            Stack::bar(2.0)
+                .height(LengthSpec::Px(TOOLBAR_H))
+                .padding_xy(8.0, 6.0)
+                .align(AlignSpec::Center),
+        )
+        .children(bar)
         .into_any()
     })
     .into_any()
 }
 
-fn status_line(ui: Ui) -> AnyView {
-    let text = move || {
-        let status = ui.status.get();
-        if let Some(n) = status.notices.last() {
-            return (n.text.clone(), n.error);
-        }
-        let diags = ui.diagnostics.get();
-        if let Some(d) = diags.first() {
-            return (d.clone(), true);
-        }
-        let settings = ui.settings.get();
-        let locale = ui.locale.get();
-        if status.queued > 0 {
-            return (
-                I18N.tr_in(
-                    locale,
-                    "status-queued",
-                    &[("position", status.queued.into())],
-                ),
-                false,
-            );
-        }
-        let key = match settings.general.send_key {
-            SendKey::Enter => "Enter",
-            SendKey::CtrlEnter => "Ctrl+Enter",
-        };
-        let mode = match settings.general.input_mode {
-            InputMode::Compose => I18N.tr_in(locale, "tb-send-hint", &[("key", key.into())]),
-            InputMode::Mirror => I18N.t_in(locale, "status-mirror"),
-        };
-        (mode, false)
-    };
+/// Nana pink, for live states (mirroring).
+const PINK: [f32; 4] = [0xe8 as f32 / 255.0, 0x6a as f32 / 255.0, 0x92 as f32 / 255.0, 1.0];
+
+/// The mirroring chip pulses over this period.
+/// Period of a breathing status pulse (ms).
+pub const PULSE_MS: u64 = 1200;
+
+/// Whether the input window needs frames for the mirroring chip's pulse.
+pub fn mirror_chip_pulsing(ui: Ui) -> bool {
+    !ui.reduced_motion.get_untracked()
+        && ui
+            .settings
+            .with_untracked(|s| s.general.input_mode == InputMode::Mirror)
+}
+
+/// The send key as a keycap beside the Send button.
+fn keycap(key: &str) -> AnyView {
+    chip(key.to_owned(), [0.5, 0.5, 0.5, 1.0], None, 11.0, 4.0)
+}
+
+/// `text` in a small label: a filled pill when `fill` is given, an outlined
+/// keycap otherwise.
+fn chip(text: String, color: [f32; 4], fill: Option<[f32; 4]>, size: f32, radius: f32) -> AnyView {
     let mut st = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut st.layout);
-        l.font_size = Some(12.0);
+        l.font_size = Some(size);
+        l.color = Some(color);
+        l.white_space_nowrap = true;
     }
+    widget(Stack::row(0.0).with_layout(move |l| {
+        l.flex_shrink = Some(0.0);
+        l.padding_left = Some(LengthSpec::Px(7.0));
+        l.padding_right = Some(LengthSpec::Px(7.0));
+        l.padding_top = Some(LengthSpec::Px(1.0));
+        l.padding_bottom = Some(LengthSpec::Px(1.0));
+        l.border_radius = Some(radius);
+        l.border_width = Some(1.0);
+        l.border_style = Some(nana_ui_core::BorderStyle::Solid);
+        match fill {
+            Some(f) => {
+                l.background = Some(f);
+                l.border_color = Some(f);
+            }
+            None => l.border_color = Some([color[0], color[1], color[2], 0.55]),
+        }
+    }))
+    .children(widget(Text::new(text).decorative().style(st)))
+    .into_any()
+}
+
+fn status_line(ui: Ui) -> AnyView {
+    enum Line {
+        Text(String, bool),
+        Mirror(String),
+        Queued(String),
+        Empty,
+    }
+    let key = move || {
+        let status = ui.status.get();
+        let notice = status.notices.last().map(|n| (n.text.clone(), n.error));
+        let diag = ui.diagnostics.with(|d| d.first().cloned());
+        let (mode, reduced) = (
+            ui.settings.with(|s| s.general.input_mode),
+            ui.reduced_motion.get(),
+        );
+        (notice, diag, status.queued, mode, reduced, ui.locale.get())
+    };
+    let line = dynamic(key, move |k| {
+        let (notice, diag, queued, mode, reduced, locale) = k.clone();
+        let line = if let Some((text, error)) = notice {
+            Line::Text(text, error)
+        } else if let Some(d) = diag {
+            Line::Text(d, true)
+        } else if queued > 0 {
+            Line::Queued(I18N.tr_in(
+                locale,
+                "status-queued-chip",
+                &[("position", queued.into())],
+            ))
+        } else if mode == InputMode::Mirror {
+            Line::Mirror(I18N.t_in(locale, "status-mirror"))
+        } else {
+            Line::Empty
+        };
+        match line {
+            Line::Text(text, error) => {
+                let mut st = NodeStyle::default();
+                Arc::make_mut(&mut st.layout).font_size = Some(12.0);
+                widget(Text::new(text).style(st).truncating().color(if error {
+                    SemanticColorRole::Danger
+                } else {
+                    SemanticColorRole::Muted
+                }))
+                .into_any()
+            }
+            Line::Queued(text) => {
+                let accent = c(ui.skin.get_untracked().chrome.accent);
+                chip(
+                    text,
+                    accent,
+                    Some([accent[0], accent[1], accent[2], 0.16]),
+                    12.0,
+                    10.0,
+                )
+            }
+            Line::Mirror(text) => {
+                let fill = [PINK[0], PINK[1], PINK[2], 0.16];
+                let mut chip_view = widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
+                    .children(chip(format!("● {text}"), PINK, Some(fill), 12.0, 10.0));
+                if !reduced {
+                    // Opacity breathes once per PULSE_MS.
+                    chip_view = chip_view.bind(move |s: &mut Stack| {
+                        let phase = (ui.pulse_ms.get() % PULSE_MS) as f32 / PULSE_MS as f32;
+                        let wave = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
+                        restyle(s, |l| l.opacity = Some(0.55 + 0.45 * wave));
+                    });
+                }
+                chip_view.into_any()
+            }
+            Line::Empty => widget(Stack::row(0.0)).into_any(),
+        }
+    });
     widget(
         Stack::bar(6.0)
             .height(LengthSpec::Px(STATUS_H))
@@ -765,19 +925,7 @@ fn status_line(ui: Ui) -> AnyView {
             l.min_width = Some(LengthSpec::Px(0.0));
         }))
         .visible(move || ui.reply.with(Option::is_none))
-        .children(
-            widget(Text::new("").style(st).truncating()).bind(move |t: &mut Text| {
-                let (value, error) = text();
-                if t.value != value {
-                    t.value = value;
-                }
-                t.style.foreground = Some(if error {
-                    SemanticColorRole::Danger
-                } else {
-                    SemanticColorRole::Muted
-                });
-            }),
-        ),
+        .children(line),
         reply_bar(ui),
     ))
     .into_any()

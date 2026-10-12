@@ -114,6 +114,9 @@ pub struct Ui {
     /// Portrait variant → `file://` URL for the active skin.
     pub portraits: Signal<Arc<HashMap<String, String>>>,
     pub reduced_motion: Signal<bool>,
+    /// Clock (ms) of the input window's mirroring chip pulse; only advanced
+    /// while that chip is showing.
+    pub pulse_ms: Signal<u64>,
     /// The rich editor's document, as the program last set or received it.
     pub editor_value: Signal<nana_ui_core::RichText>,
     /// Attributes at the editor's selection (toolbar pressed states).
@@ -159,6 +162,7 @@ impl Ui {
             asset_urls: signal(Arc::new(HashMap::new())),
             portraits: signal(Arc::new(HashMap::new())),
             reduced_motion: signal(false),
+            pulse_ms: signal(0),
             editor_value: signal(nana_ui_core::RichText::new("")),
             sel_attrs: signal(nana_ui::runtime::RichSelectionAttrs::default()),
             source_mode: signal(false),

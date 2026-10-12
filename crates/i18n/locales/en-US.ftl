@@ -28,6 +28,8 @@ mode-compose = Compose & send
 mode-compose-hint = Write the line, then send it to play with the typewriter
 mode-mirror = Live mirror
 mode-mirror-hint = The display follows what you type
+mode-compose-short = Compose
+mode-mirror-short = Mirror
 
 ## Toolbar
 tb-bold = Bold
@@ -109,6 +111,7 @@ marker-shake = shake
 marker-vts = VTS { $name }
 status-queued = Queued (#{ $position })
 status-mirror = Mirroring
+status-queued-chip = queued { $position }
 status-sent = Sent
 
 ## Settings navigation

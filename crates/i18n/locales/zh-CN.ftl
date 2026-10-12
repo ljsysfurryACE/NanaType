@@ -25,6 +25,8 @@ mode-compose = 编辑后发送
 mode-compose-hint = 编辑完成后发送，展示框以打字机效果播放
 mode-mirror = 实时镜像
 mode-mirror-hint = 展示框实时跟随输入内容
+mode-compose-short = 编辑
+mode-mirror-short = 镜像
 
 ## 工具栏
 tb-bold = 粗体
@@ -106,6 +108,7 @@ marker-shake = 震屏
 marker-vts = VTS { $name }
 status-queued = 已加入队列（第 { $position } 条）
 status-mirror = 镜像中
+status-queued-chip = 排队 { $position }
 status-sent = 已发送
 
 ## 设置导航
