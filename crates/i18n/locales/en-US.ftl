@@ -499,3 +499,23 @@ int-blive-panel-hint = A window for you only; it is never captured
 int-blive-open-panel = Open the chat panel
 int-blive-quote-display = Quote replies on the dialogue box
 int-blive-quote-display-hint = When a line answers a comment, show the comment above the text
+
+## wave3-input
+tb-cheatsheet = Markup cheat sheet
+tb-stroke-white = White outline
+tb-stroke-black = Black outline
+tb-stroke-accent = Accent outline
+tb-shadow-drop = Drop
+tb-shadow-glow = Glow
+cheat-markers = Markers
+cheat-shortcuts = Shortcuts
+cheat-wait = Wait this many ms, then go on
+cheat-pause = Stop until you continue
+cheat-page = Start a new page
+cheat-expr = Switch the portrait's expression
+cheat-se = Play a sound effect
+cheat-sticker = Insert a sticker
+cheat-at = Mention a viewer
+cheat-newline = New line
+cheat-recall = Previous / next sent line
+cheat-hide = Hide the input window

@@ -4,7 +4,7 @@
 //! text nodes. A [`Document`] becomes one `RichText`: runs become spans,
 //! ruby groups become annotations, stickers become inline image objects,
 //! mentions of chat viewers become styled labels with their avatar, and (in
-//! the editor only) markers become labelled tags. Effects and pacing
+//! the editor only) markers become labelled chips in the chrome's colours. Effects and pacing
 //! have no rich-text field of their own, so each distinct combination is
 //! interned in a table and the span carries its index as `effect`; the same
 //! table yields the glyph effects the display plays. Converting back
@@ -154,13 +154,147 @@ impl BoxInk {
     }
 }
 
-/// How a mentioned chat viewer is drawn: the skin's `[mention]`.
+/// How a mentioned chat viewer is drawn: the skin's `[mention]`. It also
+/// carries the editor's marker chips, the other inline labels a skin colours.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MentionLook {
     pub fill: [f32; 4],
     pub text: [f32; 4],
     pub scale: f32,
     pub avatar: bool,
+    pub markers: MarkerLook,
+}
+
+/// How the editor draws markers: chips in the skin's chrome colours (an
+/// accent wash with readable ink), each kind told apart by a glyph and a
+/// coloured stripe rather than by its fill alone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MarkerLook {
+    pub fill: Rgba8,
+    pub text: Rgba8,
+}
+
+impl MarkerLook {
+    pub fn from_skin(skin: &nanatype_theme::Skin) -> Self {
+        let c = &skin.chrome;
+        let fill = mix(c.surface.with_alpha(255), c.accent.with_alpha(255), 0.16);
+        Self {
+            fill,
+            text: crate::skin_theme::on(fill),
+        }
+    }
+
+    /// A marker (or a missing picture) as a chip: the label after its kind's
+    /// glyph and stripe.
+    pub fn object(&self, id: u64, label: impl Into<Arc<str>>, kind: ChipKind) -> RichObject {
+        RichObject::label(
+            id,
+            label,
+            RichLabelStyle {
+                fill: crate::skin_theme::rgba(self.fill),
+                text: crate::skin_theme::rgba(self.text),
+                scale: 0.62,
+                weight: Some(600),
+                radius_px: Some(4.0),
+                icon: Some(kind.icon(self.text)),
+                icon_round: false,
+            },
+        )
+    }
+}
+
+fn mix(a: Rgba8, b: Rgba8, t: f32) -> Rgba8 {
+    let m = |x: u8, y: u8| (f32::from(x) * (1.0 - t) + f32::from(y) * t).round() as u8;
+    Rgba8::rgba(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b), m(a.a, b.a))
+}
+
+/// What a marker chip stands for: its glyph and the hue of its stripe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChipKind {
+    /// `[wait]`: a clock.
+    Wait,
+    /// `[pause]`: wait for continue, a play mark.
+    Continue,
+    /// `[page]`: a page break.
+    Page,
+    /// `[se]`: a note.
+    Sound,
+    /// `[expr]`, portraits and VTube Studio: a face.
+    Expression,
+    /// `[screenshake]`: a zigzag.
+    Shake,
+    /// A sticker or picture whose file is missing.
+    Picture,
+    /// `[at]`: a mention.
+    Mention,
+}
+
+impl ChipKind {
+    pub fn of(m: &Marker) -> Self {
+        match m {
+            Marker::Wait { .. } => Self::Wait,
+            Marker::Pause { .. } => Self::Continue,
+            Marker::Page => Self::Page,
+            Marker::Sound { .. } => Self::Sound,
+            Marker::Expression { .. } | Marker::Portrait { .. } | Marker::Vts(_) => {
+                Self::Expression
+            }
+            Marker::ScreenShake { .. } => Self::Shake,
+        }
+    }
+
+    /// The stripe's hue: pacing orange, sounds green, faces purple, shake
+    /// pink, pictures slate, mentions blue.
+    pub fn hue(self) -> Rgba8 {
+        match self {
+            Self::Wait | Self::Continue | Self::Page => Rgba8::rgb(237, 140, 51),
+            Self::Sound => Rgba8::rgb(56, 168, 140),
+            Self::Expression => Rgba8::rgb(140, 102, 217),
+            Self::Shake => Rgba8::rgb(224, 97, 140),
+            Self::Picture => Rgba8::rgb(115, 128, 148),
+            Self::Mention => Rgba8::rgb(61, 133, 235),
+        }
+    }
+
+    /// The glyph, as 24-unit SVG strokes (Tabler's grid).
+    fn glyph(self) -> &'static str {
+        match self {
+            Self::Wait => r#"<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>"#,
+            Self::Continue => r#"<path d="M8 5.5v13l10-6.5z" fill="INK"/>"#,
+            Self::Page => r#"<path d="M5 4.5h14M5 19.5h14M12 8v8M9 13l3 3 3-3"/>"#,
+            Self::Sound => {
+                r#"<circle cx="7.5" cy="17" r="2.5"/><circle cx="17" cy="15" r="2.5"/><path d="M10 17V6l9.5-2v11"/>"#
+            }
+            Self::Expression => {
+                r#"<circle cx="12" cy="12" r="8.5"/><path d="M9 10h.01M15 10h.01M9 14.5a4 4 0 0 0 6 0"/>"#
+            }
+            Self::Shake => r#"<path d="M3 12l3-5 4 10 4-10 4 10 3-5"/>"#,
+            Self::Picture => {
+                r#"<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 16l5-5 5 5M14 14l2-2 4 4"/>"#
+            }
+            Self::Mention => {
+                r#"<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.5 6.9"/>"#
+            }
+        }
+    }
+
+    /// The chip's picture: the hue as a stripe down its left edge and the
+    /// glyph in `ink` beside it, as an SVG data URL.
+    pub fn icon(self, ink: Rgba8) -> Arc<str> {
+        static CACHE: LazyLock<Mutex<HashMap<(ChipKind, Rgba8), Arc<str>>>> =
+            LazyLock::new(Default::default);
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        Arc::clone(cache.entry((self, ink)).or_insert_with(|| {
+            let rgb = |c: Rgba8| format!("rgb({},{},{})", c.r, c.g, c.b);
+            let (ink, hue) = (rgb(ink), rgb(self.hue()));
+            let glyph = self.glyph().replace("INK", &ink);
+            Arc::from(format!(
+                "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"48\" height=\"48\" viewBox=\"0 0 24 24\">\
+                 <rect x=\"0\" y=\"0\" width=\"3\" height=\"24\" rx=\"1\" fill=\"{hue}\"/>\
+                 <g transform=\"translate(6.5 3) scale(0.75)\" fill=\"none\" stroke=\"{ink}\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{glyph}</g></svg>"
+            ))
+        }))
+    }
 }
 
 impl Default for MentionLook {
@@ -181,6 +315,7 @@ impl MentionLook {
                 0.82
             },
             avatar: m.avatar,
+            markers: MarkerLook::from_skin(skin),
         }
     }
 
@@ -427,17 +562,6 @@ pub struct Env<'a> {
     pub locale: Locale,
 }
 
-pub fn marker_kind(m: &Marker) -> u16 {
-    match m {
-        // Indices into the framework's tag palette: pacing orange, sounds
-        // green, expressions and portraits purple, screen shake pink.
-        Marker::Wait { .. } | Marker::Pause { .. } | Marker::Page => 0,
-        Marker::Sound { .. } => 3,
-        Marker::Expression { .. } | Marker::Portrait { .. } | Marker::Vts(_) => 2,
-        Marker::ScreenShake { .. } => 4,
-    }
-}
-
 pub fn to_rich(doc: &Document, env: &Env<'_>) -> RichText {
     let mut b = RichText::builder();
     // Byte length so far, to style objects after building.
@@ -480,7 +604,7 @@ pub fn to_rich(doc: &Document, env: &Env<'_>) -> RichText {
                             } else {
                                 a.alt.clone()
                             };
-                            RichObject::tag(id, alt, 5)
+                            env.look.mention.markers.object(id, alt, ChipKind::Picture)
                         }
                         None => RichObject::chip(id, a.alt.clone(), 5),
                     };
@@ -504,7 +628,7 @@ pub fn to_rich(doc: &Document, env: &Env<'_>) -> RichText {
                     if env.editor {
                         let id = object_id(inline);
                         let label = super::input::marker_label(m, env.locale);
-                        b.object(RichObject::tag(id, label, marker_kind(m)));
+                        b.object(env.look.mention.markers.object(id, label, ChipKind::of(m)));
                         len += replacement;
                     }
                 }
@@ -812,6 +936,38 @@ mod tests {
         );
         let style = object.label_style().expect("a styled label");
         assert_eq!(style.icon.as_deref(), Some("file:///f/42.png"));
+    }
+
+    #[test]
+    fn editor_markers_are_readable_chips_with_a_glyph() {
+        let reg = nanatype_theme::SkinRegistry::new(None, "test");
+        for e in reg.entries() {
+            let skin = reg.load(&e.id).expect("skin loads").skin;
+            let m = MarkerLook::from_skin(&skin);
+            let r = crate::skin_theme::contrast(m.text, m.fill);
+            assert!(r >= 4.5, "{}: marker chip ink {r:.2}:1", e.id);
+        }
+        let doc = nanatype_markup::parse("[wait=500][se=coin]").doc;
+        let urls = HashMap::new();
+        let look = look();
+        let env = Env {
+            look: &look,
+            urls: &urls,
+            editor: true,
+            locale: Locale::ZhCn,
+        };
+        let rich = to_rich(&doc, &env);
+        let icons: Vec<String> = rich
+            .objects()
+            .iter()
+            .map(|(_, o)| {
+                let icon = o.label_style().and_then(|s| s.icon.clone());
+                icon.expect("a glyph").to_string()
+            })
+            .collect();
+        assert_eq!(icons.len(), 2);
+        assert!(icons.iter().all(|i| i.starts_with("data:image/svg+xml,")));
+        assert_ne!(icons[0], icons[1], "each kind has its own glyph");
     }
 
     #[test]

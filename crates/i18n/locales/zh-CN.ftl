@@ -493,3 +493,23 @@ int-blive-panel-hint = 仅供主播操作的窗口，不会被采集
 int-blive-open-panel = 打开弹幕面板
 int-blive-quote-display = 对话框显示回复引用
 int-blive-quote-display-hint = 回复弹幕时，对话框文字上方显示被回复的弹幕
+
+## wave3-input
+tb-cheatsheet = 标记速查
+tb-stroke-white = 白色描边
+tb-stroke-black = 黑色描边
+tb-stroke-accent = 主题色描边
+tb-shadow-drop = 投影
+tb-shadow-glow = 发光
+cheat-markers = 标记
+cheat-shortcuts = 快捷键
+cheat-wait = 停顿指定毫秒后继续
+cheat-pause = 停住，按继续后再往下打
+cheat-page = 翻到新的一页
+cheat-expr = 切换立绘表情
+cheat-se = 播放音效
+cheat-sticker = 插入贴纸
+cheat-at = 提到一位观众
+cheat-newline = 换行
+cheat-recall = 上一句 / 下一句
+cheat-hide = 隐藏输入窗
