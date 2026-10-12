@@ -12,7 +12,7 @@ accent = "#f06a9c"
 background = "#fff4f8"
 surface = "#ffffff"
 text = "#5e2a42"
-muted = "#9a6a80"
+muted = "#8a5470"
 border = "#f7c6d8"
 
 [fonts.accent]

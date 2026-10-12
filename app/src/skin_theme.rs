@@ -12,7 +12,7 @@ use nana_ui::CompiledTheme;
 use nana_ui::theme::{AccentRamp, SemanticColor, SemanticPalette, ThemeDefinition, ThemeId};
 use nanatype_model::Rgba8;
 use nanatype_settings::{ChromeMode, SkinOverrides};
-use nanatype_theme::{Appearance, Skin};
+use nanatype_theme::{Appearance, FontSpec, Skin};
 
 /// The skin with the user's personalisation applied.
 pub fn with_overrides(skin: &Skin, o: &SkinOverrides) -> Skin {
@@ -53,9 +53,27 @@ pub fn with_overrides(skin: &Skin, o: &SkinOverrides) -> Skin {
 /// The skin as drawn: the user's personalisation applied, and each font
 /// role's family resolved. `bundled` are the families registered from the
 /// skin's own font files (body, name, accent), which always come first.
-pub fn prepare(base: &Skin, overrides: &SkinOverrides, bundled: &[Option<String>; 3]) -> Skin {
+/// `language` is the UI locale tag: roles the skin leaves at the default
+/// stack take that language's system stack, and roles with their own stack
+/// keep it first and fall back to the language's faces after it.
+pub fn prepare(
+    base: &Skin,
+    overrides: &SkinOverrides,
+    bundled: &[Option<String>; 3],
+    language: &str,
+) -> Skin {
     let mut skin = with_overrides(base, overrides);
+    let locale_stack = FontSpec::locale_families(language);
     for (spec, family) in skin.fonts.roles_mut().into_iter().zip(bundled) {
+        if spec.is_default_stack() {
+            spec.families = locale_stack.clone();
+        } else {
+            for f in &locale_stack {
+                if !spec.families.iter().any(|g| g.eq_ignore_ascii_case(f)) {
+                    spec.families.push(f.clone());
+                }
+            }
+        }
         if let Some(family) = family {
             spec.families.insert(0, family.clone());
         }
@@ -114,13 +132,43 @@ fn luminance(c: Rgba8) -> f32 {
     0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
 }
 
-/// Black or white, whichever reads better on `bg`.
+/// WCAG contrast ratio between two opaque colours.
+pub fn contrast(a: Rgba8, b: Rgba8) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// The foreground that reads best on `bg`: the dark ink or white, whichever
+/// has the higher contrast ratio. Mid-tone backgrounds where the soft ink
+/// cannot reach 4.5:1 fall back to pure black, which always can.
 pub fn on(bg: Rgba8) -> Rgba8 {
-    if luminance(bg) > 0.45 {
-        Rgba8::rgb(16, 22, 32)
-    } else {
+    let ink = Rgba8::rgb(16, 22, 32);
+    let (dark, light) = (contrast(ink, bg), contrast(Rgba8::WHITE, bg));
+    if dark < light {
         Rgba8::WHITE
+    } else if dark >= 4.5 {
+        ink
+    } else {
+        Rgba8::BLACK
     }
+}
+
+/// The accent as a foreground on `surface` (focus rings, soft-fill text,
+/// slider and switch marks): the accent itself when it already reaches
+/// `min`:1, otherwise mixed toward `text` just far enough that it does.
+pub fn accent_fg(accent: Rgba8, surface: Rgba8, text: Rgba8, min: f32) -> Rgba8 {
+    if contrast(accent, surface) >= min {
+        return accent;
+    }
+    (1..=20)
+        .map(|i| mix(accent, text, i as f32 / 20.0))
+        .find(|c| contrast(*c, surface) >= min)
+        .unwrap_or(text)
+}
+
+fn rgba8(c: SemanticColor) -> Rgba8 {
+    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Rgba8::rgb(b(c.r), b(c.g), b(c.b))
 }
 
 pub fn dark_mode(skin: &Skin, mode: ChromeMode, system_dark: bool) -> bool {
@@ -181,21 +229,30 @@ pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
         *slot = sc(*color);
     }
     let accent = c.accent;
+    let (surface, text) = (rgba8(p.surface), rgba8(p.text));
     let strong = mix(accent, if dark { Rgba8::WHITE } else { Rgba8::BLACK }, 0.15);
+    // Text and marks drawn in the accent sit on a surface or on a soft
+    // accent wash of it, so measure against the wash (its heaviest state).
+    let wash = mix(surface, accent, 0.30);
+    let fg_text = accent_fg(accent, wash, text, 4.5);
+    let fg_ui = accent_fg(accent, surface, text, 3.0);
+    let focus_alpha: u8 = if dark { 140 } else { 230 };
     let ramp = AccentRamp {
         base: sc(accent),
         strong: sc(strong),
-        on_soft: sc(mix(
-            accent,
-            if dark { Rgba8::WHITE } else { Rgba8::BLACK },
-            0.35,
-        )),
+        on_soft: sc(fg_text),
         text: sc(on(accent)),
         soft_alpha: 0.14,
         soft_hover_alpha: 0.22,
         soft_pressed_alpha: 0.30,
-        focus: sc(accent.with_alpha(if dark { 140 } else { 230 })),
+        focus: sc(accent.with_alpha(focus_alpha)),
     };
+    // `with_accent` leaves the focus roles at NanaUI's own blue; carry the
+    // skin through them. The ring is a solid `accent_fg`, the fill's label
+    // is chosen against the fill as it lands on the surface.
+    p.focus_border = sc(fg_ui);
+    p.focus_surface = ramp.focus;
+    p.focus_text = sc(on(mix(surface, accent, f32::from(focus_alpha) / 255.0)));
     let base = if dark {
         ThemeDefinition::NANA_DARK
     } else {
@@ -217,5 +274,68 @@ pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
         } else {
             nana_ui::ThemeAppearance::Light
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nanatype_theme::{SkinOrigin, SkinRegistry};
+
+    #[test]
+    fn on_accent_text_reaches_4_5_for_every_builtin_skin() {
+        let reg = SkinRegistry::new(None, "test");
+        let mut n = 0;
+        for e in reg
+            .entries()
+            .iter()
+            .filter(|e| matches!(e.origin, SkinOrigin::Builtin))
+        {
+            let skin = reg.load(&e.id).expect("builtin skin loads").skin;
+            let accent = skin.chrome.accent;
+            let r = contrast(on(accent), accent);
+            assert!(r >= 4.5, "{}: on(accent) is {r:.2}:1", e.id);
+            n += 1;
+        }
+        assert_eq!(n, 18);
+    }
+
+    #[test]
+    fn accent_fg_meets_its_minimum_on_the_skin_surface() {
+        let reg = SkinRegistry::new(None, "test");
+        for e in reg.entries() {
+            let c = reg.load(&e.id).expect("skin loads").skin.chrome.clone();
+            for min in [3.0, 4.5] {
+                let fg = accent_fg(c.accent, c.surface, c.text, min);
+                let r = contrast(fg, c.surface);
+                assert!(r >= min, "{}: accent_fg {r:.2}:1 < {min}", e.id);
+            }
+        }
+    }
+
+    #[test]
+    fn builtin_chrome_text_roles_are_readable() {
+        let reg = SkinRegistry::new(None, "test");
+        let mut bad = Vec::new();
+        for e in reg.entries() {
+            let c = reg.load(&e.id).expect("skin loads").skin.chrome.clone();
+            for (role, fg, min) in [
+                ("text", c.text, 4.5),
+                ("muted", c.muted, 4.5),
+                ("success", c.success, 3.0),
+                ("warning", c.warning, 3.0),
+                ("danger", c.danger, 3.0),
+            ] {
+                for (on_name, bg) in [("surface", c.surface), ("background", c.background)] {
+                    let r = contrast(fg, bg);
+                    if r < min {
+                        bad.push(format!("{} {role} on {on_name}: {r:.2}:1 < {min}", e.id));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "
+{}", bad.join("
+"));
     }
 }
