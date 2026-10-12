@@ -9,7 +9,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use nana_ui::CompiledTheme;
+use nana_ui::runtime::{BoxPaint, Gradient, PaintContext, PaintPath, PaintShadow, Painter};
 use nana_ui::theme::{AccentRamp, SemanticColor, SemanticPalette, ThemeDefinition, ThemeId};
+use nana_ui_core::{
+    EffectTokens, ElevationRole, RadiusTier, SemanticColorRole, ShadowToken, ThemeAppearance,
+    ThemeMetrics,
+};
 use nanatype_model::Rgba8;
 use nanatype_settings::{ChromeMode, SkinOverrides};
 use nanatype_theme::{Appearance, FontSpec, Skin};
@@ -180,37 +185,195 @@ pub fn dark_mode(skin: &Skin, mode: ChromeMode, system_dark: bool) -> bool {
     }
 }
 
+/// CIE L* (0–100) of an opaque colour: the lightness step a reader sees.
+pub fn lightness(c: Rgba8) -> f32 {
+    let y = luminance(c);
+    if y > 216.0 / 24389.0 {
+        116.0 * y.cbrt() - 16.0
+    } else {
+        y * 24389.0 / 27.0
+    }
+}
+
+/// How far a colour is from grey, 0–1 (sRGB channel spread).
+pub fn chroma(c: Rgba8) -> f32 {
+    let hi = c.r.max(c.g).max(c.b);
+    let lo = c.r.min(c.g).min(c.b);
+    f32::from(hi - lo) / 255.0
+}
+
+/// The most a skin's chrome surface gives way to the neutral Nana surface.
+pub const BLEND_MAX: f32 = 0.65;
+/// The smallest CIE L* step between a selected row and the surface.
+pub const SELECTED_DELTA_L: f32 = 6.0;
+
+/// How much of a skin's chrome surface gives way to the neutral Nana
+/// surface: nothing for a near-grey colour, up to [`BLEND_MAX`] for a
+/// saturated one (pixel's lime), so a loud skin tints the window and keeps
+/// its accent instead of washing the whole settings window in its colour.
+fn blend_amount(c: Rgba8) -> f32 {
+    ((chroma(c) - 0.08) / 0.25).clamp(0.0, 1.0) * BLEND_MAX
+}
+
+/// `fg` moved toward `toward` just far enough to reach `min`:1 on every
+/// colour in `on`.
+fn readable(fg: Rgba8, on: &[Rgba8], toward: Rgba8, min: f32) -> Rgba8 {
+    let ok = |c: Rgba8| on.iter().all(|bg| contrast(c, *bg) >= min);
+    if ok(fg) {
+        return fg;
+    }
+    (1..=20)
+        .map(|i| mix(fg, toward, i as f32 / 20.0))
+        .find(|c| ok(*c))
+        .unwrap_or(toward)
+}
+
+/// The chrome colours a theme is compiled from, for one appearance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ChromeColors {
+    pub dark: bool,
+    pub accent: Rgba8,
+    pub highlight: Rgba8,
+    pub background: Rgba8,
+    pub surface: Rgba8,
+    pub text: Rgba8,
+    pub muted: Rgba8,
+    pub border: Rgba8,
+    pub success: Rgba8,
+    pub warning: Rgba8,
+    pub danger: Rgba8,
+    /// The selected-row wash's share of the accent: the least that moves
+    /// the surface by [`SELECTED_DELTA_L`].
+    pub selected_t: f32,
+}
+
+/// The skin's chrome for a chrome drawn `dark` or light:
+///
+/// 1. the skin's own colours when its appearance agrees, otherwise the Nana
+///    counterpart ([`nanatype_theme::Chrome::nana`]) carrying the skin's
+///    accent and highlight; `[chrome.dark]` / `[chrome.light]` on top;
+/// 2. background and surface pulled toward the neutral Nana surface by
+///    their saturation ([`blend_amount`]);
+/// 3. text and muted lifted to 4.5:1, status colours to 3:1, on both.
+pub fn chrome_colors(skin: &Skin, dark: bool) -> ChromeColors {
+    let c = &skin.chrome;
+    let nana = nanatype_theme::Chrome::nana(dark);
+    let own = if (c.appearance == Appearance::Dark) == dark {
+        c
+    } else {
+        &nana
+    };
+    let v = c.variant(dark).cloned().unwrap_or_default();
+    let pick = |over: Option<Rgba8>, base: Rgba8| over.unwrap_or(base);
+    let accent = pick(v.accent, c.accent);
+    let highlight = pick(v.highlight, c.highlight_for(dark));
+    let background = pick(v.background, own.background);
+    let surface = pick(v.surface, own.surface);
+    let background = mix(background, nana.background, blend_amount(background));
+    let surface = mix(surface, nana.surface, blend_amount(surface));
+    let extreme = if dark { Rgba8::WHITE } else { Rgba8::BLACK };
+    let both = [surface, background];
+    let text = readable(pick(v.text, own.text), &both, extreme, 4.5);
+    let muted = readable(pick(v.muted, own.muted), &both, text, 4.5);
+    let status = |over: Option<Rgba8>, base: Rgba8| readable(pick(over, base), &both, text, 3.0);
+    let lsurface = lightness(surface);
+    let selected_t = (16..=60)
+        .map(|i| i as f32 / 100.0)
+        .find(|t| (lightness(mix(surface, accent, *t)) - lsurface).abs() >= SELECTED_DELTA_L)
+        .unwrap_or(0.6);
+    ChromeColors {
+        dark,
+        accent,
+        highlight,
+        background,
+        surface,
+        text,
+        muted,
+        border: pick(v.border, own.border),
+        success: status(v.success, own.success),
+        warning: status(v.warning, own.warning),
+        danger: status(v.danger, own.danger),
+        selected_t,
+    }
+}
+
+/// Radius steps 4 / 8 / 12 / 16 / 20 (and 24): swatches and tags, controls,
+/// popovers, cards, floating rails, large surfaces. Chips are pills.
+pub fn metrics() -> ThemeMetrics {
+    ThemeMetrics {
+        radius_xs: 4.0,
+        radius_sm: 8.0,
+        radius_md: 12.0,
+        radius_lg: 16.0,
+        radius_xl: 20.0,
+        radius_xxl: 24.0,
+        ..nana_ui_core::UI_METRICS
+    }
+}
+
+/// The lifted-surface shadow cards and menus share: a soft blue-tinted
+/// `0 8px 24px text@16%` on a light chrome, `0 10px 30px -12px #00000080`
+/// on a dark one.
+pub fn effects(k: &ChromeColors) -> EffectTokens {
+    let (base, surface) = if k.dark {
+        let shadow = ShadowToken {
+            color: SemanticColor::rgba8(0, 0, 0, 0.5),
+            offset_x: 0.0,
+            offset_y: 10.0,
+            blur_radius: 30.0,
+            spread_radius: -12.0,
+            inset: false,
+        };
+        (EffectTokens::DARK, shadow)
+    } else {
+        let t = k.text;
+        let shadow = ShadowToken {
+            color: SemanticColor::rgba8(t.r, t.g, t.b, 0.16),
+            offset_x: 0.0,
+            offset_y: 8.0,
+            blur_radius: 24.0,
+            spread_radius: 0.0,
+            inset: false,
+        };
+        (EffectTokens::LIGHT, shadow)
+    };
+    EffectTokens { surface, ..base }
+}
+
 pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
     let c = &skin.chrome;
-    let skin_dark = c.appearance == Appearance::Dark;
+    let k = chrome_colors(skin, dark);
     let mut p = if dark {
         SemanticPalette::dark()
     } else {
         SemanticPalette::light()
     };
-    // Only take the skin's surfaces when it agrees with the chosen mode;
-    // otherwise keep NanaUI's neutral surfaces and just carry the accent.
-    if skin_dark == dark {
-        let (bg, surface, text) = (c.background, c.surface, c.text);
-        let toward = if dark { Rgba8::WHITE } else { Rgba8::BLACK };
-        p.background = sc(bg);
-        p.surface = sc(surface);
-        p.subtle = sc(mix(surface, bg, 0.5));
-        p.hover = sc(mix(surface, toward, 0.06));
-        p.active = sc(mix(surface, toward, 0.12));
-        p.border = sc(c.border);
-        p.border_soft = sc(mix(c.border, surface, 0.5));
-        p.border_strong = sc(mix(c.border, text, 0.3));
-        p.text = sc(text);
-        p.muted = sc(c.muted);
-        p.faint = sc(mix(c.muted, surface, 0.35));
-        p.selected = sc(mix(surface, c.accent, 0.16));
-        p.selected_hover = sc(mix(surface, c.accent, 0.24));
-        p.selected_pressed = sc(mix(surface, c.accent, 0.32));
-        p.success = sc(c.success);
-        p.warning = sc(c.warning);
-        p.danger = sc(c.danger);
-    }
+    let (bg, surface, text) = (k.background, k.surface, k.text);
+    let toward = if dark { Rgba8::WHITE } else { Rgba8::BLACK };
+    p.background = sc(bg);
+    p.surface = sc(surface);
+    p.subtle = sc(mix(surface, bg, 0.5));
+    p.hover = sc(mix(surface, toward, 0.06));
+    p.active = sc(mix(surface, toward, 0.12));
+    p.border = sc(k.border);
+    p.border_soft = sc(mix(k.border, surface, 0.5));
+    p.border_strong = sc(mix(k.border, text, 0.3));
+    p.text = sc(text);
+    p.muted = sc(k.muted);
+    p.faint = sc(mix(k.muted, surface, 0.35));
+    p.selected = sc(mix(surface, k.accent, k.selected_t));
+    p.selected_hover = sc(mix(surface, k.accent, k.selected_t + 0.08));
+    p.selected_pressed = sc(mix(surface, k.accent, k.selected_t + 0.16));
+    p.success = sc(k.success);
+    p.warning = sc(k.warning);
+    p.danger = sc(k.danger);
+    // The warm second accent for live and attention states: a fill with its
+    // own hover, pressed and on-fill text.
+    let hl = k.highlight;
+    p.highlight = sc(hl);
+    p.highlight_hover = sc(mix(hl, toward, 0.12));
+    p.highlight_pressed = sc(mix(hl, toward, 0.2));
+    p.highlight_text = sc(on(hl));
     for (role, color) in &c.palette {
         let slot = match role.as_str() {
             "background" => &mut p.background,
@@ -228,7 +391,7 @@ pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
         };
         *slot = sc(*color);
     }
-    let accent = c.accent;
+    let accent = k.accent;
     let (surface, text) = (rgba8(p.surface), rgba8(p.text));
     let strong = mix(accent, if dark { Rgba8::WHITE } else { Rgba8::BLACK }, 0.15);
     // Text and marks drawn in the accent sit on a surface or on a soft
@@ -261,6 +424,8 @@ pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
     let def = base
         .with_palette(p)
         .with_accent(ramp)
+        .with_metrics(metrics())
+        .with_effects(effects(&k))
         .with_id(ThemeId::from_owned(format!(
             "nanatype.skin.{}.{}",
             skin.meta.id,
@@ -275,6 +440,112 @@ pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
             nana_ui::ThemeAppearance::Light
         }),
     }
+}
+
+/// `rgba` with its alpha replaced.
+fn alpha(rgba: [f32; 4], a: f32) -> [f32; 4] {
+    [rgba[0], rgba[1], rgba[2], a]
+}
+
+/// A settings card: the surface at the card radius on the theme's lifted
+/// shadow. Light chromes drop the outline for the soft blue-tinted shadow
+/// and a 1px white top highlight; dark chromes keep a 1px soft border (a
+/// shadow barely reads on dark) with a faint top highlight.
+pub struct CardPainter;
+
+impl Painter for CardPainter {
+    fn paint(&self, cx: &mut PaintContext<'_>) {
+        let rect = cx.bounds();
+        let r = cx.radius(RadiusTier::Lg);
+        let dark = cx.theme_appearance() == ThemeAppearance::Dark;
+        let mut card = BoxPaint::fill(SemanticColorRole::Surface).shadow(ElevationRole::Surface);
+        if dark {
+            card = card.border(SemanticColorRole::BorderSoft, 1.0);
+        }
+        cx.rounded_rect(rect, r, card);
+        let mut path = PaintPath::new();
+        path.rounded_rect(rect, [r; 4]);
+        cx.shadow(
+            &path,
+            PaintShadow::Custom {
+                color: alpha([1.0; 4], if dark { 0.08 } else { 1.0 }).into(),
+                offset: [0.0, 1.0],
+                blur: 0.0,
+                spread: 0.0,
+                inset: true,
+            },
+        );
+    }
+
+    fn paint_key(&self) -> u64 {
+        0
+    }
+}
+
+/// The view's one primary action: a solid accent fill lightening to the
+/// right (accent → accent.light at 90°), a 1px inner top highlight
+/// `#ffffff40` and an accent-tinted `0 3px 8px accent@33%` shadow.
+pub struct CtaPainter;
+
+impl Painter for CtaPainter {
+    fn paint(&self, cx: &mut PaintContext<'_>) {
+        let state = cx.state();
+        let rect = cx.bounds();
+        let r = cx.radius(RadiusTier::Sm);
+        let mut path = PaintPath::new();
+        path.rounded_rect(rect, [r; 4]);
+        if !state.disabled {
+            let accent = cx.color(SemanticColorRole::Accent);
+            let dark = cx.theme_appearance() == ThemeAppearance::Dark;
+            cx.shadow(
+                &path,
+                PaintShadow::Custom {
+                    color: alpha(accent, if dark { 0.25 } else { 0.33 }).into(),
+                    offset: [0.0, 3.0],
+                    blur: if dark { 10.0 } else { 8.0 },
+                    spread: 0.0,
+                    inset: false,
+                },
+            );
+        }
+        // The fill itself (accent, strong accent under the pointer) and the
+        // focus ring stay the framework's.
+        cx.draw_default();
+        if state.disabled {
+            return;
+        }
+        let light = Gradient::linear([rect.x, rect.y], [rect.x + rect.width, rect.y])
+            .stop(0.0, [1.0, 1.0, 1.0, 0.0])
+            .stop(1.0, [1.0, 1.0, 1.0, 0.2]);
+        cx.fill_path(&path, light);
+        cx.shadow(
+            &path,
+            PaintShadow::Custom {
+                color: [1.0, 1.0, 1.0, 0.25].into(),
+                offset: [0.0, 1.0],
+                blur: 0.0,
+                spread: 0.0,
+                inset: true,
+            },
+        );
+    }
+
+    fn paint_key(&self) -> u64 {
+        1
+    }
+}
+
+/// `button` as the view's call to action: [`CtaPainter`] over a solid accent
+/// fill, its label in the on-accent colour.
+pub fn cta(button: nana_ui::runtime::Button) -> nana_ui::runtime::Button {
+    let mut st = button.style.clone();
+    st.foreground = Some(SemanticColorRole::AccentText);
+    st.background = Some(SemanticColorRole::Accent);
+    st.border = None;
+    st.interaction.hovered.background = Some(SemanticColorRole::AccentStrong);
+    st.interaction.pressed.background = Some(SemanticColorRole::AccentStrong);
+    st.painter = Some(CtaPainter.into());
+    button.style(st)
 }
 
 #[cfg(test)]
@@ -311,6 +582,111 @@ mod tests {
                 assert!(r >= min, "{}: accent_fg {r:.2}:1 < {min}", e.id);
             }
         }
+    }
+
+    fn builtins() -> Vec<(String, Skin)> {
+        let reg = SkinRegistry::new(None, "test");
+        reg.entries()
+            .iter()
+            .filter(|e| matches!(e.origin, SkinOrigin::Builtin))
+            .map(|e| {
+                let skin = reg.load(&e.id).expect("builtin skin loads").skin;
+                (e.id.clone(), (*skin).clone())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn resolved_chrome_is_readable_in_both_modes_for_every_builtin_skin() {
+        let skins = builtins();
+        assert_eq!(skins.len(), 18);
+        let mut bad = Vec::new();
+        for (id, skin) in &skins {
+            for dark in [false, true] {
+                let k = chrome_colors(skin, dark);
+                for (on_name, bg) in [("surface", k.surface), ("background", k.background)] {
+                    for (role, fg, min) in [
+                        ("text", k.text, 4.5),
+                        ("muted", k.muted, 4.5),
+                        ("success", k.success, 3.0),
+                        ("warning", k.warning, 3.0),
+                        ("danger", k.danger, 3.0),
+                    ] {
+                        let r = contrast(fg, bg);
+                        if r < min {
+                            bad.push(format!("{id} dark={dark} {role}/{on_name} {r:.2}:1"));
+                        }
+                    }
+                }
+                let selected = mix(k.surface, k.accent, k.selected_t);
+                let dl = (lightness(selected) - lightness(k.surface)).abs();
+                if dl < SELECTED_DELTA_L {
+                    bad.push(format!("{id} dark={dark} selected ΔL* {dl:.1}"));
+                }
+                let fg = accent_fg(k.accent, k.surface, k.text, 3.0);
+                if contrast(fg, k.surface) < 3.0 {
+                    bad.push(format!("{id} dark={dark} accent_fg"));
+                }
+                if contrast(on(k.highlight), k.highlight) < 4.5 {
+                    bad.push(format!("{id} dark={dark} on(highlight)"));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "\n{}", bad.join("\n"));
+    }
+
+    #[test]
+    fn saturated_skin_chrome_is_tinted_not_washed() {
+        let skins = builtins();
+        let pixel = &skins
+            .iter()
+            .find(|(id, _)| id == "nanatype.pixel")
+            .unwrap()
+            .1;
+        let k = chrome_colors(pixel, false);
+        // The lime page becomes a tint: well under half its saturation.
+        assert!(chroma(k.background) < chroma(pixel.chrome.background) * 0.5);
+        // The skin's accent is carried as is.
+        assert_eq!(k.accent, pixel.chrome.accent);
+        // Near-grey chromes are left alone.
+        let halo = &skins
+            .iter()
+            .find(|(id, _)| id == "nanatype.halo")
+            .unwrap()
+            .1;
+        let k = chrome_colors(halo, false);
+        assert_eq!(k.background, halo.chrome.background);
+        assert_eq!(k.surface, halo.chrome.surface);
+    }
+
+    #[test]
+    fn a_mode_the_skin_does_not_match_uses_the_nana_counterpart() {
+        let skins = builtins();
+        let sakura = &skins
+            .iter()
+            .find(|(id, _)| id == "nanatype.sakura")
+            .unwrap()
+            .1;
+        let k = chrome_colors(sakura, true);
+        assert_eq!(k.background, Rgba8::rgb(15, 23, 36));
+        assert_eq!(k.surface, Rgba8::rgb(24, 35, 58));
+        assert_eq!(k.text, Rgba8::rgb(230, 238, 248));
+        assert_eq!(k.accent, sakura.chrome.accent);
+        assert_eq!(k.highlight, nanatype_theme::HIGHLIGHT_DARK);
+        let night = &skins
+            .iter()
+            .find(|(id, _)| id == "nanatype.night")
+            .unwrap()
+            .1;
+        let k = chrome_colors(night, false);
+        assert_eq!(k.surface, nanatype_theme::Chrome::default().surface);
+        // A `[chrome.dark]` table wins over the counterpart.
+        let mut s = sakura.clone();
+        s.chrome.dark = Some(nanatype_theme::ChromeVariant {
+            surface: Some(Rgba8::rgb(40, 20, 30)),
+            ..Default::default()
+        });
+        assert_eq!(chrome_colors(&s, true).surface, Rgba8::rgb(40, 20, 30));
     }
 
     #[test]

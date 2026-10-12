@@ -92,3 +92,7 @@ name_plate = { color = "name", text_color = "name_text", radius = 9, padding = [
 
 [history.text]
 color = "#2b2b3a"
+
+[effects]
+# Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.
+contrast_guard = 3.0

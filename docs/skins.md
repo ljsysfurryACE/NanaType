@@ -53,6 +53,12 @@ surface = "#ffffff"
 text = "#3a2230"
 muted = "#7a5a68"
 border = "#f0cfdc"
+# highlight = "#e86a92"           # 直播/注意态（镜像中、录制快捷键、排队）的粉色角色；
+                                  # 省略时亮色界面为 #e86a92，暗色界面为 #ff8fb1
+
+[chrome.dark]                     # 可选：用户把界面设为暗色而皮肤是亮色时使用
+surface = "#2a1a24"               # 键与 [chrome] 相同（accent / background / surface / text /
+                                  # muted / border / success / warning / danger / highlight），都可省略
 
 [fonts.body]                      # 台词字体；name（名牌）、accent（装饰文字）同理
 file = "fonts/LXGWWenKai.ttf"     # 随皮肤分发的字体（可选）
@@ -242,7 +248,25 @@ wave_px = 3
 jump_px = 6
 rainbow_period_s = 2.4
 screen_shake_px = 6
+contrast_guard = 3.0              # 自带颜色的文字与框色对比低于 3:1 时加 1.5px 描边（0 = 关）
 ```
+
+## 界面配色（chrome）
+
+`[chrome]` 只决定设置窗口、输入框工具栏等应用控件的颜色，不影响展示框。NanaType 在把它交给界面之前会做几步处理，所以写得再鲜艳也不会糊满整个窗口：
+
+- **混合中性色**：`background` 与 `surface` 按饱和度向 Nana 的中性底色（亮色 `#eaf4fb` / `#ffffff`，暗色 `#0f1724` / `#18233a`）混合，最高混入 65%。接近灰色的颜色保持不变；像 pixel 的荧光绿这类高饱和色只留下色调，品牌感交给 `accent`。
+- **保证可读**：`text`、`muted` 在 `surface` 和 `background` 上至少 4.5:1，`success` / `warning` / `danger` 至少 3:1，不够时向文字色（或黑/白）推近；列表选中态与 `surface` 的亮度差（CIE L*）至少 6。
+- **明暗不一致**：用户把界面设为暗色而皮肤是亮色（或反过来）时，不再退回 NanaUI 的灰色，而是用 Nana 色调的对立面板：暗色为 background `#0f1724`、surface `#18233a`、text `#e6eef8`、muted `#9fb3cc`、border `#2c3d58`，亮色为上面清单的默认值；皮肤的 `accent` 与 `highlight` 照常保留。需要自己指定时写 `[chrome.dark]` / `[chrome.light]`。
+- **两种强调色**：`accent` 是主色（开关、滑块、每页唯一的主操作按钮——实心 accent，向右渐亮，1px 内高光与 accent 色投影）；`highlight` 是暖色的第二强调色，只用于直播 / 注意态。按钮文字按对比度自动选黑或白。
+- **形状**：圆角档位为 4 / 8 / 12 / 16 / 20（色块与标签 / 控件 / 弹层 / 卡片 / 浮动条），胶囊为全圆角。亮色界面的设置卡片不描边，用 `0 8px 24px` 的文字色 16% 柔和阴影加 1px 白色顶部高光；暗色界面保留 1px 描边与 `0 10px 30px -12px #00000080` 阴影。
+
+## 文字效果与对比度
+
+- **发光**：文字的 `[shadow=颜色,0,0,模糊]`（无偏移即发光）画在亮色框上时，透明度最多 55%、模糊至少 10px，看起来是光而不是一团脏影。工具栏插入的发光默认使用皮肤的 `accent`。
+- **对比保护**（`effects.contrast_guard`）：自带颜色的一段文字与 `dialogue.box.color`（历史记录里为 `history.bubble_color`）对比低于该值时，在其下方加 1.5px 描边，颜色取皮肤文字、框线中离这段文字最远的那个墨色（pixel 为 `#0f380f`）。已有描边的文字不变；框色透明度低于 50% 时不判断。内置的亮色皮肤、pixel 与 terminal 默认为 3.0，其余为 0（关闭）。
+- **皮肤的文字阴影**：`dialogue.text.shadow` 是有色发光（如 terminal 的绿色、night 的蓝色）时，自带颜色的文字改用自己的颜色发光，不会再套上皮肤的绿光；黑色等中性投影保持不变。
+- 以上只作用于展示框、历史记录与皮肤预览；输入框里的文字始终按原样显示，以便原样保存。
 
 ## 颜色、渐变与阴影
 

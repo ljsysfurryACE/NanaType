@@ -102,3 +102,7 @@ time_color = "#8a8070"
 [history.text]
 color = "#222222"
 size = 19
+
+[effects]
+# Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.
+contrast_guard = 3.0

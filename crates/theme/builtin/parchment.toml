@@ -89,3 +89,7 @@ avatar = { shape = "circle", size = 40, ring_color = "#7a5430", ring_width = 2 }
 
 [history.text]
 color = "#3e2a1c"
+
+[effects]
+# Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.
+contrast_guard = 3.0

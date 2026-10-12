@@ -120,10 +120,11 @@ pub fn section_with(ui: Ui, title_key: &str, rows: Vec<(AnyView, Shown)>) -> Any
             )
         }),
         widget(
+            // Surface, outline (dark chromes only) and the lifted shadow are
+            // painted from the theme, so a mode switch restyles the card.
             Stack::column(0.0)
-                .surface(SemanticColorRole::Surface)
                 .radius(nana_ui_core::RadiusTier::Lg)
-                .outline(SemanticColorRole::BorderSoft, 1.0)
+                .painter(crate::skin_theme::CardPainter)
                 .with_layout(move |l| {
                     l.margin_top = Some(LengthSpec::Px(if titled { 8.0 } else { 0.0 }));
                 }),
