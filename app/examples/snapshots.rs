@@ -10,7 +10,7 @@ use std::sync::Arc;
 use nana_ui::runtime::{DocumentId, RuntimeDocument};
 use nana_ui_devtools::agent::RuntimeAgentSession;
 use nanatype::chat::{ChatKind, ChatMessage};
-use nanatype::ui::{Ui, danmaku, dialogue, history, input, settings};
+use nanatype::ui::{LinkState, Ui, danmaku, dialogue, history, input, settings};
 use nanatype_blive::Guard;
 use nanatype_core::{Cmd, Core};
 use nanatype_i18n::Locale;
@@ -267,6 +267,38 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             out,
             920,
             660,
+            theme.clone(),
+            |doc, id| {
+                doc.context_mut()
+                    .mount_view_root(id, move || settings::settings_window(ui))
+                    .unwrap();
+            },
+        );
+    }
+
+    // The same two pages with every link switched on, one in each state.
+    let mut on = settings.clone();
+    on.integrations.vts.enabled = true;
+    on.integrations.osc.enabled = true;
+    on.integrations.websocket.enabled = true;
+    on.output.display.enabled = true;
+    on.output.history.enabled = true;
+    ui.settings.set(Arc::new(on));
+    ui.status.set(Arc::new(nanatype::ui::Status {
+        vts: LinkState::NeedsAuth,
+        osc: LinkState::Connecting,
+        ws: LinkState::Connected("Connected".into()),
+        spout_display: LinkState::Connected("Sending · 1920×1080".into()),
+        spout_history: LinkState::Error("Unavailable: no GPU".into()),
+        ..Default::default()
+    }));
+    for page in [settings::Page::Integrations, settings::Page::Output] {
+        ui.page.set(page);
+        shot(
+            &format!("settings-{page:?}-on"),
+            out,
+            920,
+            1100,
             theme.clone(),
             |doc, id| {
                 doc.context_mut()

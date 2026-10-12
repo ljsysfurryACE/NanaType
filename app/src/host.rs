@@ -577,10 +577,13 @@ impl RuntimeProgram for Host {
         if let Some(error) = self.app.spout.frame(kind, &name, frame) {
             crate::debug_log(&format!("spout {kind:?}: {error}"));
             let locale = self.app.ui.locale.get_untracked();
-            let text =
-                crate::ui::I18N.tr_in(locale, "err-spout", &[("message", error.as_str().into())]);
-            if self.app.spout.status.get(&kind) != Some(&text) {
-                self.app.spout.status.insert(kind, text);
+            let state = crate::ui::LinkState::Error(crate::ui::I18N.tr_in(
+                locale,
+                "err-spout",
+                &[("message", error.as_str().into())],
+            ));
+            if self.app.spout.status.get(&kind) != Some(&state) {
+                self.app.spout.status.insert(kind, state);
                 self.app.refresh_spout_status();
             }
         }
@@ -611,11 +614,15 @@ impl RuntimeProgram for Host {
             }
             Some(WindowKind::History) => history_fading(ui, now),
             Some(WindowKind::Input) => input::mirror_chip_pulsing(ui),
+            Some(WindowKind::Settings) => crate::ui::settings::links_pulsing(ui),
             _ => false,
         };
         if animating {
-            // The chip's pulse is slow; 30 fps is smooth enough for it.
-            let fps = if WindowKind::from_id(id) == Some(WindowKind::Input) {
+            // The pulses are slow; 30 fps is smooth enough for them.
+            let fps = if matches!(
+                WindowKind::from_id(id),
+                Some(WindowKind::Input | WindowKind::Settings)
+            ) {
                 30
             } else {
                 60
@@ -649,6 +656,11 @@ impl RuntimeProgram for Host {
         }
         if WindowKind::from_id(id) == Some(WindowKind::Input)
             && input::mirror_chip_pulsing(self.app.ui)
+        {
+            self.app.ui.pulse_ms.set(now);
+        }
+        if WindowKind::from_id(id) == Some(WindowKind::Settings)
+            && crate::ui::settings::links_pulsing(self.app.ui)
         {
             self.app.ui.pulse_ms.set(now);
         }

@@ -5,6 +5,8 @@
 mod controls;
 mod pages;
 
+pub use controls::links_pulsing;
+
 use std::sync::Arc;
 
 use nana_ui::icons_tabler as ti;

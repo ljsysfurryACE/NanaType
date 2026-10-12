@@ -14,7 +14,7 @@ use nana_ui::{
 use nanatype_i18n::Locale;
 use nanatype_settings::{Settings, SpoutOutput};
 
-use crate::ui::I18N;
+use crate::ui::{I18N, LinkState};
 use crate::windows::WindowKind;
 
 pub fn settings_for(kind: WindowKind, s: &Settings) -> Option<&SpoutOutput> {
@@ -61,8 +61,8 @@ pub struct Spout {
     senders: HashMap<WindowKind, Sender>,
     #[cfg(not(windows))]
     _unused: HashMap<WindowKind, ()>,
-    /// Last status text per window, for the settings page.
-    pub status: HashMap<WindowKind, String>,
+    /// Last link state per window, for the settings page.
+    pub status: HashMap<WindowKind, LinkState>,
 }
 
 fn t(locale: Locale, key: &str) -> String {
@@ -82,16 +82,18 @@ impl Spout {
             {
                 self.senders.remove(&kind);
             }
-            let text = match wanted {
-                None => t(locale, "output-status-off"),
-                Some(_) if !cfg!(windows) => t(locale, "output-spout-unsupported"),
-                Some(_) => self
-                    .status
-                    .get(&kind)
-                    .cloned()
-                    .unwrap_or_else(|| t(locale, "output-status-active")),
+            let state = match wanted {
+                None => LinkState::Off,
+                Some(_) if !cfg!(windows) => {
+                    LinkState::Error(t(locale, "output-spout-unsupported"))
+                }
+                Some(_) => match self.status.get(&kind) {
+                    // Just switched on: no frame has gone out yet.
+                    None | Some(LinkState::Off) => LinkState::Connecting,
+                    Some(state) => state.clone(),
+                },
             };
-            self.status.insert(kind, text);
+            self.status.insert(kind, state);
         }
     }
 
@@ -102,24 +104,22 @@ impl Spout {
         locale: Locale,
     ) {
         let unavailable = |reason: &str| {
-            I18N.tr_in(
+            LinkState::Error(I18N.tr_in(
                 locale,
                 "output-status-unavailable",
                 &[("reason", reason.into())],
-            )
+            ))
         };
-        let text = match status {
-            WindowOutputStatus::Active { extent, .. } => {
-                format!(
-                    "{} · {}×{}",
-                    t(locale, "output-status-active"),
-                    extent[0],
-                    extent[1]
-                )
-            }
+        let state = match status {
+            WindowOutputStatus::Active { extent, .. } => LinkState::Connected(format!(
+                "{} · {}×{}",
+                t(locale, "output-status-active"),
+                extent[0],
+                extent[1]
+            )),
             WindowOutputStatus::NativeUnavailable { reason } => unavailable(reason),
             WindowOutputStatus::Failed { reason } => unavailable(reason),
-            WindowOutputStatus::Stopped => t(locale, "output-status-off"),
+            WindowOutputStatus::Stopped => LinkState::Off,
             WindowOutputStatus::NativeRetired { .. } => {
                 #[cfg(windows)]
                 if let Some(s) = self.senders.get_mut(&kind) {
@@ -130,7 +130,7 @@ impl Spout {
             }
             _ => return,
         };
-        self.status.insert(kind, text);
+        self.status.insert(kind, state);
     }
 
     /// Hand a frame to the window's Spout sender. Returns an error text when

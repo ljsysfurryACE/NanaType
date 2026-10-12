@@ -343,6 +343,8 @@ int-status-connected = 已连接
 int-status-needs-token = 需要授权
 int-status-error = 错误：{ $message }
 
+int-off-hint = 开启后可在此设置连接选项
+output-off-hint = 开启后可在此设置名称与尺寸
 ## 素材
 assets-stickers = 贴纸目录
 assets-stickers-hint = 目录中的图片成为贴纸，文件夹名即贴纸库名

@@ -34,19 +34,32 @@ pub struct Notice {
     pub error: bool,
 }
 
+/// Where an outbound link (VTube Studio, OSC, WebSocket, Spout) stands.
+/// `Connected` and `Error` carry the text to show; the other states are
+/// labelled in the viewer's locale when drawn.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum LinkState {
+    #[default]
+    Off,
+    Connecting,
+    Connected(String),
+    NeedsAuth,
+    Error(String),
+}
+
 /// Connection and device states for the settings pages.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Status {
     pub audio: String,
-    pub vts: String,
+    pub vts: LinkState,
     pub vts_hotkeys: Vec<(String, String)>,
-    pub osc: String,
-    pub ws: String,
+    pub osc: LinkState,
+    pub ws: LinkState,
     /// blivechat: what the panel and the settings say, and the dot's state.
     pub blive: String,
     pub blive_link: danmaku::Link,
-    pub spout_display: String,
-    pub spout_history: String,
+    pub spout_display: LinkState,
+    pub spout_history: LinkState,
     pub notices: Vec<Notice>,
     pub queued: usize,
     pub audio_devices: Vec<String>,

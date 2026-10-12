@@ -34,7 +34,7 @@ use crate::services::persist::Persist;
 use crate::services::sounds::{self, Bank};
 use crate::services::tray::Tray;
 use crate::skin_theme;
-use crate::ui::{I18N, Notice, StickerRow, Ui};
+use crate::ui::{I18N, LinkState, Notice, StickerRow, Ui};
 use crate::windows::{self, WindowKind, WindowManager};
 
 /// Chat messages the panel keeps.
@@ -556,16 +556,15 @@ impl App {
             "int-status-off"
         });
         self.blive.set(blive);
-        let off = self.ui.now_t("int-status-off");
         self.edit_status(|s| {
             if !i.vts.enabled {
-                s.vts = off.clone();
+                s.vts = LinkState::Off;
             }
             if !i.osc.enabled {
-                s.osc = off.clone();
+                s.osc = LinkState::Off;
             }
             if !i.websocket.enabled {
-                s.ws = off.clone();
+                s.ws = LinkState::Off;
             }
             if blive_off {
                 s.blive = blive_hint;
@@ -1546,50 +1545,39 @@ impl App {
     }
 
     fn bridge_status(&mut self, status: BridgeStatus) {
-        let t = |k: &str| self.ui.now_t(k);
+        let set = |app: &mut Self, sink: Sink, state: LinkState| {
+            app.edit_status(|s| match sink {
+                Sink::Vts => s.vts = state,
+                Sink::Osc => s.osc = state,
+                Sink::WebSocket => s.ws = state,
+            });
+        };
         match status {
             BridgeStatus::VtsToken(token) => self.edit(|s| s.integrations.vts.token = Some(token)),
             BridgeStatus::VtsTokenRejected => {
-                let v = t("int-status-needs-token");
                 self.edit(|s| s.integrations.vts.token = None);
-                self.edit_status(|s| s.vts = v);
+                set(self, Sink::Vts, LinkState::NeedsAuth);
             }
             BridgeStatus::VtsHotkeys(keys) => {
                 let list = keys.into_iter().map(|k| (k.id, k.name)).collect();
                 self.edit_status(|s| s.vts_hotkeys = list);
             }
-            BridgeStatus::VtsNeedsToken => {
-                let v = t("int-status-needs-token");
-                self.edit_status(|s| s.vts = v);
-            }
+            BridgeStatus::VtsNeedsToken => set(self, Sink::Vts, LinkState::NeedsAuth),
             BridgeStatus::Clients(n) => {
                 let v = self.ui.tr("int-ws-clients", &[("count", n.into())]);
-                self.edit_status(|s| s.ws = v);
+                set(self, Sink::WebSocket, LinkState::Connected(v));
             }
-            BridgeStatus::Off(sink)
-            | BridgeStatus::Connecting(sink)
-            | BridgeStatus::Connected(sink) => {
-                let key = match status {
-                    BridgeStatus::Off(_) => "int-status-off",
-                    BridgeStatus::Connecting(_) => "int-status-connecting",
-                    _ => "int-status-connected",
-                };
-                let v = t(key);
-                self.edit_status(|s| match sink {
-                    Sink::Vts => s.vts = v,
-                    Sink::Osc => s.osc = v,
-                    Sink::WebSocket => s.ws = v,
-                });
+            BridgeStatus::Off(sink) => set(self, sink, LinkState::Off),
+            BridgeStatus::Connecting(sink) => set(self, sink, LinkState::Connecting),
+            BridgeStatus::Connected(sink) => {
+                let v = self.ui.now_t("int-status-connected");
+                set(self, sink, LinkState::Connected(v));
             }
             BridgeStatus::Error(sink, message) => {
                 let v = self
                     .ui
                     .tr("int-status-error", &[("message", message.into())]);
-                self.edit_status(|s| match sink {
-                    Sink::Vts => s.vts = v,
-                    Sink::Osc => s.osc = v,
-                    Sink::WebSocket => s.ws = v,
-                });
+                set(self, sink, LinkState::Error(v));
             }
         }
     }

@@ -3,19 +3,20 @@
 
 use std::sync::{Arc, LazyLock};
 
-use nana_ui::ControlSize;
 use nana_ui::runtime::view::{AnyView, IntoView, settings_row, widget};
 use nana_ui::runtime::{
     ColorChanged, ColorField, NodeStyle, NumberChanged, NumberInput, RangeChanged, RangeField,
-    Select, SelectChanged, SelectOption, Stack, Switch, Text, TextChanged, TextInput,
+    Select, SelectChanged, SelectOption, Stack, StatusBadge, Switch, Text, TextChanged, TextInput,
     ToggleChanged,
 };
+use nana_ui::{ControlSize, StatusTone};
 use nana_ui_core::{AlignSpec, LengthSpec, SemanticColorRole};
 use nanatype_model::Rgba8;
 use nanatype_settings::Settings;
 
 use crate::msg::Msg;
-use crate::ui::{I18N, Ui};
+use crate::ui::input::PULSE_MS;
+use crate::ui::{I18N, LinkState, Status, Ui};
 
 pub static ICON_PNG_B64: LazyLock<String> =
     LazyLock::new(|| base64(include_bytes!("../../../assets/tray-64.png")));
@@ -71,11 +72,10 @@ pub fn hint(text: String) -> AnyView {
     .into_any()
 }
 
-/// A titled group of rows.
-pub fn section(ui: Ui, title_key: &str, rows: Vec<AnyView>) -> AnyView {
+/// Rows with a hairline between each.
+fn separated(rows: Vec<AnyView>) -> Vec<AnyView> {
     let n = rows.len();
-    let rows: Vec<AnyView> = rows
-        .into_iter()
+    rows.into_iter()
         .enumerate()
         .map(|(i, r)| {
             widget(Stack::column(0.0).with_layout(move |l| {
@@ -88,7 +88,12 @@ pub fn section(ui: Ui, title_key: &str, rows: Vec<AnyView>) -> AnyView {
             .children(r)
             .into_any()
         })
-        .collect();
+        .collect()
+}
+
+/// A titled group of rows.
+pub fn section(ui: Ui, title_key: &str, rows: Vec<AnyView>) -> AnyView {
+    let rows = separated(rows);
     widget(Stack::column(0.0).with_layout(|l| {
         l.margin_top = Some(LengthSpec::Px(18.0));
     }))
@@ -112,6 +117,125 @@ pub fn section(ui: Ui, title_key: &str, rows: Vec<AnyView>) -> AnyView {
         .children(rows),
     ))
     .into_any()
+}
+
+/// The rows that only mean something while a master toggle is on. They fold
+/// away with it, leaving a one-line hint, so a switched-off feature does not
+/// show a page of dead settings.
+pub fn when_on(
+    ui: Ui,
+    enabled: fn(&Settings) -> bool,
+    rows: Vec<AnyView>,
+    off_hint_key: &'static str,
+) -> AnyView {
+    widget(Stack::column(0.0))
+        .children((
+            widget(Stack::column(0.0))
+                .visible(move || ui.settings.with(|s| enabled(s)))
+                .children(separated(rows)),
+            widget(Stack::column(0.0).padding_xy(16.0, 12.0))
+                .visible(move || !ui.settings.with(|s| enabled(s)))
+                .children(hint(ui.now_t(off_hint_key))),
+        ))
+        .into_any()
+}
+
+/// Whether any link badge on the visible page is breathing, so the settings
+/// window needs frames for it.
+pub fn links_pulsing(ui: Ui) -> bool {
+    !ui.reduced_motion.get_untracked()
+        && matches!(
+            ui.page.get_untracked(),
+            super::Page::Integrations | super::Page::Output
+        )
+        && ui.status.with_untracked(|s| {
+            [&s.vts, &s.osc, &s.ws, &s.spout_display, &s.spout_history]
+                .into_iter()
+                .any(|l| *l == LinkState::Connecting)
+                || s.blive_link == crate::ui::danmaku::Link::Connecting
+        })
+}
+
+/// A link's state as a dot-and-text badge: green connected, amber connecting
+/// or waiting for access, red failed, grey off. Connecting breathes unless
+/// motion is reduced.
+pub fn link_badge(ui: Ui, get: fn(&Status) -> &LinkState) -> AnyView {
+    let describe = move || {
+        let locale = ui.locale.get();
+        ui.status.with(|s| match get(s) {
+            LinkState::Off => (I18N.t_in(locale, "int-status-off"), StatusTone::Neutral),
+            LinkState::Connecting => (
+                I18N.t_in(locale, "int-status-connecting"),
+                StatusTone::Warning,
+            ),
+            LinkState::Connected(text) => (text.clone(), StatusTone::Success),
+            LinkState::NeedsAuth => (
+                I18N.t_in(locale, "int-status-needs-token"),
+                StatusTone::Warning,
+            ),
+            LinkState::Error(text) => (text.clone(), StatusTone::Danger),
+        })
+    };
+    breathing_badge(ui, describe, move || {
+        ui.status.with(|st| *get(st) == LinkState::Connecting)
+    })
+}
+
+/// blivechat's badge: its own status line and the chat panel's dot state,
+/// drawn like the other links.
+pub fn blive_badge(ui: Ui) -> AnyView {
+    use crate::ui::danmaku::Link;
+    let describe = move || {
+        let locale = ui.locale.get();
+        ui.status.with(|s| {
+            let text = if s.blive.is_empty() {
+                I18N.t_in(locale, "int-status-off")
+            } else {
+                s.blive.clone()
+            };
+            let tone = match s.blive_link {
+                Link::Off => StatusTone::Neutral,
+                Link::Connecting => StatusTone::Warning,
+                Link::Connected => StatusTone::Success,
+                Link::Error => StatusTone::Danger,
+            };
+            (text, tone)
+        })
+    };
+    breathing_badge(ui, describe, move || {
+        ui.status.with(|st| st.blive_link == Link::Connecting)
+    })
+}
+
+fn breathing_badge(
+    ui: Ui,
+    describe: impl Fn() -> (String, StatusTone) + Send + Sync + Copy + 'static,
+    connecting: impl Fn() -> bool + Send + Sync + Copy + 'static,
+) -> AnyView {
+    let (text, tone) = describe();
+    let badge =
+        widget(StatusBadge::new(text, tone).compact(true)).bind(move |b: &mut StatusBadge| {
+            let (text, tone) = describe();
+            let text: Arc<str> = text.into();
+            if b.label != text {
+                b.label = text;
+            }
+            b.tone = tone;
+        });
+    widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
+        .bind(move |s: &mut Stack| {
+            let connecting = connecting();
+            let opacity = if connecting && !ui.reduced_motion.get() {
+                let phase = (ui.pulse_ms.get() % PULSE_MS) as f32 / PULSE_MS as f32;
+                let wave = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
+                0.55 + 0.45 * wave
+            } else {
+                1.0
+            };
+            crate::ui::restyle(s, |l| l.opacity = Some(opacity));
+        })
+        .children(badge)
+        .into_any()
 }
 
 /// Label (and hint) on the left, control on the right; stacks when narrow.

@@ -343,6 +343,8 @@ int-status-connected = 接続済み
 int-status-needs-token = 許可が必要
 int-status-error = エラー：{ $message }
 
+int-off-hint = オンにすると接続の設定ができます
+output-off-hint = オンにすると名前とサイズを設定できます
 ## 素材
 assets-stickers = スタンプのフォルダ
 assets-stickers-hint = フォルダ内の画像がスタンプになります。フォルダ名がライブラリ名です

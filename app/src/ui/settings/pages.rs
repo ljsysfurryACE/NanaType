@@ -25,7 +25,7 @@ use super::controls::*;
 use crate::msg::{FileTarget, GlobalAction, Msg};
 use crate::services::hotkeys::HotkeyState;
 use crate::ui::dialogue::{self, BoxCtx, Source};
-use crate::ui::{I18N, SkinRow, Ui};
+use crate::ui::{I18N, LinkState, SkinRow, Ui};
 use crate::windows::WindowKind;
 
 pub fn page(ui: Ui, page: Page) -> AnyView {
@@ -1436,17 +1436,7 @@ fn room_field(ui: Ui) -> AnyView {
 }
 
 fn blivechat(ui: Ui) -> AnyView {
-    let rows = vec![
-        row(
-            ui,
-            "int-blive",
-            Some("int-blive-hint"),
-            switch(
-                ui,
-                |s| s.integrations.blivechat.enabled,
-                |s, v| s.integrations.blivechat.enabled = v,
-            ),
-        ),
+    let children = vec![
         row(
             ui,
             "int-blive-room-kind",
@@ -1496,7 +1486,6 @@ fn blivechat(ui: Ui) -> AnyView {
                 |s, v| s.integrations.blivechat.port = v as u16,
             ),
         ),
-        row_text(String::new(), None, status_text(ui, |s| s.blive.clone())),
         row(
             ui,
             "int-blive-panel",
@@ -1514,6 +1503,29 @@ fn blivechat(ui: Ui) -> AnyView {
                 |s| s.integrations.blivechat.quote_on_display,
                 |s, v| s.integrations.blivechat.quote_on_display = v,
             ),
+        ),
+    ];
+    let rows = vec![
+        row(
+            ui,
+            "int-blive",
+            Some("int-blive-hint"),
+            widget(Stack::row(10.0).align(AlignSpec::Center))
+                .children((
+                    blive_badge(ui),
+                    switch(
+                        ui,
+                        |s| s.integrations.blivechat.enabled,
+                        |s, v| s.integrations.blivechat.enabled = v,
+                    ),
+                ))
+                .into_any(),
+        ),
+        when_on(
+            ui,
+            |s| s.integrations.blivechat.enabled,
+            children,
+            "int-off-hint",
         ),
     ];
     section(ui, "int-blive-section", rows)
@@ -1615,17 +1627,18 @@ fn hotkeys(ui: Ui) -> AnyView {
 
 fn output(ui: Ui) -> AnyView {
     let spout = |kind: WindowKind, title: &'static str| {
-        let status = move || {
-            ui.status.with(|s| match kind {
-                WindowKind::Display => s.spout_display.clone(),
-                _ => s.spout_history.clone(),
-            })
+        let link: fn(&crate::ui::Status) -> &LinkState = match kind {
+            WindowKind::Display => |s| &s.spout_display,
+            _ => |s| &s.spout_history,
+        };
+        let enabled: fn(&Settings) -> bool = match kind {
+            WindowKind::Display => |s| s.output.display.enabled,
+            _ => |s| s.output.history.enabled,
         };
         let name = move |s: &Settings| match kind {
             WindowKind::Display => s.output.display.name.clone(),
             _ => s.output.history.name.clone(),
         };
-        let copy_name = name(&ui.settings.get_untracked());
         section(
             ui,
             title,
@@ -1634,113 +1647,118 @@ fn output(ui: Ui) -> AnyView {
                     ui,
                     "output-spout",
                     None,
-                    match kind {
-                        WindowKind::Display => switch(
-                            ui,
-                            |s| s.output.display.enabled,
-                            |s, v| s.output.display.enabled = v,
-                        ),
-                        _ => switch(
-                            ui,
-                            |s| s.output.history.enabled,
-                            |s, v| s.output.history.enabled = v,
-                        ),
-                    },
-                ),
-                row(
-                    ui,
-                    "output-spout-name",
-                    None,
-                    widget(Stack::row(6.0))
+                    widget(Stack::row(10.0).align(AlignSpec::Center))
                         .children((
+                            link_badge(ui, link),
                             match kind {
-                                WindowKind::Display => text(
+                                WindowKind::Display => switch(
                                     ui,
-                                    String::new(),
-                                    220.0,
-                                    |s| s.output.display.name.clone(),
-                                    |s, v| s.output.display.name = v,
+                                    |s| s.output.display.enabled,
+                                    |s, v| s.output.display.enabled = v,
                                 ),
-                                _ => text(
+                                _ => switch(
                                     ui,
-                                    String::new(),
-                                    220.0,
-                                    |s| s.output.history.name.clone(),
-                                    |s, v| s.output.history.name = v,
+                                    |s| s.output.history.enabled,
+                                    |s, v| s.output.history.enabled = v,
                                 ),
                             },
-                            widget(
-                                IconButton::new(ti::COPY, ui.now_t("output-spout-copy"))
-                                    .size(ControlSize::Small)
-                                    .with_tooltip(ui.now_t("output-spout-copy")),
-                            )
-                            .on_cx(move |_, _: &Activate, cx| {
-                                cx.dispatch_program_all(Msg::CopyText(copy_name.clone()))
-                            }),
                         ))
                         .into_any(),
                 ),
-                row(
+                when_on(
                     ui,
-                    "output-spout-size",
-                    None,
-                    select(
-                        ui,
-                        vec![
-                            ("window".into(), ui.now_t("output-spout-size-window")),
-                            ("1280x720".into(), "1280 × 720".into()),
-                            ("1920x1080".into(), "1920 × 1080".into()),
-                            ("2560x1440".into(), "2560 × 1440".into()),
-                            ("3840x2160".into(), "3840 × 2160".into()),
-                        ],
-                        move |s| {
-                            let o = match kind {
-                                WindowKind::Display => &s.output.display,
-                                _ => &s.output.history,
-                            };
-                            o.size
-                                .map(|[w, h]| format!("{w}x{h}"))
-                                .unwrap_or_else(|| "window".into())
-                        },
-                        move |s, v| {
-                            let size = v
-                                .split_once('x')
-                                .and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?]));
+                    enabled,
+                    vec![
+                        row(
+                            ui,
+                            "output-spout-name",
+                            None,
+                            widget(Stack::row(6.0))
+                                .children((
+                                    match kind {
+                                        WindowKind::Display => text(
+                                            ui,
+                                            String::new(),
+                                            220.0,
+                                            |s| s.output.display.name.clone(),
+                                            |s, v| s.output.display.name = v,
+                                        ),
+                                        _ => text(
+                                            ui,
+                                            String::new(),
+                                            220.0,
+                                            |s| s.output.history.name.clone(),
+                                            |s, v| s.output.history.name = v,
+                                        ),
+                                    },
+                                    widget(
+                                        IconButton::new(ti::COPY, ui.now_t("output-spout-copy"))
+                                            .size(ControlSize::Small)
+                                            .with_tooltip(ui.now_t("output-spout-copy")),
+                                    )
+                                    .on_cx(
+                                        move |_, _: &Activate, cx| {
+                                            // Read when clicked: the name may have been edited since the
+                                            // page was built.
+                                            let current = name(&ui.settings.get_untracked());
+                                            cx.dispatch_program_all(Msg::CopyText(current))
+                                        },
+                                    ),
+                                ))
+                                .into_any(),
+                        ),
+                        row(
+                            ui,
+                            "output-spout-size",
+                            None,
+                            select(
+                                ui,
+                                vec![
+                                    ("window".into(), ui.now_t("output-spout-size-window")),
+                                    ("1280x720".into(), "1280 × 720".into()),
+                                    ("1920x1080".into(), "1920 × 1080".into()),
+                                    ("2560x1440".into(), "2560 × 1440".into()),
+                                    ("3840x2160".into(), "3840 × 2160".into()),
+                                ],
+                                move |s| {
+                                    let o = match kind {
+                                        WindowKind::Display => &s.output.display,
+                                        _ => &s.output.history,
+                                    };
+                                    o.size
+                                        .map(|[w, h]| format!("{w}x{h}"))
+                                        .unwrap_or_else(|| "window".into())
+                                },
+                                move |s, v| {
+                                    let size = v.split_once('x').and_then(|(w, h)| {
+                                        Some([w.parse().ok()?, h.parse().ok()?])
+                                    });
+                                    match kind {
+                                        WindowKind::Display => s.output.display.size = size,
+                                        _ => s.output.history.size = size,
+                                    }
+                                },
+                            ),
+                        ),
+                        row(
+                            ui,
+                            "output-spout-straight",
+                            Some("output-spout-straight-hint"),
                             match kind {
-                                WindowKind::Display => s.output.display.size = size,
-                                _ => s.output.history.size = size,
-                            }
-                        },
-                    ),
-                ),
-                row(
-                    ui,
-                    "output-spout-straight",
-                    Some("output-spout-straight-hint"),
-                    match kind {
-                        WindowKind::Display => switch(
-                            ui,
-                            |s| s.output.display.straight_alpha,
-                            |s, v| s.output.display.straight_alpha = v,
+                                WindowKind::Display => switch(
+                                    ui,
+                                    |s| s.output.display.straight_alpha,
+                                    |s, v| s.output.display.straight_alpha = v,
+                                ),
+                                _ => switch(
+                                    ui,
+                                    |s| s.output.history.straight_alpha,
+                                    |s, v| s.output.history.straight_alpha = v,
+                                ),
+                            },
                         ),
-                        _ => switch(
-                            ui,
-                            |s| s.output.history.straight_alpha,
-                            |s, v| s.output.history.straight_alpha = v,
-                        ),
-                    },
-                ),
-                row_text(
-                    String::new(),
-                    None,
-                    widget(Text::new("").color(SemanticColorRole::Muted))
-                        .bind(move |t: &mut Text| {
-                            let v = status();
-                            if t.value != v {
-                                t.value = v;
-                            }
-                        })
-                        .into_any(),
+                    ],
+                    "output-off-hint",
                 ),
             ],
         )
@@ -1768,17 +1786,6 @@ fn output(ui: Ui) -> AnyView {
             spout(WindowKind::Display, "output-display"),
             spout(WindowKind::History, "output-history"),
         ))
-        .into_any()
-}
-
-fn status_text(ui: Ui, get: fn(&crate::ui::Status) -> String) -> AnyView {
-    widget(Text::new("").color(SemanticColorRole::Muted))
-        .bind(move |t: &mut Text| {
-            let v = ui.status.with(|s| get(s));
-            if t.value != v {
-                t.value = v;
-            }
-        })
         .into_any()
 }
 
@@ -1884,91 +1891,102 @@ fn integrations(ui: Ui) -> AnyView {
                         ui,
                         "int-vts",
                         Some("int-vts-hint"),
-                        switch(
-                            ui,
-                            |s| s.integrations.vts.enabled,
-                            |s, v| s.integrations.vts.enabled = v,
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "int-vts-port",
-                        None,
-                        number(
-                            ui,
-                            (1.0, 65535.0),
-                            |s| f64::from(s.integrations.vts.port),
-                            |s, v| s.integrations.vts.port = v as u16,
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "int-vts-authorize",
-                        Some("int-vts-authorize-hint"),
-                        widget(Stack::row(8.0))
+                        widget(Stack::row(10.0).align(AlignSpec::Center))
                             .children((
-                                status_text(ui, |s| s.vts.clone()),
-                                button(ui, "int-vts-authorize", || Msg::VtsAuthorize),
-                                button(ui, "int-vts-refresh", || Msg::VtsRefresh),
+                                link_badge(ui, |s| &s.vts),
+                                switch(
+                                    ui,
+                                    |s| s.integrations.vts.enabled,
+                                    |s, v| s.integrations.vts.enabled = v,
+                                ),
                             ))
                             .into_any(),
                     ),
-                    mapping.into_any(),
-                    mapped(ui),
-                    row(
+                    when_on(
                         ui,
-                        "int-vts-lipsync",
-                        Some("int-vts-lipsync-hint"),
-                        switch(
-                            ui,
-                            |s| s.integrations.vts.lip_sync,
-                            |s, v| s.integrations.vts.lip_sync = v,
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "int-vts-mouth-param",
-                        Some("int-vts-mouth-param-hint"),
-                        text(
-                            ui,
-                            "MouthOpen".into(),
-                            180.0,
-                            |s| s.integrations.vts.mouth_param.clone(),
-                            |s, v| s.integrations.vts.mouth_param = v,
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "int-vts-mouth-amp",
-                        None,
-                        slider(
-                            ui,
-                            (0.1, 1.0, 0.05),
-                            "",
-                            |s| f64::from(s.integrations.vts.mouth_amp),
-                            |s, v| s.integrations.vts.mouth_amp = v as f32,
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "int-vts-reset",
-                        Some("int-vts-reset-hint"),
-                        select(
-                            ui,
-                            select_keys(
+                        |s| s.integrations.vts.enabled,
+                        vec![
+                            row(
                                 ui,
-                                &[
-                                    ("line_end", "int-vts-reset-line-end"),
-                                    ("next_line", "int-vts-reset-next-line"),
-                                    ("off", "int-vts-reset-off"),
-                                ],
+                                "int-vts-port",
+                                None,
+                                number(
+                                    ui,
+                                    (1.0, 65535.0),
+                                    |s| f64::from(s.integrations.vts.port),
+                                    |s, v| s.integrations.vts.port = v as u16,
+                                ),
                             ),
-                            |s| s.integrations.vts.reset_expressions.key().into(),
-                            |s, v| {
-                                s.integrations.vts.reset_expressions =
-                                    VtsReset::from_key(v).unwrap_or_default()
-                            },
-                        ),
+                            row(
+                                ui,
+                                "int-vts-authorize",
+                                Some("int-vts-authorize-hint"),
+                                widget(Stack::row(8.0))
+                                    .children((
+                                        button(ui, "int-vts-authorize", || Msg::VtsAuthorize),
+                                        button(ui, "int-vts-refresh", || Msg::VtsRefresh),
+                                    ))
+                                    .into_any(),
+                            ),
+                            mapping.into_any(),
+                            mapped(ui),
+                            row(
+                                ui,
+                                "int-vts-lipsync",
+                                Some("int-vts-lipsync-hint"),
+                                switch(
+                                    ui,
+                                    |s| s.integrations.vts.lip_sync,
+                                    |s, v| s.integrations.vts.lip_sync = v,
+                                ),
+                            ),
+                            row(
+                                ui,
+                                "int-vts-mouth-param",
+                                Some("int-vts-mouth-param-hint"),
+                                text(
+                                    ui,
+                                    "MouthOpen".into(),
+                                    180.0,
+                                    |s| s.integrations.vts.mouth_param.clone(),
+                                    |s, v| s.integrations.vts.mouth_param = v,
+                                ),
+                            ),
+                            row(
+                                ui,
+                                "int-vts-mouth-amp",
+                                None,
+                                slider(
+                                    ui,
+                                    (0.1, 1.0, 0.05),
+                                    "",
+                                    |s| f64::from(s.integrations.vts.mouth_amp),
+                                    |s, v| s.integrations.vts.mouth_amp = v as f32,
+                                ),
+                            ),
+                            row(
+                                ui,
+                                "int-vts-reset",
+                                Some("int-vts-reset-hint"),
+                                select(
+                                    ui,
+                                    select_keys(
+                                        ui,
+                                        &[
+                                            ("line_end", "int-vts-reset-line-end"),
+                                            ("next_line", "int-vts-reset-next-line"),
+                                            ("off", "int-vts-reset-off"),
+                                        ],
+                                    ),
+                                    |s| s.integrations.vts.reset_expressions.key().into(),
+                                    |s, v| {
+                                        s.integrations.vts.reset_expressions =
+                                            VtsReset::from_key(v).unwrap_or_default()
+                                    },
+                                ),
+                            ),
+                        ],
+                        "int-off-hint",
                     ),
                 ],
             ),
@@ -1980,48 +1998,59 @@ fn integrations(ui: Ui) -> AnyView {
                         ui,
                         "int-osc",
                         Some("int-osc-hint"),
-                        switch(
-                            ui,
-                            |s| s.integrations.osc.enabled,
-                            |s, v| s.integrations.osc.enabled = v,
-                        ),
+                        widget(Stack::row(10.0).align(AlignSpec::Center))
+                            .children((
+                                link_badge(ui, |s| &s.osc),
+                                switch(
+                                    ui,
+                                    |s| s.integrations.osc.enabled,
+                                    |s, v| s.integrations.osc.enabled = v,
+                                ),
+                            ))
+                            .into_any(),
                     ),
-                    row(
+                    when_on(
                         ui,
-                        "int-osc-host",
-                        None,
-                        text(
-                            ui,
-                            "127.0.0.1".into(),
-                            180.0,
-                            |s| s.integrations.osc.host.clone(),
-                            |s, v| s.integrations.osc.host = v,
-                        ),
+                        |s| s.integrations.osc.enabled,
+                        vec![
+                            row(
+                                ui,
+                                "int-osc-host",
+                                None,
+                                text(
+                                    ui,
+                                    "127.0.0.1".into(),
+                                    180.0,
+                                    |s| s.integrations.osc.host.clone(),
+                                    |s, v| s.integrations.osc.host = v,
+                                ),
+                            ),
+                            row(
+                                ui,
+                                "int-osc-port",
+                                None,
+                                number(
+                                    ui,
+                                    (1.0, 65535.0),
+                                    |s| f64::from(s.integrations.osc.port),
+                                    |s, v| s.integrations.osc.port = v as u16,
+                                ),
+                            ),
+                            row(
+                                ui,
+                                "int-osc-prefix",
+                                None,
+                                text(
+                                    ui,
+                                    "/nanatype".into(),
+                                    180.0,
+                                    |s| s.integrations.osc.prefix.clone(),
+                                    |s, v| s.integrations.osc.prefix = v,
+                                ),
+                            ),
+                        ],
+                        "int-off-hint",
                     ),
-                    row(
-                        ui,
-                        "int-osc-port",
-                        None,
-                        number(
-                            ui,
-                            (1.0, 65535.0),
-                            |s| f64::from(s.integrations.osc.port),
-                            |s, v| s.integrations.osc.port = v as u16,
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "int-osc-prefix",
-                        None,
-                        text(
-                            ui,
-                            "/nanatype".into(),
-                            180.0,
-                            |s| s.integrations.osc.prefix.clone(),
-                            |s, v| s.integrations.osc.prefix = v,
-                        ),
-                    ),
-                    row_text(String::new(), None, status_text(ui, |s| s.osc.clone())),
                 ],
             ),
             section(
@@ -2032,24 +2061,33 @@ fn integrations(ui: Ui) -> AnyView {
                         ui,
                         "int-ws",
                         Some("int-ws-hint"),
-                        switch(
-                            ui,
-                            |s| s.integrations.websocket.enabled,
-                            |s, v| s.integrations.websocket.enabled = v,
-                        ),
+                        widget(Stack::row(10.0).align(AlignSpec::Center))
+                            .children((
+                                link_badge(ui, |s| &s.ws),
+                                switch(
+                                    ui,
+                                    |s| s.integrations.websocket.enabled,
+                                    |s, v| s.integrations.websocket.enabled = v,
+                                ),
+                            ))
+                            .into_any(),
                     ),
-                    row(
+                    when_on(
                         ui,
-                        "int-ws-port",
-                        None,
-                        number(
+                        |s| s.integrations.websocket.enabled,
+                        vec![row(
                             ui,
-                            (1024.0, 65535.0),
-                            |s| f64::from(s.integrations.websocket.port),
-                            |s, v| s.integrations.websocket.port = v as u16,
-                        ),
+                            "int-ws-port",
+                            None,
+                            number(
+                                ui,
+                                (1024.0, 65535.0),
+                                |s| f64::from(s.integrations.websocket.port),
+                                |s, v| s.integrations.websocket.port = v as u16,
+                            ),
+                        )],
+                        "int-off-hint",
                     ),
-                    row_text(String::new(), None, status_text(ui, |s| s.ws.clone())),
                 ],
             ),
         ))

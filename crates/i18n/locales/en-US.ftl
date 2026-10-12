@@ -349,6 +349,8 @@ int-status-connected = Connected
 int-status-needs-token = Needs access
 int-status-error = Error: { $message }
 
+int-off-hint = Turn this on to set up the connection
+output-off-hint = Turn this on to set its name and size
 ## Assets
 assets-stickers = Sticker folders
 assets-stickers-hint = Images in these folders become stickers; the folder name is the library name
