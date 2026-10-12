@@ -9,8 +9,9 @@ use nana_ui::runtime::{
 };
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{
-    AlignSpec, BackgroundImage, CssGradient, GradientStop, LengthSpec, LinearGradient,
-    OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, TransformOrigin,
+    AlignSpec, BackgroundImage, BoxShadowSpec, CssGradient, GradientStop, JustifySpec, LengthSpec,
+    LinearGradient, OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole,
+    TransformOrigin,
 };
 use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind, Overflow, VtsReset};
@@ -122,7 +123,7 @@ fn general(ui: Ui) -> AnyView {
             welcome,
             section(
                 ui,
-                "settings-general",
+                "",
                 vec![
                     row(
                         ui,
@@ -150,99 +151,150 @@ fn general(ui: Ui) -> AnyView {
                     row(ui, "general-avatar", None, avatar_row),
                 ],
             ),
-            section(
+            section_with(
                 ui,
-                "general-input-window",
+                "general-input",
                 vec![
-                    row(
-                        ui,
-                        "general-presence",
-                        Some("general-presence-hint"),
-                        select(
+                    (
+                        row(
                             ui,
-                            select_keys(
+                            "general-presence",
+                            Some("general-presence-hint"),
+                            segmented(
                                 ui,
-                                &[
-                                    ("resident", "general-presence-resident"),
-                                    ("summon", "general-presence-summon"),
-                                ],
+                                select_keys(
+                                    ui,
+                                    &[
+                                        ("resident", "general-presence-resident"),
+                                        ("summon", "general-presence-summon"),
+                                    ],
+                                ),
+                                |s| match s.general.input_presence {
+                                    InputPresence::Resident => "resident".into(),
+                                    InputPresence::Summon => "summon".into(),
+                                },
+                                |s, v| {
+                                    s.general.input_presence = if v == "summon" {
+                                        InputPresence::Summon
+                                    } else {
+                                        InputPresence::Resident
+                                    }
+                                },
                             ),
-                            |s| match s.general.input_presence {
-                                InputPresence::Resident => "resident".into(),
-                                InputPresence::Summon => "summon".into(),
-                            },
-                            |s, v| {
-                                s.general.input_presence = if v == "summon" {
-                                    InputPresence::Summon
-                                } else {
-                                    InputPresence::Resident
-                                }
-                            },
                         ),
-                    ),
-                    row(
-                        ui,
-                        "general-mode",
                         None,
-                        select(
+                    ),
+                    (
+                        row_live_hint(
                             ui,
-                            select_keys(
+                            "general-mode",
+                            move || {
+                                Some(I18N.t_in(
+                                    ui.locale.get(),
+                                    if mirror(ui) {
+                                        "mode-mirror-hint"
+                                    } else {
+                                        "mode-compose-hint"
+                                    },
+                                ))
+                            },
+                            segmented(
                                 ui,
-                                &[("compose", "mode-compose"), ("mirror", "mode-mirror")],
+                                select_keys(
+                                    ui,
+                                    &[("compose", "mode-compose"), ("mirror", "mode-mirror")],
+                                ),
+                                |s| match s.general.input_mode {
+                                    InputMode::Compose => "compose".into(),
+                                    InputMode::Mirror => "mirror".into(),
+                                },
+                                |s, v| {
+                                    s.general.input_mode = if v == "mirror" {
+                                        InputMode::Mirror
+                                    } else {
+                                        InputMode::Compose
+                                    }
+                                },
                             ),
-                            |s| match s.general.input_mode {
-                                InputMode::Compose => "compose".into(),
-                                InputMode::Mirror => "mirror".into(),
-                            },
-                            |s, v| {
-                                s.general.input_mode = if v == "mirror" {
-                                    InputMode::Mirror
-                                } else {
-                                    InputMode::Compose
-                                }
-                            },
                         ),
-                    ),
-                    row(
-                        ui,
-                        "general-send-key",
                         None,
-                        select(
+                    ),
+                    shown_if(
+                        row(
                             ui,
-                            select_keys(
+                            "playback-stagger",
+                            None,
+                            slider(
                                 ui,
-                                &[
-                                    ("enter", "general-send-enter"),
-                                    ("ctrl", "general-send-ctrl-enter"),
-                                ],
+                                (0.0, 120.0, 5.0),
+                                "ms",
+                                |s| f64::from(s.playback.mirror_stagger_ms),
+                                |s, v| s.playback.mirror_stagger_ms = v as u32,
                             ),
-                            |s| match s.general.send_key {
-                                SendKey::Enter => "enter".into(),
-                                SendKey::CtrlEnter => "ctrl".into(),
-                            },
-                            |s, v| {
-                                s.general.send_key = if v == "ctrl" {
-                                    SendKey::CtrlEnter
-                                } else {
-                                    SendKey::Enter
-                                }
-                            },
                         ),
+                        move || mirror(ui),
                     ),
-                    row(
-                        ui,
-                        "general-autostart",
-                        None,
-                        switch(
+                    (
+                        row(
                             ui,
-                            |s| s.general.launch_at_login,
-                            |s, v| s.general.launch_at_login = v,
+                            "general-send-key",
+                            Some("general-send-key-hint"),
+                            select(
+                                ui,
+                                select_keys(
+                                    ui,
+                                    &[
+                                        ("enter", "general-send-key-enter"),
+                                        ("ctrl", "general-send-key-ctrl-enter"),
+                                    ],
+                                ),
+                                |s| match s.general.send_key {
+                                    SendKey::Enter => "enter".into(),
+                                    SendKey::CtrlEnter => "ctrl".into(),
+                                },
+                                |s, v| {
+                                    s.general.send_key = if v == "ctrl" {
+                                        SendKey::CtrlEnter
+                                    } else {
+                                        SendKey::Enter
+                                    }
+                                },
+                            ),
                         ),
+                        None,
+                    ),
+                    (
+                        row(
+                            ui,
+                            "general-autostart",
+                            None,
+                            switch(
+                                ui,
+                                |s| s.general.launch_at_login,
+                                |s, v| s.general.launch_at_login = v,
+                            ),
+                        ),
+                        None,
                     ),
                 ],
             ),
         ))
         .into_any()
+}
+
+fn mirror(ui: Ui) -> bool {
+    ui.settings
+        .with(|s| matches!(s.general.input_mode, InputMode::Mirror))
+}
+
+/// Reads 0 as "Off".
+fn off_at_zero(locale: Locale, v: f64) -> Option<String> {
+    (v <= 0.0).then(|| I18N.t_in(locale, "playback-auto-off"))
+}
+
+/// Reads 0 as "Skin default".
+fn skin_at_zero(locale: Locale, v: f64) -> Option<String> {
+    (v <= 0.0).then(|| I18N.t_in(locale, "common-skin-default"))
 }
 
 fn after_key(a: &AfterLine) -> String {
@@ -281,11 +333,15 @@ fn playback(ui: Ui) -> AnyView {
             .iter()
             .map(|d| (d.clone(), d.clone())),
     );
+    let holds = move || {
+        ui.settings
+            .with(|s| matches!(s.playback.after, AfterLine::Hold))
+    };
     widget(Stack::column(0.0))
         .children((
             section(
                 ui,
-                "settings-playback",
+                "",
                 vec![
                     row(
                         ui,
@@ -333,132 +389,154 @@ fn playback(ui: Ui) -> AnyView {
                     ),
                 ],
             ),
-            section(
+            section_with(
                 ui,
-                "playback-after",
+                "playback-flow",
                 vec![
-                    row(
-                        ui,
-                        "playback-after",
-                        None,
-                        select(
+                    (
+                        row(
                             ui,
-                            select_keys(
+                            "playback-after",
+                            None,
+                            segmented(
                                 ui,
-                                &[
-                                    ("hold", "playback-after-hold"),
-                                    ("fade", "playback-after-fade"),
-                                    ("clear", "playback-after-clear"),
-                                ],
+                                select_keys(
+                                    ui,
+                                    &[
+                                        ("hold", "playback-after-hold"),
+                                        ("fade", "playback-after-fade"),
+                                        ("clear", "playback-after-clear"),
+                                    ],
+                                ),
+                                |s| after_key(&s.playback.after),
+                                |s, v| {
+                                    let delay = (after_delay(&s.playback.after) * 1000.0) as u32;
+                                    s.playback.after = match v {
+                                        "fade" => AfterLine::Fade {
+                                            delay_ms: delay,
+                                            per_unit_ms: 40,
+                                        },
+                                        "clear" => AfterLine::Clear { delay_ms: delay },
+                                        _ => AfterLine::Hold,
+                                    }
+                                },
                             ),
-                            |s| after_key(&s.playback.after),
-                            |s, v| {
-                                let delay = (after_delay(&s.playback.after) * 1000.0) as u32;
-                                s.playback.after = match v {
-                                    "fade" => AfterLine::Fade {
-                                        delay_ms: delay,
-                                        per_unit_ms: 40,
-                                    },
-                                    "clear" => AfterLine::Clear { delay_ms: delay },
-                                    _ => AfterLine::Hold,
-                                }
-                            },
                         ),
-                    ),
-                    row(
-                        ui,
-                        "playback-after-delay",
                         None,
-                        slider(
-                            ui,
-                            (0.5, 30.0, 0.5),
-                            "s",
-                            |s| after_delay(&s.playback.after),
-                            |s, v| {
-                                let ms = (v * 1000.0) as u32;
-                                match &mut s.playback.after {
-                                    AfterLine::Fade { delay_ms, .. }
-                                    | AfterLine::Clear { delay_ms } => *delay_ms = ms,
-                                    AfterLine::Hold => {}
-                                }
-                            },
-                        ),
                     ),
-                    row(
-                        ui,
-                        "playback-auto",
-                        None,
-                        slider(
+                    shown_if(
+                        row(
                             ui,
-                            (0.0, 10.0, 0.5),
-                            "s",
-                            |s| {
-                                s.playback
-                                    .auto_advance_ms
-                                    .map(|v| f64::from(v) / 1000.0)
-                                    .unwrap_or(0.0)
-                            },
-                            |s, v| {
-                                s.playback.auto_advance_ms =
-                                    (v > 0.0).then_some((v * 1000.0) as u32)
-                            },
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "playback-queue",
-                        None,
-                        select(
-                            ui,
-                            select_keys(
+                            "playback-after-delay",
+                            None,
+                            slider(
                                 ui,
-                                &[
-                                    ("replace", "playback-queue-replace"),
-                                    ("finish", "playback-queue-finish"),
-                                    ("queue", "playback-queue-queue"),
-                                ],
+                                (0.5, 30.0, 0.5),
+                                "s",
+                                |s| after_delay(&s.playback.after),
+                                |s, v| {
+                                    let ms = (v * 1000.0) as u32;
+                                    match &mut s.playback.after {
+                                        AfterLine::Fade { delay_ms, .. }
+                                        | AfterLine::Clear { delay_ms } => *delay_ms = ms,
+                                        AfterLine::Hold => {}
+                                    }
+                                },
                             ),
-                            |s| match s.playback.queue {
-                                QueuePolicy::Replace => "replace".into(),
-                                QueuePolicy::FinishThenNext => "finish".into(),
-                                QueuePolicy::Queue => "queue".into(),
-                            },
-                            |s, v| {
-                                s.playback.queue = match v {
-                                    "finish" => QueuePolicy::FinishThenNext,
-                                    "queue" => QueuePolicy::Queue,
-                                    _ => QueuePolicy::Replace,
-                                }
-                            },
                         ),
+                        move || !holds(),
                     ),
-                    row(
-                        ui,
-                        "playback-reduced",
-                        Some("playback-reduced-hint"),
-                        switch(
+                    (
+                        row(
                             ui,
-                            |s| s.playback.reduced_motion,
-                            |s, v| s.playback.reduced_motion = v,
+                            "playback-auto",
+                            None,
+                            slider_with(
+                                ui,
+                                (0.0, 10.0, 0.5),
+                                "s",
+                                |locale, v| {
+                                    Some(if v <= 0.0 {
+                                        I18N.t_in(locale, "playback-auto-off")
+                                    } else {
+                                        I18N.tr_in(
+                                            locale,
+                                            "playback-auto-value",
+                                            &[("seconds", trim_num(v, 0.5).into())],
+                                        )
+                                    })
+                                },
+                                |s| {
+                                    s.playback
+                                        .auto_advance_ms
+                                        .map(|v| f64::from(v) / 1000.0)
+                                        .unwrap_or(0.0)
+                                },
+                                |s, v| {
+                                    s.playback.auto_advance_ms =
+                                        (v > 0.0).then_some((v * 1000.0) as u32)
+                                },
+                            ),
                         ),
-                    ),
-                    row(
-                        ui,
-                        "playback-stagger",
                         None,
-                        slider(
+                    ),
+                    (
+                        // Short option names; the hint spells out the chosen one.
+                        row_live_hint(
                             ui,
-                            (0.0, 120.0, 5.0),
-                            "ms",
-                            |s| f64::from(s.playback.mirror_stagger_ms),
-                            |s, v| s.playback.mirror_stagger_ms = v as u32,
+                            "playback-queue",
+                            move || {
+                                let key = ui.settings.with(|s| match s.playback.queue {
+                                    QueuePolicy::Replace => "playback-queue-replace",
+                                    QueuePolicy::FinishThenNext => "playback-queue-finish",
+                                    QueuePolicy::Queue => "playback-queue-queue",
+                                });
+                                Some(I18N.t_in(ui.locale.get(), key))
+                            },
+                            segmented(
+                                ui,
+                                select_keys(
+                                    ui,
+                                    &[
+                                        ("replace", "playback-queue-replace-short"),
+                                        ("finish", "playback-queue-finish-short"),
+                                        ("queue", "playback-queue-queue-short"),
+                                    ],
+                                ),
+                                |s| match s.playback.queue {
+                                    QueuePolicy::Replace => "replace".into(),
+                                    QueuePolicy::FinishThenNext => "finish".into(),
+                                    QueuePolicy::Queue => "queue".into(),
+                                },
+                                |s, v| {
+                                    s.playback.queue = match v {
+                                        "finish" => QueuePolicy::FinishThenNext,
+                                        "queue" => QueuePolicy::Queue,
+                                        _ => QueuePolicy::Replace,
+                                    }
+                                },
+                            ),
                         ),
+                        None,
+                    ),
+                    (
+                        row(
+                            ui,
+                            "playback-reduced",
+                            Some("playback-reduced-hint"),
+                            switch(
+                                ui,
+                                |s| s.playback.reduced_motion,
+                                |s, v| s.playback.reduced_motion = v,
+                            ),
+                        ),
+                        None,
                     ),
                 ],
             ),
             section(
                 ui,
-                "playback-sound",
+                "playback-audio",
                 vec![
                     row(
                         ui,
@@ -470,10 +548,8 @@ fn playback(ui: Ui) -> AnyView {
                         ui,
                         "playback-volume",
                         None,
-                        slider(
+                        percent(
                             ui,
-                            (0.0, 1.0, 0.01),
-                            "",
                             |s| f64::from(s.sound.master),
                             |s, v| s.sound.master = v as f32,
                         ),
@@ -482,10 +558,8 @@ fn playback(ui: Ui) -> AnyView {
                         ui,
                         "playback-volume-typing",
                         None,
-                        slider(
+                        percent(
                             ui,
-                            (0.0, 1.0, 0.01),
-                            "",
                             |s| f64::from(s.sound.typing_volume),
                             |s, v| s.sound.typing_volume = v as f32,
                         ),
@@ -494,10 +568,8 @@ fn playback(ui: Ui) -> AnyView {
                         ui,
                         "playback-volume-effects",
                         None,
-                        slider(
+                        percent(
                             ui,
-                            (0.0, 1.0, 0.01),
-                            "",
                             |s| f64::from(s.sound.effects_volume),
                             |s, v| s.sound.effects_volume = v as f32,
                         ),
@@ -621,14 +693,25 @@ fn skins(ui: Ui) -> AnyView {
                             })
                         }),
                         (!builtin).then(|| {
-                            widget(
-                                IconButton::new(ti::TRASH, ui.now_t("skins-delete"))
-                                    .size(ControlSize::Small)
-                                    .with_tooltip(ui.now_t("skins-delete")),
+                            confirm(
+                                ui,
+                                I18N.tr_in(
+                                    locale,
+                                    "skins-delete-confirm",
+                                    &[("name", skin.name.as_str().into())],
+                                ),
+                                ui.now_t("skins-delete"),
+                                |armed| {
+                                    widget(
+                                        IconButton::new(ti::TRASH, ui.now_t("skins-delete"))
+                                            .size(ControlSize::Small)
+                                            .with_tooltip(ui.now_t("skins-delete")),
+                                    )
+                                    .on(move |_: &Activate| armed.set(true))
+                                    .into_any()
+                                },
+                                move || Msg::DeleteSkin(rid.clone()),
                             )
-                            .on_cx(move |_, _: &Activate, cx| {
-                                cx.dispatch_program_all(Msg::DeleteSkin(rid.clone()))
-                            })
                         }),
                     ));
                     let use_id = id.clone();
@@ -689,7 +772,7 @@ fn skins(ui: Ui) -> AnyView {
             section(ui, "skins-preview", vec![skin_preview(ui, previewing)]),
             section(
                 ui,
-                "skins-active",
+                "skins-library",
                 vec![
                     widget(Stack::column(0.0).padding_xy(16.0, 10.0))
                         .children(skin_filters(ui, filter))
@@ -749,11 +832,15 @@ fn skins(ui: Ui) -> AnyView {
                         ui,
                         "skins-override-size",
                         None,
-                        slider(
+                        // The step left of 12 px is "unset": the skin's own size.
+                        slider_with(
                             ui,
-                            (12.0, 72.0, 1.0),
+                            (11.0, 72.0, 1.0),
                             "px",
-                            |s| f64::from(s.skin.overrides.text_size.unwrap_or(0.0)),
+                            |locale, v| {
+                                (v < 12.0).then(|| I18N.t_in(locale, "common-skin-default"))
+                            },
+                            |s| f64::from(s.skin.overrides.text_size.unwrap_or(11.0)),
                             |s, v| s.skin.overrides.text_size = (v >= 12.0).then_some(v as f32),
                         ),
                     ),
@@ -780,10 +867,11 @@ fn skins(ui: Ui) -> AnyView {
                         ui,
                         "skins-override-page-auto",
                         Some("skins-override-page-auto-hint"),
-                        slider(
+                        slider_with(
                             ui,
                             (0.0, 10.0, 0.5),
                             "s",
+                            skin_at_zero,
                             |s| f64::from(s.skin.overrides.overflow_auto_ms.unwrap_or(0)) / 1000.0,
                             |s, v| {
                                 s.skin.overrides.overflow_auto_ms =
@@ -803,7 +891,7 @@ fn skins(ui: Ui) -> AnyView {
             ),
             section(
                 ui,
-                "skins-chrome",
+                "skins-interface",
                 vec![
                     row(
                         ui,
@@ -1190,7 +1278,7 @@ fn history(ui: Ui) -> AnyView {
         .children((
             section(
                 ui,
-                "settings-history",
+                "",
                 vec![
                     row(
                         ui,
@@ -1274,10 +1362,11 @@ fn history(ui: Ui) -> AnyView {
                         ui,
                         "history-fade",
                         None,
-                        slider(
+                        slider_with(
                             ui,
                             (0.0, 300.0, 5.0),
                             "s",
+                            off_at_zero,
                             |s| f64::from(s.history.fade_after_s.unwrap_or(0)),
                             |s, v| s.history.fade_after_s = (v > 0.0).then_some(v as u32),
                         ),
@@ -1306,11 +1395,21 @@ fn history(ui: Ui) -> AnyView {
                     ),
                     row(
                         ui,
-                        "history-clear",
+                        "history-session",
                         None,
-                        button(ui, "history-clear", || {
-                            Msg::Core(nanatype_core::Cmd::ClearHistory)
-                        }),
+                        confirm(
+                            ui,
+                            ui.now_t("history-clear-confirm"),
+                            ui.now_t("history-clear"),
+                            |armed| {
+                                widget(
+                                    Button::new(ui.now_t("history-clear")).size(ControlSize::Small),
+                                )
+                                .on(move |_: &Activate| armed.set(true))
+                                .into_any()
+                            },
+                            || Msg::Core(nanatype_core::Cmd::ClearHistory),
+                        ),
                     ),
                 ],
             ),
@@ -1441,7 +1540,7 @@ fn blivechat(ui: Ui) -> AnyView {
             ui,
             "int-blive-room-kind",
             Some("int-blive-room-kind-hint"),
-            select(
+            segmented(
                 ui,
                 select_keys(
                     ui,
@@ -1531,95 +1630,297 @@ fn blivechat(ui: Ui) -> AnyView {
     section(ui, "int-blive-section", rows)
 }
 
-fn hotkeys(ui: Ui) -> AnyView {
-    let rows: Vec<AnyView> = GlobalAction::ALL
+/// What is wrong with an action's binding, worst first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyIssue {
+    /// Another action has the same chord.
+    Duplicate(GlobalAction),
+    /// Another program owns the chord.
+    Conflict,
+    /// The chord would swallow typing, or cannot be registered.
+    Unsafe,
+}
+
+impl KeyIssue {
+    fn badge_key(self) -> &'static str {
+        match self {
+            Self::Duplicate(_) => "hotkeys-badge-dup",
+            Self::Conflict => "hotkeys-badge-conflict",
+            Self::Unsafe => "hotkeys-badge-unsafe",
+        }
+    }
+
+    fn tone(self) -> StatusTone {
+        match self {
+            Self::Unsafe => StatusTone::Warning,
+            _ => StatusTone::Danger,
+        }
+    }
+
+    fn color(self) -> SemanticColorRole {
+        match self {
+            Self::Unsafe => SemanticColorRole::Warning,
+            _ => SemanticColorRole::Danger,
+        }
+    }
+
+    fn message(self, locale: Locale) -> String {
+        match self {
+            Self::Duplicate(other) => I18N.tr_in(
+                locale,
+                "hotkeys-conflict-dup",
+                &[("action", I18N.t_in(locale, other.label_key()).into())],
+            ),
+            Self::Conflict => I18N.t_in(locale, "hotkeys-conflict-os"),
+            Self::Unsafe => I18N.t_in(locale, "hotkeys-unsafe"),
+        }
+    }
+}
+
+fn key_issue(
+    s: &Settings,
+    states: &HashMap<GlobalAction, HotkeyState>,
+    action: GlobalAction,
+) -> Option<KeyIssue> {
+    let mine = action.get(s)?;
+    if let Some(other) = GlobalAction::ALL
         .into_iter()
-        .map(|action| {
-            let label = move || {
-                let locale = ui.locale.get();
-                if ui.recording.get() == Some(action) {
-                    return I18N.t_in(locale, "hotkeys-recording");
-                }
-                ui.settings
-                    .with(|s| action.get(s).cloned())
-                    .map(|h| {
-                        h.label(if cfg!(target_os = "macos") {
-                            "⌘"
-                        } else {
-                            "Win"
-                        })
-                    })
-                    .unwrap_or_else(|| I18N.t_in(locale, "hotkeys-none"))
-            };
-            let badge = move || {
-                let locale = ui.locale.get();
-                let bound = ui.settings.with(|s| action.get(s).is_some());
-                match (bound, ui.hotkeys.with(|h| h.get(&action).cloned())) {
-                    (true, Some(HotkeyState::Registered)) => {
-                        (I18N.t_in(locale, "hotkeys-ok"), StatusTone::Success)
+        .find(|o| *o != action && o.get(s) == Some(mine))
+    {
+        return Some(KeyIssue::Duplicate(other));
+    }
+    match states.get(&action) {
+        Some(HotkeyState::Conflict) => Some(KeyIssue::Conflict),
+        Some(HotkeyState::Invalid) => Some(KeyIssue::Unsafe),
+        _ if !mine.is_safe_global() => Some(KeyIssue::Unsafe),
+        _ => None,
+    }
+}
+
+const META_LABEL: &str = if cfg!(target_os = "macos") {
+    "⌘"
+} else {
+    "Win"
+};
+
+/// Most keys a chord has: Ctrl, Shift, Alt, Win and the key.
+const CHORD_KEYS: usize = 5;
+
+/// The `i`th key of a chord as a keycap, "+" before all but the first. The
+/// caps are fixed nodes that follow the binding: a settings row measures
+/// its control once, so the control must not be rebuilt.
+fn keycap(
+    i: usize,
+    parts: impl Fn() -> Vec<String> + Send + Copy + 'static,
+    danger: impl Fn() -> bool + Send + Copy + 'static,
+) -> AnyView {
+    let shown = move || parts().len() > i;
+    widget(Stack::row(4.0).align(AlignSpec::Center))
+        .visible(shown)
+        .children((
+            (i > 0).then(|| {
+                widget(
+                    Text::new("+")
+                        .style(text_style(12.0, 500))
+                        .color(SemanticColorRole::Muted),
+                )
+            }),
+            widget(
+                Stack::row(0.0)
+                    .height(LengthSpec::Px(24.0))
+                    .min_width(LengthSpec::Px(24.0))
+                    .padding_xy(7.0, 0.0)
+                    .align(AlignSpec::Center)
+                    .justify(JustifySpec::Center)
+                    .surface(SemanticColorRole::Surface)
+                    .outline(SemanticColorRole::BorderSoft, 1.0)
+                    .radius_px(6.0)
+                    .with_layout(|l| {
+                        l.paint.box_shadows = vec![BoxShadowSpec {
+                            paint_color: None,
+                            offset_x: 0.0,
+                            offset_y: -2.0,
+                            blur_radius: 0.0,
+                            spread_radius: 0.0,
+                            color: [0.5, 0.55, 0.62, 0.28],
+                            inset: true,
+                        }];
+                    }),
+            )
+            .border(move || {
+                Some(if danger() {
+                    SemanticColorRole::Danger
+                } else {
+                    SemanticColorRole::BorderSoft
+                })
+            })
+            .children(
+                widget(
+                    Text::new(String::new())
+                        .style(text_style(12.0, 600))
+                        .color(SemanticColorRole::Text),
+                )
+                .bind(move |t: &mut Text| {
+                    let text = parts().get(i).cloned().unwrap_or_default();
+                    if t.value != text {
+                        t.value = text;
                     }
-                    (true, Some(HotkeyState::Conflict)) => {
-                        (I18N.t_in(locale, "hotkeys-conflict-os"), StatusTone::Danger)
-                    }
-                    (true, Some(HotkeyState::Invalid)) => {
-                        (I18N.t_in(locale, "hotkeys-unsafe"), StatusTone::Warning)
-                    }
-                    _ => (String::new(), StatusTone::Neutral),
-                }
-            };
-            let control = widget(Stack::row(8.0).align(AlignSpec::Center)).children((
-                widget(StatusBadge::new("", StatusTone::Neutral).compact(true))
-                    .visible(move || !badge().0.is_empty())
-                    .bind(move |b: &mut StatusBadge| {
-                        let (text, tone) = badge();
-                        let text: std::sync::Arc<str> = text.into();
+                }),
+            ),
+        ))
+        .into_any()
+}
+
+fn hotkey_control(ui: Ui, action: GlobalAction) -> AnyView {
+    let recording = move || ui.recording.get() == Some(action);
+    let bound = move || ui.settings.with(|s| action.get(s).is_some());
+    let issue = move || {
+        let states = ui.hotkeys.get();
+        ui.settings.with(|s| key_issue(s, &states, action))
+    };
+    let parts = move || {
+        ui.settings.with(|s| {
+            action.get(s).map_or_else(Vec::new, |h| {
+                h.label(META_LABEL).split('+').map(str::to_owned).collect()
+            })
+        })
+    };
+    let danger = move || issue().is_some();
+    let badge = move || {
+        let locale = ui.locale.get();
+        if !bound() {
+            return None;
+        }
+        match issue() {
+            Some(i) => Some((I18N.t_in(locale, i.badge_key()), i.tone())),
+            None => ui
+                .hotkeys
+                .with(|h| matches!(h.get(&action), Some(HotkeyState::Registered)))
+                .then(|| (I18N.t_in(locale, "hotkeys-ok"), StatusTone::Success)),
+        }
+    };
+    let caps: Vec<AnyView> = (0..CHORD_KEYS).map(|i| keycap(i, parts, danger)).collect();
+    let slot = widget(
+        Stack::row(0.0)
+            .height(LengthSpec::Px(24.0))
+            .padding_xy(10.0, 0.0)
+            .align(AlignSpec::Center)
+            .outline(SemanticColorRole::Border, 1.0)
+            .radius_px(6.0)
+            .with_layout(|l| l.border_style = Some(nana_ui_core::BorderStyle::Dashed)),
+    )
+    .children(widget(
+        Text::new(ui.now_t("hotkeys-click-to-set"))
+            .style(text_style(12.0, 500))
+            .color(SemanticColorRole::Muted),
+    ));
+    let listening = widget(
+        Stack::row(0.0)
+            .min_width(LengthSpec::Px(160.0))
+            .justify(JustifySpec::Center)
+            .align(AlignSpec::Center),
+    )
+    .children(widget(
+        Text::new(ui.now_t("hotkeys-press-keys"))
+            .style(text_style(12.0, 500))
+            .color(SemanticColorRole::Text),
+    ));
+    widget(Stack::row(8.0).align(AlignSpec::Center))
+        .children((
+            widget(StatusBadge::new("", StatusTone::Neutral).compact(true))
+                .visible(move || badge().is_some())
+                .bind(move |b: &mut StatusBadge| {
+                    if let Some((text, tone)) = badge() {
+                        let text: Arc<str> = text.into();
                         if b.label != text {
                             b.label = text;
                         }
                         b.tone = tone;
-                    }),
-                widget(Button::new("").size(ControlSize::Small))
-                    .bind(move |b: &mut Button| {
-                        let text = label();
-                        if b.label != text {
-                            b.label = text;
-                        }
-                        b.kind = if ui.recording.get() == Some(action) {
-                            ButtonKind::Primary
-                        } else {
-                            ButtonKind::Subtle
-                        };
-                    })
-                    .on_cx(move |_, _: &Activate, cx| {
-                        let recording = ui.recording.get_untracked() == Some(action);
-                        cx.dispatch_program_all(Msg::RecordHotkey(if recording {
-                            None
-                        } else {
-                            Some(action)
-                        }))
-                    }),
-                widget(
-                    IconButton::new(ti::X, ui.now_t("hotkeys-clear-binding"))
-                        .size(ControlSize::Small),
-                )
-                .on_cx(move |_, _: &Activate, cx| {
-                    cx.dispatch_program_all(edit(move |s| action.set(s, None)))
+                    }
                 }),
-            ));
-            row(ui, action.label_key(), None, control.into_any())
+            widget(
+                Button::new("")
+                    .kind(ButtonKind::Ghost)
+                    .size(ControlSize::Small)
+                    .accessible_name(ui.now_t("hotkeys-record")),
+            )
+            .bind(move |b: &mut Button| {
+                b.kind = if recording() {
+                    ButtonKind::Selected
+                } else {
+                    ButtonKind::Ghost
+                };
+            })
+            .on_cx(move |_, _: &Activate, cx| {
+                let recording = ui.recording.get_untracked() == Some(action);
+                cx.dispatch_program_all(Msg::RecordHotkey((!recording).then_some(action)))
+            })
+            .children((
+                widget(Stack::row(4.0).align(AlignSpec::Center))
+                    .visible(move || bound() && !recording())
+                    .children(caps),
+                slot.visible(move || !bound() && !recording()),
+                listening.visible(recording),
+            )),
+            widget(
+                IconButton::new(ti::X, ui.now_t("hotkeys-clear-binding"))
+                    .size(ControlSize::Small)
+                    .with_tooltip(ui.now_t("hotkeys-clear-binding")),
+            )
+            .visible(bound)
+            .on_cx(move |_, _: &Activate, cx| {
+                cx.dispatch_program_all(edit(move |s| action.set(s, None)))
+            }),
+        ))
+        .into_any()
+}
+
+/// The wrapping line under a hotkey row that says what is wrong.
+fn hotkey_issue_line(ui: Ui, action: GlobalAction) -> AnyView {
+    let issue = move || {
+        let states = ui.hotkeys.get();
+        ui.settings.with(|s| key_issue(s, &states, action))
+    };
+    widget(Stack::column(0.0).with_layout(|l| {
+        l.padding_left = Some(LengthSpec::Px(INSET));
+        l.padding_right = Some(LengthSpec::Px(INSET));
+        l.padding_bottom = Some(LengthSpec::Px(12.0));
+        l.margin_top = Some(LengthSpec::Px(-4.0));
+    }))
+    .visible(move || issue().is_some())
+    .children(
+        widget(Text::new(String::new()).style(text_style(12.0, 400))).bind(move |t: &mut Text| {
+            if let Some(i) = issue() {
+                let text = i.message(ui.locale.get());
+                if t.value != text {
+                    t.value = text;
+                }
+                t.style.foreground = Some(i.color());
+            }
+        }),
+    )
+    .into_any()
+}
+
+fn hotkeys(ui: Ui) -> AnyView {
+    let rows: Vec<AnyView> = GlobalAction::ALL
+        .into_iter()
+        .map(|action| {
+            widget(Stack::column(0.0))
+                .children((
+                    row(ui, action.label_key(), None, hotkey_control(ui, action)),
+                    hotkey_issue_line(ui, action),
+                ))
+                .into_any()
         })
         .collect();
     widget(Stack::column(0.0))
         .children((
-            section(ui, "settings-hotkeys", rows),
+            section(ui, "", rows),
             section(
                 ui,
                 "hotkeys-local",
-                vec![
-                    widget(Stack::column(0.0).padding_xy(16.0, 12.0))
-                        .children(hint(ui.now_t("hotkeys-local-hint")))
-                        .into_any(),
-                ],
+                vec![block(hint(ui.now_t("hotkeys-local-hint")))],
             ),
         ))
         .into_any()
@@ -2094,6 +2395,17 @@ fn integrations(ui: Ui) -> AnyView {
         .into_any()
 }
 
+/// A trash button that arms a [`confirm`].
+fn remove_button(ui: Ui, armed: Signal<bool>) -> AnyView {
+    widget(
+        IconButton::new(ti::TRASH, ui.now_t("assets-remove"))
+            .size(ControlSize::Small)
+            .with_tooltip(ui.now_t("assets-remove")),
+    )
+    .on(move |_: &Activate| armed.set(true))
+    .into_any()
+}
+
 fn assets(ui: Ui) -> AnyView {
     let dirs = dynamic(
         move || ui.settings.with(|s| s.assets.sticker_dirs.clone()),
@@ -2105,18 +2417,19 @@ fn assets(ui: Ui) -> AnyView {
                     row_text(
                         d.clone(),
                         None,
-                        widget(
-                            IconButton::new(ti::TRASH, ui.now_t("assets-remove"))
-                                .size(ControlSize::Small),
-                        )
-                        .on_cx(move |_, _: &Activate, cx| {
-                            cx.dispatch_program_all(edit(move |s| {
-                                if i < s.assets.sticker_dirs.len() {
-                                    s.assets.sticker_dirs.remove(i);
-                                }
-                            }))
-                        })
-                        .into_any(),
+                        confirm(
+                            ui,
+                            ui.now_t("assets-remove-folder-confirm"),
+                            ui.now_t("assets-remove"),
+                            |armed| remove_button(ui, armed),
+                            move || {
+                                edit(move |s| {
+                                    if i < s.assets.sticker_dirs.len() {
+                                        s.assets.sticker_dirs.remove(i);
+                                    }
+                                })
+                            },
+                        ),
                     )
                 })
                 .collect();
@@ -2183,17 +2496,19 @@ fn assets(ui: Ui) -> AnyView {
                                 }))
                             },
                         ),
-                        widget(
-                            IconButton::new(ti::TRASH, ui.now_t("assets-remove"))
-                                .size(ControlSize::Small),
-                        )
-                        .on_cx(move |_, _: &Activate, cx| {
-                            cx.dispatch_program_all(edit(move |s| {
-                                if i < s.assets.phrases.len() {
-                                    s.assets.phrases.remove(i);
-                                }
-                            }))
-                        }),
+                        confirm(
+                            ui,
+                            ui.now_t("assets-phrase-remove-confirm"),
+                            ui.now_t("assets-remove"),
+                            |armed| remove_button(ui, armed),
+                            move || {
+                                edit(move |s| {
+                                    if i < s.assets.phrases.len() {
+                                        s.assets.phrases.remove(i);
+                                    }
+                                })
+                            },
+                        ),
                     ))
                     .into_any()
                 })
@@ -2258,7 +2573,7 @@ fn about(ui: Ui) -> AnyView {
     widget(Stack::column(0.0))
         .children(section(
             ui,
-            "settings-about",
+            "",
             vec![
                 widget(Stack::column(4.0).padding_xy(16.0, 14.0))
                     .children((

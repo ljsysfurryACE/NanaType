@@ -3,14 +3,17 @@
 
 use std::sync::{Arc, LazyLock};
 
-use nana_ui::runtime::view::{AnyView, IntoView, settings_row, widget};
-use nana_ui::runtime::{
-    ColorChanged, ColorField, NodeStyle, NumberChanged, NumberInput, RangeChanged, RangeField,
-    Select, SelectChanged, SelectOption, Stack, StatusBadge, Switch, Text, TextChanged, TextInput,
-    ToggleChanged,
+use nana_ui::runtime::view::{
+    AnyView, IntoView, Signal, segmented_option, settings_row, signal, widget,
 };
-use nana_ui::{ControlSize, StatusTone};
+use nana_ui::runtime::{
+    Activate, Button, ColorChanged, ColorField, NodeStyle, NumberChanged, NumberInput,
+    RangeChanged, RangeField, SegmentedControl, SegmentedOptionChosen, Select, SelectChanged,
+    SelectOption, Stack, StatusBadge, Switch, Text, TextChanged, TextInput, ToggleChanged,
+};
+use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{AlignSpec, LengthSpec, SemanticColorRole};
+use nanatype_i18n::Locale;
 use nanatype_model::Rgba8;
 use nanatype_settings::Settings;
 
@@ -56,11 +59,11 @@ pub fn text_style(size: f32, weight: u16) -> NodeStyle {
 }
 
 pub fn heading(ui: Ui, key: &str) -> AnyView {
-    widget(Text::new(ui.now_t(key)).style(text_style(22.0, 700))).into_any()
+    widget(Text::new(ui.now_t(key)).style(text_style(20.0, 700))).into_any()
 }
 
 pub fn label(text: String) -> AnyView {
-    widget(Text::new(text).style(text_style(14.0, 500))).into_any()
+    widget(Text::new(text).style(text_style(13.0, 500))).into_any()
 }
 
 pub fn hint(text: String) -> AnyView {
@@ -72,51 +75,89 @@ pub fn hint(text: String) -> AnyView {
     .into_any()
 }
 
-/// Rows with a hairline between each.
-fn separated(rows: Vec<AnyView>) -> Vec<AnyView> {
-    let n = rows.len();
-    rows.into_iter()
-        .enumerate()
-        .map(|(i, r)| {
-            widget(Stack::column(0.0).with_layout(move |l| {
-                if i + 1 < n {
-                    l.border_bottom_width = Some(1.0);
-                    l.border_bottom_color = Some([0.5, 0.5, 0.5, 0.12]);
-                    l.border_bottom_style = Some(nana_ui_core::BorderStyle::Solid);
-                }
-            }))
-            .children(r)
-            .into_any()
-        })
-        .collect()
+/// Horizontal inset of rows, blocks and dividers inside a section card.
+pub const INSET: f32 = 16.0;
+/// Shortest a settings row gets.
+pub const ROW_MIN_H: f32 = 48.0;
+
+/// Whether a section row is shown; `None` always shows it.
+pub type Shown = Option<Box<dyn Fn() -> bool + Send + 'static>>;
+
+/// A row that shows only while `cond` holds, for [`section_with`].
+pub fn shown_if(view: AnyView, cond: impl Fn() -> bool + Send + 'static) -> (AnyView, Shown) {
+    (view, Some(Box::new(cond)))
 }
 
-/// A titled group of rows.
+/// A titled group of rows. An empty `title_key` leaves the title out (the
+/// page heading already names it).
 pub fn section(ui: Ui, title_key: &str, rows: Vec<AnyView>) -> AnyView {
-    let rows = separated(rows);
-    widget(Stack::column(0.0).with_layout(|l| {
-        l.margin_top = Some(LengthSpec::Px(18.0));
+    section_with(ui, title_key, rows.into_iter().map(|r| (r, None)).collect())
+}
+
+/// [`section`] whose rows may hide; a hidden row takes its divider with it.
+pub fn section_with(ui: Ui, title_key: &str, rows: Vec<(AnyView, Shown)>) -> AnyView {
+    let rows: Vec<AnyView> = rows
+        .into_iter()
+        .enumerate()
+        .map(|(i, (r, shown))| {
+            let item = widget(Stack::column(0.0)).children(((i > 0).then(divider), r));
+            match shown {
+                Some(cond) => item.visible(move || cond()).into_any(),
+                None => item.into_any(),
+            }
+        })
+        .collect();
+    let titled = !title_key.is_empty();
+    widget(Stack::column(0.0).with_layout(move |l| {
+        l.margin_top = Some(LengthSpec::Px(if titled { 22.0 } else { 14.0 }));
     }))
     .children((
-        widget(
-            Text::new(ui.now_t(title_key))
-                .style(text_style(13.0, 700))
-                .color(SemanticColorRole::Muted),
-        )
-        .into_any(),
+        titled.then(|| {
+            widget(
+                Text::new(ui.now_t(title_key))
+                    .style(text_style(12.0, 600))
+                    .color(SemanticColorRole::Muted),
+            )
+        }),
         widget(
             Stack::column(0.0)
                 .surface(SemanticColorRole::Surface)
                 .radius(nana_ui_core::RadiusTier::Lg)
                 .outline(SemanticColorRole::BorderSoft, 1.0)
-                .padding_xy(4.0, 2.0)
-                .with_layout(|l| {
-                    l.margin_top = Some(LengthSpec::Px(8.0));
+                .with_layout(move |l| {
+                    l.margin_top = Some(LengthSpec::Px(if titled { 8.0 } else { 0.0 }));
                 }),
         )
         .children(rows),
     ))
     .into_any()
+}
+
+/// The inset hairline between two rows of a section card.
+fn divider() -> AnyView {
+    widget(
+        Stack::row(0.0)
+            .height(LengthSpec::Px(1.0))
+            .width(LengthSpec::Fill)
+            .surface(SemanticColorRole::BorderSoft)
+            .with_layout(|l| {
+                l.margin_left = Some(LengthSpec::Px(INSET));
+                l.margin_right = Some(LengthSpec::Px(INSET));
+            }),
+    )
+    .into_any()
+}
+
+/// Rows with a divider between each, for a group nested in one section row.
+fn divided(rows: Vec<AnyView>) -> Vec<AnyView> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, r)| {
+            widget(Stack::column(0.0))
+                .children(((i > 0).then(divider), r))
+                .into_any()
+        })
+        .collect()
 }
 
 /// The rows that only mean something while a master toggle is on. They fold
@@ -132,8 +173,8 @@ pub fn when_on(
         .children((
             widget(Stack::column(0.0))
                 .visible(move || ui.settings.with(|s| enabled(s)))
-                .children(separated(rows)),
-            widget(Stack::column(0.0).padding_xy(16.0, 12.0))
+                .children(divided(rows)),
+            widget(Stack::column(0.0).padding_xy(INSET, 12.0))
                 .visible(move || !ui.settings.with(|s| enabled(s)))
                 .children(hint(ui.now_t(off_hint_key))),
         ))
@@ -238,6 +279,13 @@ fn breathing_badge(
         .into_any()
 }
 
+/// A full-width block inside a section card, inset like the rows.
+pub fn block(view: impl IntoView) -> AnyView {
+    widget(Stack::column(0.0).padding_xy(INSET, 12.0))
+        .children(view)
+        .into_any()
+}
+
 /// Label (and hint) on the left, control on the right; stacks when narrow.
 pub fn row(ui: Ui, label_key: &str, hint_key: Option<&str>, control: AnyView) -> AnyView {
     row_text(ui.now_t(label_key), hint_key.map(|k| ui.now_t(k)), control)
@@ -245,10 +293,38 @@ pub fn row(ui: Ui, label_key: &str, hint_key: Option<&str>, control: AnyView) ->
 
 pub fn row_text(label_text: String, hint_text: Option<String>, control: AnyView) -> AnyView {
     let hint: Option<Arc<str>> = hint_text.map(Into::into);
-    settings_row(label_text)
-        .hint(hint)
-        .control(widget(Stack::row(8.0).align(AlignSpec::Center)).children(control))
-        .into_any()
+    inset_row(
+        settings_row(label_text)
+            .hint(hint)
+            .control(widget(Stack::row(8.0).align(AlignSpec::Center)).children(control))
+            .into_any(),
+    )
+}
+
+/// [`row`] whose hint follows the settings (it is re-read on every change).
+pub fn row_live_hint(
+    ui: Ui,
+    label_key: &str,
+    hint: impl Fn() -> Option<String> + Send + 'static,
+    control: AnyView,
+) -> AnyView {
+    inset_row(
+        settings_row(ui.now_t(label_key))
+            .hint(move || hint().map(Arc::<str>::from))
+            .control(widget(Stack::row(8.0).align(AlignSpec::Center)).children(control))
+            .into_any(),
+    )
+}
+
+fn inset_row(row: AnyView) -> AnyView {
+    widget(
+        Stack::column(0.0)
+            .padding_xy(INSET, 0.0)
+            .min_height(LengthSpec::Px(ROW_MIN_H))
+            .justify(nana_ui_core::JustifySpec::Center),
+    )
+    .children(row)
+    .into_any()
 }
 
 pub fn edit(f: impl FnOnce(&mut Settings) + Send + 'static) -> Msg {
@@ -305,16 +381,90 @@ pub fn select_keys(ui: Ui, options: &[(&'static str, &'static str)]) -> Vec<(Str
         .collect()
 }
 
+/// `v` to the step's precision, trailing zeros dropped.
+pub fn trim_num(v: f64, step: f64) -> String {
+    let places = if step >= 1.0 {
+        0
+    } else if step >= 0.1 {
+        1
+    } else {
+        2
+    };
+    let s = format!("{v:.places$}");
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_owned()
+    } else {
+        s
+    }
+}
+
+/// How a slider reads its value out: number and unit, localised where the
+/// unit has a message.
+fn unit_text(locale: Locale, v: f64, step: f64, unit: &str) -> String {
+    let n = trim_num(v, step);
+    match unit {
+        "s" => I18N.tr_in(
+            locale,
+            "playback-after-delay-value",
+            &[("seconds", n.into())],
+        ),
+        "ms" => I18N.tr_in(locale, "common-ms", &[("ms", n.into())]),
+        "%" | "×" | "" => format!("{n}{unit}"),
+        _ => format!("{n} {unit}"),
+    }
+}
+
+/// Words for a slider value ("Off", "Skin default"); `None` reads out the
+/// number and unit.
+pub type Readout = fn(Locale, f64) -> Option<String>;
+
+/// Width the readout beside a slider keeps, so the tracks line up.
+const READOUT_W: f32 = 84.0;
+
 pub fn slider(
     ui: Ui,
     range: (f64, f64, f64),
-    unit: &str,
+    unit: &'static str,
+    get: fn(&Settings) -> f64,
+    set: fn(&mut Settings, f64),
+) -> AnyView {
+    slider_with(ui, range, unit, |_, _| None, get, set)
+}
+
+/// A 0–1 value shown as a percentage.
+pub fn percent(ui: Ui, get: fn(&Settings) -> f64, set: fn(&mut Settings, f64)) -> AnyView {
+    slider_with(
+        ui,
+        (0.0, 1.0, 0.01),
+        "",
+        |_, v| Some(format!("{}%", (v * 100.0).round())),
+        get,
+        set,
+    )
+}
+
+/// A slider with its value read out beside it, worded by `readout`.
+pub fn slider_with(
+    ui: Ui,
+    range: (f64, f64, f64),
+    unit: &'static str,
+    readout: Readout,
     get: fn(&Settings) -> f64,
     set: fn(&mut Settings, f64),
 ) -> AnyView {
     let (min, max, step) = range;
-    widget(Stack::row(0.0).width(LengthSpec::Px(240.0)))
-        .children(
+    let text = move || {
+        let v = ui.settings.with(|x| get(x)).clamp(min, max);
+        let locale = ui.locale.get();
+        readout(locale, v).unwrap_or_else(|| unit_text(locale, v, step, unit))
+    };
+    widget(
+        Stack::row(8.0)
+            .width(LengthSpec::Px(240.0))
+            .align(AlignSpec::Center),
+    )
+    .children((
+        widget(Stack::row(0.0).grow(1.0).shrink(1.0)).children(
             widget(
                 RangeField::new(
                     get(&ui.settings.get_untracked()).clamp(min, max),
@@ -322,7 +472,7 @@ pub fn slider(
                     max,
                     step,
                 )
-                .unit(unit.to_owned())
+                .show_value(false)
                 .show_label(false),
             )
             .bind(move |r: &mut RangeField| {
@@ -335,7 +485,89 @@ pub fn slider(
                 let v = e.value;
                 cx.dispatch_program_all(edit(move |s| set(s, v)));
             }),
+        ),
+        widget(
+            Text::new(String::new())
+                .style({
+                    let mut st = text_style(12.0, 500);
+                    let l = Arc::make_mut(&mut st.layout);
+                    l.width = Some(LengthSpec::Px(READOUT_W));
+                    l.white_space_nowrap = true;
+                    st
+                })
+                .color(SemanticColorRole::Muted),
         )
+        .bind(move |t: &mut Text| {
+            let s = text();
+            if t.value != s {
+                t.value = s;
+            }
+        }),
+    ))
+    .into_any()
+}
+
+/// A choice among a few short options, all in view: a segmented control.
+pub fn segmented(
+    ui: Ui,
+    options: Vec<(String, String)>,
+    get: impl Fn(&Settings) -> String + Send + Sync + Copy + 'static,
+    set: impl Fn(&mut Settings, &str) + Send + Sync + Copy + 'static,
+) -> AnyView {
+    let opts: Vec<AnyView> = options
+        .into_iter()
+        .map(|(value, text)| {
+            let current = value.clone();
+            segmented_option(text)
+                .selected(move || ui.settings.with(|s| get(s)) == current)
+                .on_cx(move |_, _: &SegmentedOptionChosen, cx| {
+                    let v = value.clone();
+                    cx.dispatch_program_all(edit(move |s| set(s, &v)));
+                })
+                .into_any()
+        })
+        .collect();
+    widget(SegmentedControl::new().size(ControlSize::Small))
+        .children(opts)
+        .into_any()
+}
+
+/// A destructive action asked twice: `trigger` arms it, then the question
+/// shows with Cancel and a danger button that sends `msg`.
+pub fn confirm(
+    ui: Ui,
+    question: String,
+    ok_label: String,
+    trigger: impl FnOnce(Signal<bool>) -> AnyView,
+    msg: impl Fn() -> Msg + Send + 'static,
+) -> AnyView {
+    let armed = signal(false);
+    widget(Stack::row(8.0).align(AlignSpec::Center))
+        .children((
+            widget(Stack::row(0.0).align(AlignSpec::Center))
+                .visible(move || !armed.get())
+                .children(trigger(armed)),
+            widget(Stack::row(8.0).align(AlignSpec::Center).wrap(true))
+                .visible(move || armed.get())
+                .children((
+                    widget(
+                        Text::new(question)
+                            .style(text_style(12.0, 500))
+                            .color(SemanticColorRole::Warning),
+                    ),
+                    widget(Button::new(ui.now_t("common-cancel")).size(ControlSize::Small))
+                        .on(move |_: &Activate| armed.set(false)),
+                    widget(
+                        Button::new(ok_label)
+                            .kind(ButtonKind::Danger)
+                            .size(ControlSize::Small),
+                    )
+                    .on_cx(move |_, _: &Activate, cx| {
+                        armed.set(false);
+                        cx.dispatch_program_all(msg());
+                    }),
+                )),
+        ))
         .into_any()
 }
 

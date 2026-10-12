@@ -136,10 +136,14 @@ general-presence = 動作
 general-presence-resident = 常に表示
 general-presence-summon = ショートカットで呼び出す
 general-presence-hint = 呼び出しモードでは送信または Esc で自動的に隠れます
+general-input = 入力
 general-mode = 入力モード
 general-send-key = 送信キー
 general-send-enter = Enter で送信、Shift+Enter で改行
 general-send-ctrl-enter = Ctrl+Enter で送信、Enter で改行
+general-send-key-enter = Enter
+general-send-key-ctrl-enter = Ctrl+Enter
+general-send-key-hint = もう一方の組み合わせで改行します
 general-autostart = ログイン時に起動
 general-updates = 更新を自動確認
 
@@ -152,6 +156,7 @@ playback-punct = 句読点で間を取る
 playback-punct-hint = 読点・句点・三点リーダーの後で少し止まります
 playback-entrance = 文字の登場
 playback-after = 再生後
+playback-flow = セリフの進行
 playback-after-hold = 表示したまま
 playback-after-fade = フェードアウト
 playback-after-clear = すぐに消す
@@ -164,10 +169,14 @@ playback-queue = 再生中に送信したとき
 playback-queue-replace = すぐに置き換える
 playback-queue-finish = 今のセリフを表示しきってから
 playback-queue-queue = 続行キーまで待機
+playback-queue-replace-short = 置き換え
+playback-queue-finish-short = 最後まで表示
+playback-queue-queue-short = 待機
 playback-reduced = 動きを減らす
 playback-reduced-hint = 文字ごとの動きと画面揺れをオフにします
 playback-stagger = ミラー時の文字間隔
 playback-sound = タイプ音
+playback-audio = サウンド
 playback-volume = 全体の音量
 playback-volume-typing = タイプ音の音量
 playback-volume-effects = 効果音の音量
@@ -176,6 +185,7 @@ playback-device-default = システムの既定
 
 ## スキン
 skins-active = 使用中のスキン
+skins-library = スキン一覧
 skins-import = スキンを読み込む…
 skins-export = 書き出す…
 skins-duplicate = 複製して編集
@@ -202,6 +212,7 @@ skins-override-page-auto = 自動ページ送り
 skins-override-page-auto-hint = ページ送りモードで満ページ後に待つ秒数。0 は続行キーを待つ
 skins-override-reset = スキンの既定に戻す
 skins-chrome = 外観
+skins-interface = インターフェース
 skins-chrome-skin = スキンに従う
 skins-chrome-system = システムに従う
 skins-chrome-light = ライト
@@ -264,6 +275,7 @@ history-hide-latest-always = 隠す
 history-hide-latest-never = 隠さない
 history-clear = 履歴を消去
 history-clear-confirm = この配信の履歴をすべて消去しますか？
+history-session = この配信の履歴
 history-empty = 送信したセリフがここに表示されます
 
 ## ショートカット
@@ -281,6 +293,11 @@ hotkeys-ok = 登録済み
 hotkeys-conflict-os = 他のアプリが使用中
 hotkeys-conflict-dup = 「{ $action }」と重複
 hotkeys-unsafe = 単独キーは通常の入力を妨げます。Ctrl・Alt・Shift を組み合わせてください
+hotkeys-badge-dup = 重複
+hotkeys-badge-conflict = 競合
+hotkeys-badge-unsafe = 安全でない
+hotkeys-click-to-set = クリックして設定
+hotkeys-press-keys = キーを押す · Esc で取消
 hotkeys-local = 入力ウィンドウ内のショートカット
 hotkeys-local-hint = Ctrl+B/I/U で書式、Ctrl+↑/↓ で送信済みのセリフを呼び出し、Esc で入力を隠します
 
@@ -350,11 +367,13 @@ assets-stickers = スタンプのフォルダ
 assets-stickers-hint = フォルダ内の画像がスタンプになります。フォルダ名がライブラリ名です
 assets-add-folder = フォルダを追加…
 assets-remove = 削除
+assets-remove-folder-confirm = このフォルダーをスタンプから外しますか？
 assets-phrases = 定型文
 assets-phrase-label = 名前
 assets-phrase-markup = 内容（マークアップ可）
 assets-phrase-send = そのまま送信
 assets-phrase-add = 定型文を追加
+assets-phrase-remove-confirm = このフレーズを削除しますか？
 assets-phrase-hotkey = ショートカット
 
 ## 情報
@@ -395,6 +414,7 @@ common-browse = 参照…
 common-copied = コピーしました
 common-error = エラーが発生しました
 common-ms = { $ms } ミリ秒
+common-skin-default = スキンに従う
 
 ## エラーと通知
 err-settings-quarantined = 設定ファイルが壊れていたため { $path } に退避し、既定の設定を使用しています

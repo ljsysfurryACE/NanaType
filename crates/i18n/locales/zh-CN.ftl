@@ -136,10 +136,14 @@ general-presence = 出现方式
 general-presence-resident = 常驻
 general-presence-summon = 快捷键唤出
 general-presence-hint = 唤出模式下，发送或按 Esc 后输入框自动隐藏
+general-input = 输入
 general-mode = 输入模式
 general-send-key = 发送键
 general-send-enter = Enter 发送，Shift+Enter 换行
 general-send-ctrl-enter = Ctrl+Enter 发送，Enter 换行
+general-send-key-enter = Enter
+general-send-key-ctrl-enter = Ctrl+Enter
+general-send-key-hint = 另一种组合用于换行
 general-autostart = 开机启动
 general-updates = 自动检查更新
 
@@ -152,6 +156,7 @@ playback-punct = 标点停顿
 playback-punct-hint = 逗号、句号和省略号后稍作停顿
 playback-entrance = 文字出场
 playback-after = 播放结束后
+playback-flow = 台词流转
 playback-after-hold = 保持显示
 playback-after-fade = 渐隐消失
 playback-after-clear = 直接清除
@@ -164,10 +169,14 @@ playback-queue = 正在播放时发送新台词
 playback-queue-replace = 立即替换
 playback-queue-finish = 先完整显示当前句
 playback-queue-queue = 排队等待继续键
+playback-queue-replace-short = 立即替换
+playback-queue-finish-short = 先播完
+playback-queue-queue-short = 排队
 playback-reduced = 减少动态效果
 playback-reduced-hint = 关闭逐字动效与震屏，适合对动态敏感的观众
 playback-stagger = 镜像模式字间隔
 playback-sound = 打字音效
+playback-audio = 声音
 playback-volume = 主音量
 playback-volume-typing = 打字音量
 playback-volume-effects = 音效音量
@@ -176,6 +185,7 @@ playback-device-default = 系统默认
 
 ## 皮肤
 skins-active = 当前皮肤
+skins-library = 皮肤库
 skins-import = 导入皮肤…
 skins-export = 导出…
 skins-duplicate = 复制为可编辑
@@ -202,6 +212,7 @@ skins-override-page-auto = 满页自动翻页
 skins-override-page-auto-hint = 分页模式下满一页后等待的秒数；0 表示等继续键
 skins-override-reset = 恢复皮肤默认
 skins-chrome = 界面外观
+skins-interface = 界面
 skins-chrome-skin = 跟随皮肤
 skins-chrome-system = 跟随系统
 skins-chrome-light = 浅色
@@ -264,6 +275,7 @@ history-hide-latest-always = 隐藏
 history-hide-latest-never = 不隐藏
 history-clear = 清空历史记录
 history-clear-confirm = 清空本次的全部历史记录？
+history-session = 本场历史记录
 history-empty = 发送的台词会显示在这里
 
 ## 快捷键
@@ -281,6 +293,11 @@ hotkeys-ok = 已注册
 hotkeys-conflict-os = 被其他程序占用
 hotkeys-conflict-dup = 与「{ $action }」重复
 hotkeys-unsafe = 单个按键会影响正常打字，请加上 Ctrl、Alt 或 Shift
+hotkeys-badge-dup = 重复
+hotkeys-badge-conflict = 冲突
+hotkeys-badge-unsafe = 不安全
+hotkeys-click-to-set = 点击设置
+hotkeys-press-keys = 请按下按键 · Esc 取消
 hotkeys-local = 输入框内快捷键
 hotkeys-local-hint = Ctrl+B/I/U 设置样式，Ctrl+↑/↓ 调出已发送的台词，Esc 隐藏输入框
 
@@ -350,11 +367,13 @@ assets-stickers = 贴纸目录
 assets-stickers-hint = 目录中的图片成为贴纸，文件夹名即贴纸库名
 assets-add-folder = 添加目录…
 assets-remove = 移除
+assets-remove-folder-confirm = 从贴纸中移除这个文件夹？
 assets-phrases = 快捷短语
 assets-phrase-label = 名称
 assets-phrase-markup = 内容（支持标记）
 assets-phrase-send = 直接发送
 assets-phrase-add = 添加短语
+assets-phrase-remove-confirm = 删除这条短语？
 assets-phrase-hotkey = 快捷键
 
 ## 关于
@@ -395,6 +414,7 @@ common-browse = 浏览…
 common-copied = 已复制
 common-error = 出错了
 common-ms = { $ms } 毫秒
+common-skin-default = 跟随皮肤
 
 ## 错误与提示
 err-settings-quarantined = 设置文件已损坏，已备份到 { $path } 并使用默认设置
