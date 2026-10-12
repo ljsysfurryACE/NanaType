@@ -297,6 +297,27 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         );
     }
 
+    // Pages taller than the window, whole: the skin grid and the history
+    // page's last row.
+    for (page, h) in [
+        (settings::Page::Skins, 1500),
+        (settings::Page::History, 1100),
+    ] {
+        ui.page.set(page);
+        shot(
+            &format!("settings-{page:?}-full"),
+            out,
+            920,
+            h,
+            theme.clone(),
+            |doc, id| {
+                doc.context_mut()
+                    .mount_view_root(id, move || settings::settings_window(ui))
+                    .unwrap();
+            },
+        );
+    }
+
     // An empty draft shows the editor's placeholder.
     ui.draft.set(Arc::new(Document::new()));
     ui.editor_value.set(nana_ui_core::RichText::new(""));

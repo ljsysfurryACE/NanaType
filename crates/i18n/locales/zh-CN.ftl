@@ -535,3 +535,15 @@ int-vts-authorized = 已授权
 int-vts-map-empty = 连接并授权后即可列出你的 VTS 热键
 skins-more = 更多操作
 ## end wave3-settings
+
+## wave4-skins
+skins-view-grid = 卡片
+skins-view-list = 列表
+windows-lock-locked-short = 锁定
+windows-lock-tip = 锁定：点击穿透到下层窗口。可交互：可以点击和滚动。调整布局：拖动以移动和缩放。
+windows-background-tip = 透明：为 OBS 保留透明度。色键：用绿色填满窗口，供不支持透明度的捕获方式抠像。
+windows-reset-tip = 重置按钮会把窗口移回皮肤设定的位置，并恢复皮肤的尺寸
+windows-input-na = “—”表示不适用：输入框始终可交互，也不会被捕获。
+history-window-link = 窗口与捕获
+history-window-link-hint = 显示、锁定历史记录窗口并调整尺寸，或发送到 OBS
+## end wave4-skins

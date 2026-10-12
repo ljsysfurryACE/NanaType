@@ -689,212 +689,45 @@ fn playback(ui: Ui) -> AnyView {
 fn skins(ui: Ui) -> AnyView {
     let filter: Signal<Option<String>> = signal(None);
     let previewing: Signal<Option<String>> = signal(None);
+    // Cards with thumbnails by default; the list stays for skins whose card
+    // cannot say enough (an author's broken skin, a long description).
+    let grid: Signal<bool> = signal(true);
     let list = dynamic(
         move || {
             (
                 ui.skins.with(|s| Arc::as_ptr(s) as usize),
                 ui.settings.with(|s| s.skin.id.clone()),
                 filter.get(),
+                grid.get(),
             )
         },
-        move |(_, active, shown)| {
+        move |(_, active, shown, grid)| {
             let locale = ui.locale.get_untracked();
-            let rows: Vec<AnyView> = ui
-                .skins
-                .get_untracked()
+            let skins = ui.skins.get_untracked();
+            let rows = skins
                 .iter()
-                .filter(|skin| matches_filter(skin, shown.as_deref()))
-                .map(|skin| {
-                    let id = skin.id.clone();
-                    let selected = skin.id == *active;
-                    let swatch = |color: [f32; 4]| {
-                        widget(
-                            Stack::row(0.0)
-                                .width(LengthSpec::Px(14.0))
-                                .height(LengthSpec::Px(14.0))
-                                .outline(SemanticColorRole::BorderStrong, 1.0)
-                                .with_layout(move |l| {
-                                    l.background = Some(color);
-                                    // A dot: the pill radius.
-                                    l.border_radius = Some(7.0);
-                                }),
-                        )
-                        .into_any()
-                    };
-                    let detail = match &skin.error {
-                        Some(e) => format!("{} · {e}", ui.now_t("skins-broken")),
-                        None if !skin.description.is_empty() && skin.builtin => {
-                            skin.description.clone()
-                        }
-                        None if skin.builtin => ui.now_t("skins-builtin"),
-                        None => format!(
-                            "{} · {}",
-                            I18N.tr_in(
-                                ui.locale.get_untracked(),
-                                "skins-by",
-                                &[("author", skin.author.as_str().into())]
-                            ),
-                            I18N.tr_in(
-                                ui.locale.get_untracked(),
-                                "skins-version",
-                                &[("version", skin.version.as_str().into())]
-                            )
-                        ),
-                    };
-                    let usable = skin.error.is_none();
-                    let (eid, did, rid) = (id.clone(), id.clone(), id.clone());
-                    let folder = skin.folder.clone();
-                    let builtin = skin.builtin;
-                    let looked = id.clone();
-                    let previewed = move || {
-                        previewing.with(|p| match p {
-                            Some(p) => *p == looked,
-                            None => ui.settings.with(|s| s.skin.id == looked),
-                        })
-                    };
-                    let menu_open = signal(false);
-                    // Duplicate, export, folder and delete share one "⋯"
-                    // menu; delete still asks before it acts.
-                    let menu = move |armed: Option<Signal<bool>>| {
-                        let mut items = vec![
-                            menu_item(ui, menu_open, "skins-duplicate", ti::COPY, {
-                                let id = did.clone();
-                                move || Msg::DuplicateSkin(id.clone())
-                            }),
-                            menu_item(ui, menu_open, "skins-export", ti::FILE_EXPORT, {
-                                let id = eid.clone();
-                                move || Msg::ExportSkin(id.clone())
-                            }),
-                        ];
-                        if let Some(f) = folder.clone() {
-                            items.push(menu_item(
-                                ui,
-                                menu_open,
-                                "skins-open-folder",
-                                ti::FOLDER_OPEN,
-                                move || Msg::OpenFolder(f.clone()),
-                            ));
-                        }
-                        if let Some(armed) = armed {
-                            items.push(
-                                widget(
-                                    ActionMenuItem::new(ui.now_t("skins-delete"))
-                                        .leading(ti::TRASH)
-                                        .danger(true),
-                                )
-                                .on(move |_: &Activate| {
-                                    menu_open.set(false);
-                                    armed.set(true);
-                                })
-                                .into_any(),
-                            );
-                        }
-                        widget(
-                            ActionMenu::new()
-                                .trigger_icon(ti::DOTS, ui.now_t("skins-more"))
-                                .bare_trigger(true),
-                        )
-                        .bind(move |m: &mut ActionMenu| m.popover.open = menu_open.get())
-                        .on(move |e: &PopoverToggled| menu_open.set(e.open))
-                        .on(move |_: &PopoverClosed| menu_open.set(false))
-                        .children(items)
-                        .into_any()
-                    };
-                    let actions = if builtin {
-                        menu(None)
-                    } else {
-                        confirm(
-                            ui,
-                            I18N.tr_in(
-                                locale,
-                                "skins-delete-confirm",
-                                &[("name", skin.name.as_str().into())],
-                            ),
-                            ui.now_t("skins-delete"),
-                            move |armed| menu(Some(armed)),
-                            move || Msg::DeleteSkin(rid.clone()),
-                        )
-                    };
-                    let use_id = id.clone();
-                    let pick_id = id.clone();
-                    let trailing = widget(Stack::row(8.0).align(AlignSpec::Center)).children((
-                        selected.then(|| {
-                            widget(
-                                StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success)
-                                    .compact(true),
-                            )
+                .filter(|skin| matches_filter(skin, shown.as_deref()));
+            if *grid {
+                let cards: Vec<AnyView> = rows
+                    .map(|skin| skin_card(ui, skin, skin.id == *active, previewing, locale))
+                    .collect();
+                widget(
+                    Stack::row(GRID_GAP)
+                        .wrap(true)
+                        .padding_xy(INSET, 0.0)
+                        .with_layout(|l| {
+                            l.row_gap = Some(LengthSpec::Px(GRID_GAP));
+                            l.padding_bottom = Some(LengthSpec::Px(INSET));
                         }),
-                        (!selected && usable).then(|| {
-                            widget(crate::skin_theme::cta(
-                                Button::new(ui.now_t("common-apply"))
-                                    .kind(ButtonKind::Primary)
-                                    .size(ControlSize::Small),
-                            ))
-                            .visible(previewed.clone())
-                            .on_cx(move |_, _: &Activate, cx| {
-                                let id = use_id.clone();
-                                cx.dispatch_program_all(edit(move |s| s.skin.id = id));
-                            })
-                        }),
-                        actions,
-                    ));
-                    // The current skin keeps a 3px accent bar; the row being
-                    // previewed takes the selected fill.
-                    widget(
-                        Stack::row(0.0)
-                            .width(LengthSpec::Fill)
-                            .with_layout(|l| l.position = PositionSpec::Relative),
-                    )
-                    .children((
-                        widget(
-                            ListItem::new(skin.name.clone())
-                                .style({
-                                    let mut st = ListItem::new("").style;
-                                    let l = Arc::make_mut(&mut st.layout);
-                                    l.flex_grow = Some(1.0);
-                                    l.flex_shrink = Some(1.0);
-                                    l.min_width = Some(LengthSpec::Px(0.0));
-                                    l.padding_top = Some(LengthSpec::Px(8.0));
-                                    l.padding_bottom = Some(LengthSpec::Px(8.0));
-                                    st
-                                })
-                                .auto_height(true),
-                        )
-                        .bind(move |i: &mut ListItem| i.selected = previewed())
-                        .on(move |_: &Activate| {
-                            // A skin that does not load has nothing to show.
-                            if usable {
-                                previewing.set(Some(pick_id.clone()));
-                            }
-                        })
-                        .leading(widget(Stack::row(4.0)).children((
-                            swatch(skin.box_color),
-                            swatch(skin.text_color),
-                            swatch(skin.accent),
-                        )))
-                        .content(
-                            widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
-                                widget(Stack::row(6.0).align(AlignSpec::Center))
-                                    .children((label(skin.name.clone()), badges(locale, skin))),
-                                hint(detail),
-                            )),
-                        )
-                        .trailing(trailing),
-                        widget({
-                            let bar = Stack::column(0.0)
-                                .width(LengthSpec::Px(3.0))
-                                .with_layout(accent_bar_layout);
-                            if selected {
-                                bar.surface(SemanticColorRole::Accent)
-                            } else {
-                                bar
-                            }
-                        }),
-                    ))
-                    .into_any()
-                })
-                .collect();
-            widget(Stack::column(0.0)).children(rows).into_any()
+                )
+                .children(cards)
+                .into_any()
+            } else {
+                let rows: Vec<AnyView> = rows
+                    .map(|skin| skin_list_row(ui, skin, skin.id == *active, previewing, locale))
+                    .collect();
+                widget(Stack::column(0.0)).children(rows).into_any()
+            }
         },
     );
     let fallback = ui.skin.get_untracked();
@@ -910,7 +743,7 @@ fn skins(ui: Ui) -> AnyView {
                 "skins-library",
                 vec![
                     widget(Stack::column(0.0).padding_xy(16.0, 10.0))
-                        .children(skin_filters(ui, filter))
+                        .children(skin_filters(ui, filter, grid))
                         .into_any(),
                     list.into_any(),
                 ],
@@ -1087,6 +920,395 @@ fn menu_item(
         .into_any()
 }
 
+/// Space between skin cards.
+const GRID_GAP: f32 = 12.0;
+/// Height of a card's thumbnail well.
+const THUMB_H: f32 = 76.0;
+
+/// Whether skin `id` is the one previewed (the active one until another is
+/// picked), tracked.
+fn previewed(
+    ui: Ui,
+    previewing: Signal<Option<String>>,
+    id: String,
+) -> impl Fn() -> bool + Clone + Send + 'static {
+    move || {
+        previewing.with(|p| match p {
+            Some(p) => *p == id,
+            None => ui.settings.with(|s| s.skin.id == id),
+        })
+    }
+}
+
+/// The solid Apply button that makes skin `id` the active one, shown while
+/// `shown` holds.
+fn apply_button(ui: Ui, id: String, shown: impl Fn() -> bool + Send + 'static) -> AnyView {
+    widget(crate::skin_theme::cta(
+        Button::new(ui.now_t("common-apply"))
+            .kind(ButtonKind::Primary)
+            .size(ControlSize::Small),
+    ))
+    .visible(shown)
+    .on_cx(move |_, _: &Activate, cx| {
+        let id = id.clone();
+        cx.dispatch_program_all(edit(move |s| s.skin.id = id));
+    })
+    .into_any()
+}
+
+/// A skin's "⋯" menu: duplicate, export, open folder and, for a skin the
+/// user added, delete (asked before it acts).
+fn skin_actions(ui: Ui, skin: &SkinRow, locale: Locale) -> AnyView {
+    let (eid, did, rid) = (skin.id.clone(), skin.id.clone(), skin.id.clone());
+    let folder = skin.folder.clone();
+    let menu_open = signal(false);
+    let menu = move |armed: Option<Signal<bool>>| {
+        let mut items = vec![
+            menu_item(ui, menu_open, "skins-duplicate", ti::COPY, {
+                let id = did.clone();
+                move || Msg::DuplicateSkin(id.clone())
+            }),
+            menu_item(ui, menu_open, "skins-export", ti::FILE_EXPORT, {
+                let id = eid.clone();
+                move || Msg::ExportSkin(id.clone())
+            }),
+        ];
+        if let Some(f) = folder.clone() {
+            items.push(menu_item(
+                ui,
+                menu_open,
+                "skins-open-folder",
+                ti::FOLDER_OPEN,
+                move || Msg::OpenFolder(f.clone()),
+            ));
+        }
+        if let Some(armed) = armed {
+            items.push(
+                widget(
+                    ActionMenuItem::new(ui.now_t("skins-delete"))
+                        .leading(ti::TRASH)
+                        .danger(true),
+                )
+                .on(move |_: &Activate| {
+                    menu_open.set(false);
+                    armed.set(true);
+                })
+                .into_any(),
+            );
+        }
+        widget(
+            ActionMenu::new()
+                .trigger_icon(ti::DOTS, ui.now_t("skins-more"))
+                .bare_trigger(true),
+        )
+        .bind(move |m: &mut ActionMenu| m.popover.open = menu_open.get())
+        .on(move |e: &PopoverToggled| menu_open.set(e.open))
+        .on(move |_: &PopoverClosed| menu_open.set(false))
+        .children(items)
+        .into_any()
+    };
+    if skin.builtin {
+        menu(None)
+    } else {
+        confirm(
+            ui,
+            I18N.tr_in(
+                locale,
+                "skins-delete-confirm",
+                &[("name", skin.name.as_str().into())],
+            ),
+            ui.now_t("skins-delete"),
+            move |armed| menu(Some(armed)),
+            move || Msg::DeleteSkin(rid.clone()),
+        )
+    }
+}
+
+/// One skin in the list view: swatches, name, badges and its detail line.
+fn skin_list_row(
+    ui: Ui,
+    skin: &SkinRow,
+    selected: bool,
+    previewing: Signal<Option<String>>,
+    locale: Locale,
+) -> AnyView {
+    let swatch = |color: [f32; 4]| {
+        widget(
+            Stack::row(0.0)
+                .width(LengthSpec::Px(14.0))
+                .height(LengthSpec::Px(14.0))
+                .outline(SemanticColorRole::BorderStrong, 1.0)
+                .with_layout(move |l| {
+                    l.background = Some(color);
+                    // A dot: the pill radius.
+                    l.border_radius = Some(7.0);
+                }),
+        )
+        .into_any()
+    };
+    let detail = match &skin.error {
+        Some(e) => format!("{} · {e}", ui.now_t("skins-broken")),
+        None if !skin.description.is_empty() && skin.builtin => skin.description.clone(),
+        None if skin.builtin => ui.now_t("skins-builtin"),
+        None => format!(
+            "{} · {}",
+            I18N.tr_in(
+                locale,
+                "skins-by",
+                &[("author", skin.author.as_str().into())]
+            ),
+            I18N.tr_in(
+                locale,
+                "skins-version",
+                &[("version", skin.version.as_str().into())]
+            )
+        ),
+    };
+    let usable = skin.error.is_none();
+    let previewed = previewed(ui, previewing, skin.id.clone());
+    let pick_id = skin.id.clone();
+    let trailing = widget(Stack::row(8.0).align(AlignSpec::Center)).children((
+        selected.then(|| {
+            widget(StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success).compact(true))
+        }),
+        (!selected && usable).then(|| apply_button(ui, skin.id.clone(), previewed.clone())),
+        skin_actions(ui, skin, locale),
+    ));
+    // The current skin keeps a 3px accent bar; the row being previewed
+    // takes the selected fill.
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Fill)
+            .with_layout(|l| l.position = PositionSpec::Relative),
+    )
+    .children((
+        widget(
+            ListItem::new(skin.name.clone())
+                .style({
+                    let mut st = ListItem::new("").style;
+                    let l = Arc::make_mut(&mut st.layout);
+                    l.flex_grow = Some(1.0);
+                    l.flex_shrink = Some(1.0);
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.padding_top = Some(LengthSpec::Px(8.0));
+                    l.padding_bottom = Some(LengthSpec::Px(8.0));
+                    st
+                })
+                .auto_height(true),
+        )
+        .bind(move |i: &mut ListItem| i.selected = previewed())
+        .on(move |_: &Activate| {
+            // A skin that does not load has nothing to show.
+            if usable {
+                previewing.set(Some(pick_id.clone()));
+            }
+        })
+        .leading(widget(Stack::row(4.0)).children((
+            swatch(skin.box_color),
+            swatch(skin.text_color),
+            swatch(skin.accent),
+        )))
+        .content(
+            widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
+                widget(Stack::row(6.0).align(AlignSpec::Center))
+                    .children((label(skin.name.clone()), badges(locale, skin))),
+                hint(detail),
+            )),
+        )
+        .trailing(trailing),
+        widget({
+            let bar = Stack::column(0.0)
+                .width(LengthSpec::Px(3.0))
+                .with_layout(accent_bar_layout);
+            if selected {
+                bar.surface(SemanticColorRole::Accent)
+            } else {
+                bar
+            }
+        }),
+    ))
+    .into_any()
+}
+
+/// Text on one line, cut with an ellipsis where it does not fit.
+fn one_line(size: f32, weight: u16) -> nana_ui::runtime::NodeStyle {
+    let mut st = text_style(size, weight);
+    let l = Arc::make_mut(&mut st.layout);
+    l.white_space_nowrap = true;
+    l.text_overflow_ellipsis = true;
+    l.min_width = Some(LengthSpec::Px(0.0));
+    l.flex_grow = Some(1.0);
+    l.flex_shrink = Some(1.0);
+    st
+}
+
+/// "Light · Classic": the skin's tone and tags on one line.
+fn tag_line(locale: Locale, row: &SkinRow) -> String {
+    let tone = if row.dark { "dark" } else { "light" };
+    std::iter::once(tone)
+        .chain(row.tags.iter().map(String::as_str))
+        .map(|t| tag_label(locale, t))
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+/// One skin in the grid: a thumbnail of its box over its name and tags.
+/// The previewed card takes the selected fill; the current skin carries a
+/// "Current" badge and a 3px accent bar.
+fn skin_card(
+    ui: Ui,
+    skin: &SkinRow,
+    current: bool,
+    previewing: Signal<Option<String>>,
+    locale: Locale,
+) -> AnyView {
+    let usable = skin.error.is_none();
+    let previewed = previewed(ui, previewing, skin.id.clone());
+    let dark = crate::skin_theme::dark_mode(
+        &ui.skin.get_untracked(),
+        ui.settings.with_untracked(|s| s.skin.chrome),
+        false,
+    );
+    let backdrop = BackgroundImage::url(checker_url(dark));
+    let well = widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Fill)
+            .height(LengthSpec::Px(THUMB_H))
+            .align(AlignSpec::Center)
+            .justify(JustifySpec::Center)
+            .radius(nana_ui_core::RadiusTier::Sm)
+            .with_layout(move |l| {
+                l.position = PositionSpec::Relative;
+                l.overflow_x = OverflowSpec::Hidden;
+                l.overflow_y = OverflowSpec::Hidden;
+                l.paint.background_image = Some(backdrop);
+            }),
+    )
+    .children((
+        super::skin_grid::miniature(&super::skin_grid::thumb(skin)),
+        current.then(|| {
+            // On a surface pill, so the badge's tint reads over any box.
+            widget(
+                Stack::row(0.0)
+                    .surface(SemanticColorRole::Surface)
+                    .radius_px(999.0)
+                    .with_layout(|l| {
+                        // Top right, over the miniature: name plates sit top left.
+                        l.position = PositionSpec::Absolute;
+                        l.offset_right = Some(LengthSpec::Px(6.0));
+                        l.offset_top = Some(LengthSpec::Px(6.0));
+                        l.z_index = Some(5);
+                    }),
+            )
+            .children(widget(
+                StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success).compact(true),
+            ))
+        }),
+    ));
+    let (tags, tone) = match &skin.error {
+        Some(_) => (I18N.t_in(locale, "skins-broken"), SemanticColorRole::Danger),
+        None => (tag_line(locale, skin), SemanticColorRole::Muted),
+    };
+    let name_row = widget(
+        Stack::row(6.0)
+            .align(AlignSpec::Center)
+            .width(LengthSpec::Fill),
+    )
+    .children((
+        widget(Text::new(skin.name.clone()).style(one_line(13.0, 500))),
+        (!current && usable).then(|| apply_button(ui, skin.id.clone(), previewed.clone())),
+        skin_actions(ui, skin, locale),
+    ));
+    let pick_id = skin.id.clone();
+    let card = widget(
+        ListItem::new(skin.name.clone())
+            .style({
+                let mut st = ListItem::new("")
+                    .style
+                    .outline(SemanticColorRole::BorderSoft, 1.0)
+                    .radius(nana_ui_core::RadiusTier::Md);
+                st.control_padding_x = None;
+                let l = Arc::make_mut(&mut st.layout);
+                l.width = Some(LengthSpec::Fill);
+                l.padding_left = Some(LengthSpec::Px(8.0));
+                l.padding_right = Some(LengthSpec::Px(8.0));
+                l.padding_top = Some(LengthSpec::Px(8.0));
+                l.padding_bottom = Some(LengthSpec::Px(8.0));
+                st
+            })
+            .auto_height(true),
+    )
+    .bind(move |i: &mut ListItem| i.selected = previewed())
+    .on(move |_: &Activate| {
+        if usable {
+            previewing.set(Some(pick_id.clone()));
+        }
+    })
+    .content(
+        widget(
+            Stack::column(8.0)
+                .grow(1.0)
+                .shrink(1.0)
+                .with_layout(|l| l.min_width = Some(LengthSpec::Px(0.0))),
+        )
+        .children((
+            well,
+            widget(Stack::column(2.0).padding_xy(2.0, 0.0)).children((
+                name_row,
+                widget(Text::new(tags).style(one_line(12.0, 400)).color(tone)),
+            )),
+        )),
+    );
+    widget(Stack::column(0.0).with_layout(|l| {
+        l.position = PositionSpec::Relative;
+        // Three to a row; the half pixel keeps rounding from wrapping one.
+        l.width = Some(crate::ui::surface::calc(
+            100.0 / 3.0,
+            -GRID_GAP * 2.0 / 3.0 - 0.5,
+        ));
+    }))
+    .children((
+        card,
+        current.then(|| {
+            widget(
+                Stack::column(0.0)
+                    .width(LengthSpec::Px(3.0))
+                    .surface(SemanticColorRole::Accent)
+                    .radius_px(2.0)
+                    .with_layout(|l| {
+                        l.position = PositionSpec::Absolute;
+                        l.offset_left = Some(LengthSpec::Px(0.0));
+                        l.offset_top = Some(LengthSpec::Px(14.0));
+                        l.offset_bottom = Some(LengthSpec::Px(14.0));
+                    }),
+            )
+        }),
+    ))
+    .into_any()
+}
+
+/// Grid or list: two icon buttons beside the filters.
+fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
+    let item = |icon: nana_ui::runtime::Icon, key: &str, as_grid: bool| {
+        widget(
+            IconButton::new(icon, ui.now_t(key))
+                .size(ControlSize::Small)
+                .with_tooltip(ui.now_t(key)),
+        )
+        .bind(move |b: &mut IconButton| b.selected = grid.get() == as_grid)
+        .on(move |_: &Activate| grid.set(as_grid))
+        .into_any()
+    };
+    widget(Stack::row(2.0).align(AlignSpec::Center).with_layout(|l| {
+        l.flex_shrink = Some(0.0);
+    }))
+    .children((
+        item(ti::LAYOUT_GRID, "skins-view-grid", true),
+        item(ti::LIST, "skins-view-list", false),
+    ))
+    .into_any()
+}
+
 /// Width the skin preview is scaled down to fit.
 const PREVIEW_W: f32 = 600.0;
 /// Checkerboard showing around the previewed box.
@@ -1140,8 +1362,9 @@ fn matches_filter(row: &SkinRow, filter: Option<&str>) -> bool {
     }
 }
 
-/// Chips that narrow the list: all, light, dark, then every tag in use.
-fn skin_filters(ui: Ui, filter: Signal<Option<String>>) -> AnyView {
+/// Chips that narrow the list: all, light, dark, then every tag in use;
+/// then the grid/list switch.
+fn skin_filters(ui: Ui, filter: Signal<Option<String>>, grid: Signal<bool>) -> AnyView {
     dynamic(
         move || {
             (
@@ -1172,8 +1395,14 @@ fn skin_filters(ui: Ui, filter: Signal<Option<String>>) -> AnyView {
                         .into_any()
                 })
                 .collect();
-            widget(Stack::row(6.0).wrap(true))
-                .children(chips)
+            // The grid/list switch ends the chips' line, flush right on
+            // whichever line it wraps to.
+            widget(Stack::row(6.0).wrap(true).align(AlignSpec::Center))
+                .children((
+                    chips,
+                    widget(Stack::row(0.0).grow(1.0).justify(JustifySpec::End))
+                        .children(view_switch(ui, grid)),
+                ))
                 .into_any()
         },
     )
@@ -1316,131 +1545,270 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
     .into_any()
 }
 
-fn window_section(ui: Ui, kind: WindowKind, title: &'static str) -> AnyView {
-    let get_overlay = move |s: &Settings| kind.overlay(s).cloned().unwrap_or_default();
-    let lock_opts = select_keys(
-        ui,
-        &[
-            ("locked", "windows-lock-locked"),
-            ("interactive", "windows-lock-interactive"),
-            ("edit", "windows-lock-edit"),
-        ],
-    );
-    let bg_opts = select_keys(
-        ui,
-        &[
-            ("transparent", "windows-background-transparent"),
-            ("chroma", "windows-background-chroma"),
-        ],
-    );
-    let mut rows = vec![row(
-        ui,
-        "windows-visible",
-        None,
-        match kind {
-            WindowKind::Input => switch(
-                ui,
-                |s| s.overlays.input.visible,
-                |s, v| s.overlays.input.visible = v,
-            ),
-            WindowKind::Display => switch(
-                ui,
-                |s| s.overlays.display.visible,
-                |s, v| s.overlays.display.visible = v,
-            ),
-            _ => switch(
-                ui,
-                |s| s.overlays.history.visible,
-                |s, v| s.overlays.history.visible = v,
-            ),
-        },
-    )];
-    if kind != WindowKind::Input {
-        rows.push(row(
-            ui,
-            "windows-lock",
-            None,
-            select(
-                ui,
-                lock_opts,
-                move |s| match get_overlay(s).lock {
-                    Lock::Locked => "locked".into(),
-                    Lock::Interactive => "interactive".into(),
-                    Lock::EditLayout => "edit".into(),
-                },
-                move |s, v| {
-                    if let Some(o) = kind.overlay_mut(s) {
-                        o.lock = match v {
-                            "interactive" => Lock::Interactive,
-                            "edit" => Lock::EditLayout,
-                            _ => Lock::Locked,
-                        }
-                    }
-                },
-            ),
-        ));
-        rows.push(row(
-            ui,
-            "windows-background",
-            None,
-            select(
-                ui,
-                bg_opts,
-                move |s| match get_overlay(s).background {
-                    CaptureBackground::Transparent => "transparent".into(),
-                    CaptureBackground::Chroma { .. } => "chroma".into(),
-                },
-                move |s, v| {
-                    if let Some(o) = kind.overlay_mut(s) {
-                        o.background = if v == "chroma" {
-                            CaptureBackground::Chroma {
-                                color: nanatype_model::Rgba8::rgb(0, 255, 0),
-                            }
-                        } else {
-                            CaptureBackground::Transparent
-                        }
-                    }
-                },
-            ),
-        ));
-    }
-    rows.push(row(
-        ui,
-        "windows-on-top",
-        None,
-        match kind {
-            WindowKind::Input => switch(
-                ui,
-                |s| s.overlays.input.always_on_top,
-                |s, v| s.overlays.input.always_on_top = v,
-            ),
-            WindowKind::Display => switch(
-                ui,
-                |s| s.overlays.display.always_on_top,
-                |s, v| s.overlays.display.always_on_top = v,
-            ),
-            _ => switch(
-                ui,
-                |s| s.overlays.history.always_on_top,
-                |s, v| s.overlays.history.always_on_top = v,
-            ),
-        },
-    ));
-    rows.push(row(
-        ui,
-        "windows-reset",
-        None,
-        button(ui, "common-reset", move || Msg::ResetWindow(kind)),
-    ));
-    section(ui, title, rows)
+/// The overlay windows, in the matrix's column order.
+const OVERLAYS: [WindowKind; 3] = [WindowKind::Display, WindowKind::History, WindowKind::Input];
+/// Width of the matrix's row labels.
+const MATRIX_LABEL_W: f32 = 150.0;
+/// Space between the matrix's columns.
+const MATRIX_GAP: f32 = 8.0;
+
+/// A matrix line: a label, then one cell per overlay window.
+fn matrix_row(label: AnyView, cells: [AnyView; 3]) -> AnyView {
+    let cells = cells.map(|cell| {
+        widget(
+            // A third of what the label and the gaps leave, so the columns
+            // line up whatever their cells hold.
+            Stack::row(0.0).align(AlignSpec::Center).with_layout(|l| {
+                l.width = Some(crate::ui::surface::calc(
+                    100.0 / 3.0,
+                    -(MATRIX_LABEL_W + 3.0 * MATRIX_GAP) / 3.0 - 0.5,
+                ));
+                l.flex_shrink = Some(0.0);
+                l.min_width = Some(LengthSpec::Px(0.0));
+            }),
+        )
+        .children(cell)
+        .into_any()
+    });
+    widget(
+        Stack::row(MATRIX_GAP)
+            .align(AlignSpec::Center)
+            .width(LengthSpec::Fill)
+            .padding_xy(INSET, 6.0)
+            .min_height(LengthSpec::Px(ROW_MIN_H)),
+    )
+    .children((
+        widget(
+            Stack::row(4.0)
+                .align(AlignSpec::Center)
+                .width(LengthSpec::Px(MATRIX_LABEL_W))
+                .with_layout(|l| l.flex_shrink = Some(0.0)),
+        )
+        .children(label),
+        cells.into_iter().collect::<Vec<_>>(),
+    ))
+    .into_any()
 }
 
+/// A row label, with an info mark whose tooltip says what the options do.
+fn matrix_label(ui: Ui, key: &str, tip: Option<&str>) -> AnyView {
+    widget(Stack::row(2.0).align(AlignSpec::Center))
+        .children((
+            widget(Text::new(ui.now_t(key)).style(text_style(13.0, 500))),
+            tip.map(|tip| {
+                widget(
+                    IconButton::new(ti::INFO_CIRCLE, ui.now_t(tip))
+                        .size(ControlSize::Small)
+                        .kind(ButtonKind::Ghost)
+                        .with_tooltip(ui.now_t(tip)),
+                )
+            }),
+        ))
+        .into_any()
+}
+
+/// "—": the setting does not apply to this window.
+fn not_applicable() -> AnyView {
+    widget(
+        Text::new("—")
+            .style(text_style(13.0, 400))
+            .color(SemanticColorRole::Faint),
+    )
+    .into_any()
+}
+
+/// A switch bound to one field of `kind`'s overlay settings.
+fn overlay_switch(
+    ui: Ui,
+    kind: WindowKind,
+    get: fn(&nanatype_settings::OverlaySettings) -> bool,
+    set: fn(&mut nanatype_settings::OverlaySettings, bool),
+) -> AnyView {
+    let read = move |s: &Settings| kind.overlay(s).is_some_and(get);
+    widget(Switch::new("", read(&ui.settings.get_untracked())))
+        .bind(move |s: &mut Switch| s.checked = ui.settings.with(|x| read(x)))
+        .on_cx(move |_, e: &ToggleChanged, cx| {
+            let v = e.checked;
+            cx.dispatch_program_all(edit(move |s| {
+                if let Some(o) = kind.overlay_mut(s) {
+                    set(o, v);
+                }
+            }));
+        })
+        .into_any()
+}
+
+/// A select filling its cell, bound to one field of `kind`'s overlay
+/// settings; options are `(value, message key)`.
+fn overlay_select(
+    ui: Ui,
+    kind: WindowKind,
+    options: &[(&'static str, &'static str)],
+    get: fn(&nanatype_settings::OverlaySettings) -> &'static str,
+    set: fn(&mut nanatype_settings::OverlaySettings, &str),
+) -> AnyView {
+    let read = move |s: &Settings| kind.overlay(s).map_or("", get);
+    let opts: Vec<SelectOption> = select_keys(ui, options)
+        .into_iter()
+        .map(|(v, l)| SelectOption::new(v, l))
+        .collect();
+    widget(Stack::row(0.0).width(LengthSpec::Fill))
+        .children(
+            widget(
+                Select::new(Some(read(&ui.settings.get_untracked()).to_owned()))
+                    .options(opts)
+                    .size(ControlSize::Small),
+            )
+            .bind(move |s: &mut Select| {
+                let v: Arc<str> = ui.settings.with(|x| read(x)).into();
+                if s.value.as_ref() != Some(&v) {
+                    s.value = Some(v);
+                }
+            })
+            .on_cx(move |_, e: &SelectChanged, cx| {
+                let v = e.value.to_string();
+                cx.dispatch_program_all(edit(move |s| {
+                    if let Some(o) = kind.overlay_mut(s) {
+                        set(o, &v);
+                    }
+                }));
+            }),
+        )
+        .into_any()
+}
+
+/// The three overlay windows side by side: one line per setting, one
+/// column per window, "—" where a setting does not apply.
 fn windows(ui: Ui) -> AnyView {
+    let header = matrix_row(
+        widget(Stack::row(0.0)).into_any(),
+        OVERLAYS.map(|kind| {
+            let key = match kind {
+                WindowKind::Display => "windows-display",
+                WindowKind::History => "windows-history",
+                _ => "windows-input",
+            };
+            widget(
+                Text::new(ui.now_t(key))
+                    .style(one_line(12.0, 600))
+                    .color(SemanticColorRole::Muted),
+            )
+            .into_any()
+        }),
+    );
+    let show = matrix_row(
+        matrix_label(ui, "windows-visible", None),
+        OVERLAYS.map(|kind| overlay_switch(ui, kind, |o| o.visible, |o, v| o.visible = v)),
+    );
+    let lock = matrix_row(
+        matrix_label(ui, "windows-lock", Some("windows-lock-tip")),
+        OVERLAYS.map(|kind| {
+            if kind == WindowKind::Input {
+                return not_applicable();
+            }
+            overlay_select(
+                ui,
+                kind,
+                &[
+                    ("locked", "windows-lock-locked-short"),
+                    ("interactive", "windows-lock-interactive"),
+                    ("edit", "windows-lock-edit"),
+                ],
+                |o| match o.lock {
+                    Lock::Locked => "locked",
+                    Lock::Interactive => "interactive",
+                    Lock::EditLayout => "edit",
+                },
+                |o, v| {
+                    o.lock = match v {
+                        "interactive" => Lock::Interactive,
+                        "edit" => Lock::EditLayout,
+                        _ => Lock::Locked,
+                    }
+                },
+            )
+        }),
+    );
+    let background = matrix_row(
+        matrix_label(ui, "windows-background", Some("windows-background-tip")),
+        OVERLAYS.map(|kind| {
+            if kind == WindowKind::Input {
+                return not_applicable();
+            }
+            overlay_select(
+                ui,
+                kind,
+                &[
+                    ("transparent", "windows-background-transparent"),
+                    ("chroma", "windows-background-chroma"),
+                ],
+                |o| match o.background {
+                    CaptureBackground::Transparent => "transparent",
+                    CaptureBackground::Chroma { .. } => "chroma",
+                },
+                |o, v| {
+                    o.background = if v == "chroma" {
+                        CaptureBackground::Chroma {
+                            color: nanatype_model::Rgba8::rgb(0, 255, 0),
+                        }
+                    } else {
+                        CaptureBackground::Transparent
+                    }
+                },
+            )
+        }),
+    );
+    let on_top = matrix_row(
+        matrix_label(ui, "windows-on-top", None),
+        OVERLAYS
+            .map(|kind| overlay_switch(ui, kind, |o| o.always_on_top, |o, v| o.always_on_top = v)),
+    );
+    // The size the window was dragged to ("Follow skin" until it is), and
+    // the reset that puts it back where and as big as the skin says.
+    let size = matrix_row(
+        matrix_label(ui, "windows-size", Some("windows-reset-tip")),
+        OVERLAYS.map(|kind| {
+            let text = move || {
+                let size = ui.settings.with(|s| kind.overlay(s).and_then(|o| o.size));
+                match size {
+                    Some([w, h]) => format!("{}×{}", w.round(), h.round()),
+                    None => I18N.t_in(ui.locale.get(), "windows-size-skin"),
+                }
+            };
+            widget(
+                Stack::row(4.0)
+                    .align(AlignSpec::Center)
+                    .width(LengthSpec::Fill),
+            )
+            .children((
+                widget(
+                    Text::new(text())
+                        .style(one_line(12.0, 500))
+                        .color(SemanticColorRole::Muted),
+                )
+                .bind(move |t: &mut Text| {
+                    let s = text();
+                    if t.value != s {
+                        t.value = s;
+                    }
+                }),
+                widget(
+                    IconButton::new(ti::RESTORE, ui.now_t("windows-reset"))
+                        .size(ControlSize::Small)
+                        .with_tooltip(ui.now_t("windows-reset")),
+                )
+                .on_cx(move |_, _: &Activate, cx| {
+                    cx.dispatch_program_all(Msg::ResetWindow(kind));
+                }),
+            ))
+            .into_any()
+        }),
+    );
     widget(Stack::column(0.0))
         .children((
-            window_section(ui, WindowKind::Display, "windows-display"),
-            window_section(ui, WindowKind::History, "windows-history"),
-            window_section(ui, WindowKind::Input, "windows-input"),
+            section(ui, "", vec![header, show, lock, background, on_top, size]),
+            widget(Stack::column(0.0).padding_xy(4.0, 8.0))
+                .children(hint(ui.now_t("windows-input-na"))),
         ))
         .into_any()
 }
@@ -1665,8 +2033,32 @@ fn history(ui: Ui) -> AnyView {
                 ]);
                 rows
             }),
+            // Where the window itself and its capture are set.
+            section(
+                ui,
+                "",
+                vec![row(
+                    ui,
+                    "history-window-link",
+                    Some("history-window-link-hint"),
+                    widget(Stack::row(4.0).align(AlignSpec::Center))
+                        .children((page_link(ui, Page::Windows), page_link(ui, Page::Output)))
+                        .into_any(),
+                )],
+            ),
         ))
         .into_any()
+}
+
+/// "Windows →": a quiet button that opens another settings page.
+fn page_link(ui: Ui, page: Page) -> AnyView {
+    widget(
+        Button::new(format!("{} →", ui.now_t(page.label_key())))
+            .kind(ButtonKind::Ghost)
+            .size(ControlSize::Small),
+    )
+    .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(Msg::SettingsPage(page)))
+    .into_any()
 }
 
 /// The blivechat room: typed freely, applied on Enter or with the button so
