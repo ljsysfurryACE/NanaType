@@ -3,6 +3,7 @@
 
 pub mod danmaku;
 pub mod dialogue;
+pub mod feedback;
 pub mod history;
 pub mod input;
 pub mod overflow;
@@ -26,7 +27,7 @@ use crate::services::hotkeys::HotkeyState;
 
 pub static I18N: LazyLock<I18n> = LazyLock::new(|| I18n::new(Locale::ZhCn));
 
-/// A notice shown in the input window's status line.
+/// A notice, shown as a toast (see [`feedback`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Notice {
     pub id: u64,

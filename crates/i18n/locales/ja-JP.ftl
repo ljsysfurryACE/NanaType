@@ -19,6 +19,22 @@ tray-skin = スキン
 tray-settings = 設定…
 tray-obs-help = OBS の設定方法…
 tray-quit = NanaType を終了
+tray-action-show-input = 入力ウィンドウを表示
+tray-action-hide-input = 入力ウィンドウを隠す
+tray-action-show-display = ダイアログを表示
+tray-action-hide-display = ダイアログを隠す
+tray-action-show-history = 履歴を表示
+tray-action-hide-history = 履歴を隠す
+tray-action-show-chat = コメントパネルを開く
+tray-action-hide-chat = コメントパネルを閉じる
+tray-action-lock = オーバーレイをロック
+tray-action-unlock = オーバーレイのロックを解除
+tray-action-continue = 続行
+tray-action-sample = サンプルを再生
+tray-action-settings = 設定を開く…
+tray-action-obs = OBS を設定…
+tray-tooltip = NanaType — { $mode } · { $skin }
+tray-tooltip-error = NanaType · ⚠ { $message }
 
 ## 入力モード
 mode-compose = 編集して送信
@@ -110,6 +126,10 @@ status-queued = 待機列に追加（{ $position } 件目）
 status-mirror = ミラー中
 status-queued-chip = 待機 { $position }
 status-sent = 送信しました
+empty-phrases = 定型文はまだありません
+empty-stickers = スタンプのフォルダはまだありません
+empty-open-assets = 設定 › 素材 で追加
+empty-vts-hotkeys = VTube Studio のホットキーはまだありません
 
 ## 設定ナビゲーション
 settings-general = 一般

@@ -34,6 +34,7 @@ use crate::services::persist::Persist;
 use crate::services::sounds::{self, Bank};
 use crate::services::tray::Tray;
 use crate::skin_theme;
+use crate::ui::feedback::{self, ToastRequest};
 use crate::ui::{I18N, LinkState, Notice, StickerRow, Ui};
 use crate::windows::{self, WindowKind, WindowManager};
 
@@ -88,7 +89,14 @@ pub struct App {
     skin_families: [Option<String>; 3],
     skin_watch: Option<crate::services::watch::Watch>,
     sticker_watch: Option<crate::services::watch::Watch>,
+    /// Toasts for the host to show in the settings and input windows.
+    pub toasts: Vec<ToastRequest>,
+    /// The latest notice, while it is an error: the tray tooltip shows it.
+    tray_error: Option<(u64, String)>,
 }
+
+/// How long an error stays in the tray tooltip.
+const TRAY_ERROR_SECS: u64 = 30;
 
 fn locale_of(s: &Settings) -> Locale {
     s.general
@@ -216,6 +224,8 @@ impl App {
             skin_families: [None, None, None],
             skin_watch: None,
             sticker_watch: None,
+            toasts: Vec::new(),
+            tray_error: None,
             settings,
         };
         match loaded_settings.note {
@@ -257,6 +267,7 @@ impl App {
             tray.sync(&app.settings);
         }
         app.sync_tray_skins();
+        app.sync_tray();
         SEND_KEY.store(
             matches!(app.settings.general.send_key, SendKey::CtrlEnter) as u8,
             Ordering::Relaxed,
@@ -298,16 +309,103 @@ impl App {
         let id = self.next_notice;
         self.next_notice += 1;
         let mut status = (*self.ui.status.get_untracked()).clone();
-        status.notices.push(Notice { id, text, error });
+        status.notices.push(Notice {
+            id,
+            text: text.clone(),
+            error,
+        });
         if status.notices.len() > 4 {
             status.notices.remove(0);
         }
         self.ui.status.set(Arc::new(status));
+        let tone = if error {
+            nana_ui::ToastTone::Danger
+        } else {
+            nana_ui::ToastTone::Info
+        };
+        self.toasts.push(ToastRequest::new(
+            text.clone(),
+            tone,
+            feedback::NOTICE_MS,
+            true,
+        ));
+        // The tray says the latest error, so it is seen with every window
+        // hidden (summon mode) too.
+        self.tray_error = error.then(|| (id, text));
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_secs(6));
+            std::thread::sleep(Duration::from_millis(feedback::NOTICE_MS));
             ctx.dispatch(Msg::DismissNotice(id));
+            if error {
+                std::thread::sleep(
+                    Duration::from_secs(TRAY_ERROR_SECS)
+                        .saturating_sub(Duration::from_millis(feedback::NOTICE_MS)),
+                );
+                ctx.dispatch(Msg::TrayErrorExpired(id));
+            }
         });
+    }
+
+    /// The input window is on screen (or about to be).
+    pub fn input_visible(&self) -> bool {
+        self.windows.is_open(WindowKind::Input)
+            && windows::desired(WindowKind::Input, &self.skin, &self.settings, self.summoned)
+                .visible
+    }
+
+    /// Tray labels and tooltip for the current state.
+    fn sync_tray(&self) {
+        let Some(tray) = &self.tray else {
+            return;
+        };
+        let s = &self.settings;
+        let locale = self.ui.locale.get_untracked();
+        let skin = self
+            .ui
+            .skins
+            .with_untracked(|rows| {
+                rows.iter()
+                    .find(|r| r.id == s.skin.id)
+                    .map(|r| r.name.clone())
+            })
+            .unwrap_or_else(|| s.skin.id.clone());
+        let locked = s.overlays.display.lock == nanatype_settings::Lock::Locked;
+        let tooltip = crate::services::tray::tooltip(
+            &I18N,
+            locale,
+            s.general.input_mode,
+            &skin,
+            locked,
+            self.tray_error.as_ref().map(|(_, e)| e.as_str()),
+        );
+        let meta = if cfg!(target_os = "macos") {
+            "⌘"
+        } else {
+            "Win"
+        };
+        tray.show(
+            &I18N,
+            crate::services::tray::TrayState {
+                locale,
+                input: windows::desired(WindowKind::Input, &self.skin, s, self.summoned).visible,
+                display: s.overlays.display.visible,
+                history: s.overlays.history.visible,
+                chat: s.integrations.blivechat.panel_open,
+                locked,
+                continue_key: GlobalAction::Continue.get(s).map(|h| h.label(meta)),
+                tooltip,
+            },
+        );
+    }
+
+    /// Tint the system title bars (settings and the chat panel) with the
+    /// chrome.
+    pub fn tint_captions(&self) {
+        for kind in [WindowKind::Settings, WindowKind::Chat] {
+            if let Some(handle) = self.windows.handle(kind) {
+                windows::tint_caption(handle, &self.theme);
+            }
+        }
     }
 
     fn edit_status(&self, f: impl FnOnce(&mut crate::ui::Status)) {
@@ -501,6 +599,7 @@ impl App {
         let dark = skin_theme::dark_mode(&skin, self.settings.skin.chrome, self.system_dark);
         self.theme = skin_theme::compile(&skin, dark);
         self.theme_changed = true;
+        self.tint_captions();
         self.ui.skin.set(skin.clone());
         let fx = self.core.handle(Cmd::SetSkin(skin), clock::now_ms());
         self.apply_effects(fx);
@@ -1247,6 +1346,20 @@ impl App {
 
     pub fn update(&mut self, msg: Msg) {
         match msg {
+            Msg::Core(Cmd::Send) => {
+                let fx = self.core.handle(Cmd::Send, clock::now_ms());
+                // A send that took the draft: say so briefly.
+                let sent = fx.replace_draft.as_ref().is_some_and(Document::is_blank);
+                self.apply_effects(fx);
+                if sent {
+                    self.toasts.push(ToastRequest::new(
+                        format!("{} ✓", self.ui.now_t("status-sent")),
+                        nana_ui::ToastTone::Success,
+                        feedback::SENT_MS,
+                        false,
+                    ));
+                }
+            }
             Msg::Core(cmd) => self.run(cmd),
             Msg::Edit(f) => self.edit(f),
             Msg::Markup(edit) => self.markup(edit),
@@ -1397,6 +1510,13 @@ impl App {
                 }
             }
             Msg::DismissNotice(id) => self.edit_status(|s| s.notices.retain(|n| n.id != id)),
+            Msg::TrayErrorExpired(id) => {
+                if self.tray_error.as_ref().is_some_and(|(e, _)| *e == id) {
+                    self.tray_error = None;
+                }
+            }
+            // The host removes toasts from its documents.
+            Msg::ToastDismissed(..) => {}
             Msg::Wake { epoch, reason } => self.run(Cmd::Wake { epoch, reason }),
             Msg::Cue(kind) => self.run(Cmd::CueFired(kind)),
             Msg::Audio(status) => {
@@ -1752,6 +1872,7 @@ impl App {
 
     pub fn update_result(&mut self) -> RuntimeProgramUpdate {
         let window_commands = self.reconcile_windows();
+        self.sync_tray();
         RuntimeProgramUpdate {
             window_commands,
             exit: self.quitting,

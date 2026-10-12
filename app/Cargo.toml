@@ -44,6 +44,7 @@ ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout", rev = "106e124cdbe3a5eb9ee104715ee1d54c3903b217", default-features = false, features = ["gpu-dx11-shared"] }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_System_Threading",
     "Win32_UI_HiDpi",

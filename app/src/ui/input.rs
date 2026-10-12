@@ -401,10 +401,16 @@ fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
                 move |(q, _)| {
                     let stickers = ui.stickers.get_untracked();
                     if stickers.is_empty() {
-                        return widget(
-                            Text::new(ui.now_t("tb-sticker-empty")).color(SemanticColorRole::Muted),
-                        )
-                        .into_any();
+                        return super::feedback::empty_state(
+                            ui.now_t("empty-stickers"),
+                            Some((
+                                ui.now_t("empty-open-assets"),
+                                Box::new(move || {
+                                    open.set(false);
+                                    Msg::SettingsPage(super::settings::Page::Assets)
+                                }),
+                            )),
+                        );
                     }
                     let q = q.to_lowercase();
                     let cells: Vec<AnyView> = stickers
@@ -603,7 +609,18 @@ fn toolbar(ui: Ui) -> AnyView {
             item(t("tb-shadow-none"), stroke_open, || act(Tool::Shadow(None))),
         ];
         let phrases: Vec<AnyView> = if settings.assets.phrases.is_empty() {
-            vec![widget(ActionMenuItem::new(t("tb-phrases-empty")).disabled(true)).into_any()]
+            // The menu's empty state: ✦ and one line, then the way to add some.
+            vec![
+                widget(
+                    ActionMenuItem::new(t("empty-phrases"))
+                        .leading(ti::SPARKLES)
+                        .disabled(true),
+                )
+                .into_any(),
+                item(t("empty-open-assets"), phrase_open, || {
+                    Msg::SettingsPage(super::settings::Page::Assets)
+                }),
+            ]
         } else {
             settings
                 .assets
@@ -800,7 +817,6 @@ const PINK: [f32; 4] = [
     1.0,
 ];
 
-/// The mirroring chip pulses over this period.
 /// Period of a breathing status pulse (ms).
 pub const PULSE_MS: u64 = 1200;
 
@@ -850,27 +866,25 @@ fn chip(text: String, color: [f32; 4], fill: Option<[f32; 4]>, size: f32, radius
 
 fn status_line(ui: Ui) -> AnyView {
     enum Line {
-        Text(String, bool),
+        Error(String),
         Mirror(String),
         Queued(String),
         Empty,
     }
+    // Notices show as toasts above this line.
     let key = move || {
         let status = ui.status.get();
-        let notice = status.notices.last().map(|n| (n.text.clone(), n.error));
         let diag = ui.diagnostics.with(|d| d.first().cloned());
         let (mode, reduced) = (
             ui.settings.with(|s| s.general.input_mode),
             ui.reduced_motion.get(),
         );
-        (notice, diag, status.queued, mode, reduced, ui.locale.get())
+        (diag, status.queued, mode, reduced, ui.locale.get())
     };
     let line = dynamic(key, move |k| {
-        let (notice, diag, queued, mode, reduced, locale) = k.clone();
-        let line = if let Some((text, error)) = notice {
-            Line::Text(text, error)
-        } else if let Some(d) = diag {
-            Line::Text(d, true)
+        let (diag, queued, mode, reduced, locale) = k.clone();
+        let line = if let Some(d) = diag {
+            Line::Error(d)
         } else if queued > 0 {
             Line::Queued(I18N.tr_in(locale, "status-queued-chip", &[("position", queued.into())]))
         } else if mode == InputMode::Mirror {
@@ -879,14 +893,15 @@ fn status_line(ui: Ui) -> AnyView {
             Line::Empty
         };
         match line {
-            Line::Text(text, error) => {
+            Line::Error(text) => {
                 let mut st = NodeStyle::default();
                 Arc::make_mut(&mut st.layout).font_size = Some(12.0);
-                widget(Text::new(text).style(st).truncating().color(if error {
-                    SemanticColorRole::Danger
-                } else {
-                    SemanticColorRole::Muted
-                }))
+                widget(
+                    Text::new(text)
+                        .style(st)
+                        .truncating()
+                        .color(SemanticColorRole::Danger),
+                )
                 .into_any()
             }
             Line::Queued(text) => {
@@ -1101,10 +1116,11 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
 }
 
 /// The input window. Returns the editor and the source field for key
-/// handling.
-pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef)> {
+/// handling, and the stack the host shows toasts in.
+pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, ToastsRef)> {
     let editor = entity_ref::<RichTextEditor>();
     let source = entity_ref::<TextArea>();
+    let toasts = entity_ref::<nana_ui::runtime::ToastStack>();
     let region_h = move || {
         let skin = ui.skin.get();
         let s = ui.settings.get();
@@ -1116,6 +1132,7 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef)> {
             .surface(SemanticColorRole::Background)
             .radius(nana_ui_core::RadiusTier::Lg)
             .with_layout(|l| {
+                l.position = PositionSpec::Relative;
                 l.overflow_x = nana_ui_core::OverflowSpec::Hidden;
                 l.overflow_y = nana_ui_core::OverflowSpec::Hidden;
             }),
@@ -1135,9 +1152,11 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef)> {
                 Some(editor_area(ui, editor, source)),
             )),
         status_line(ui),
+        super::feedback::toast_stack(toasts, STATUS_H + 4.0, 2),
     ));
-    with_refs(view, (editor, source))
+    with_refs(view, (editor, source, toasts))
 }
 
 pub type EditorRef = EntityRef<RichTextEditor>;
 pub type SourceRef = EntityRef<TextArea>;
+pub type ToastsRef = EntityRef<nana_ui::runtime::ToastStack>;
