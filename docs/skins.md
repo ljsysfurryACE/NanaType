@@ -109,6 +109,8 @@ font = "accent"                   # body | name | accent
 rotate = 12                       # 顺时针角度
 layer = "above"                   # above：画在框上；below：画在框下
 when = "always"                   # always | speaker（仅在有名牌时显示）
+                                  # | display（只在展示框与皮肤预览中画，输入窗不画；
+                                  #   用于仿菜单栏这类看起来能点的装饰）
 # 也可以有 color、gradient、radius、radii、border_color、border_width、
 # border_widths、border_style、shadows、opacity，
 # 以及 polygon = [[0, 0], [100, 0], [50, 100]]（按装饰尺寸的百分比裁成多边形，3–8 点）
@@ -171,10 +173,12 @@ entrance = { kind = "fade", ms = 140 }   # none | fade | pop | slide_up
 width = 420
 height = 560
 avatar = { shape = "circle", size = 40, ring_color = "#ffffff", ring_width = 2 }   # circle | square | none
+# 头像还可写 color（主播无图头像的底色，默认强调色渐变）与 radius（square 的圆角，默认边长的 18%）；
+# 观众的无图头像与名字胶囊按作者固定取 6 种颜色之一
 name_color = "#e86a92"
 name_size = 14
 name_stroke = { color = "#000000", width = 2 }
-name_plate = { color = "accent", text_color = "#ffffff", radius = 9, padding = [8, 1] }   # 名字胶囊（可选）
+name_plate = { color = "accent", text_color = "#ffffff", radius = 9, padding = [9, 2] }   # 名字胶囊（可选）
 bubble_color = "#ffffffee"
 bubble_border = "#f0cfdc"
 bubble_border_width = 1
@@ -186,9 +190,10 @@ bubble_frame = { image = "images/bubble.png", slice = [12, 12, 12, 12] }
 gap = 10
 entrance = "slide_up"             # none | slide_up | fade | slide_left
 layout = "stack"                  # stack：名字和时间在气泡上方 | inline：名字、台词、时间同一行（聊天记录式）
+                                  # stack 下同一人 2 分钟内的连续消息合并：只有第一条显示头像、名字和时间
 name_width = 96                   # inline 时名字栏宽度
 name_weight = 700
-time_size = 12                    # 默认比名字小 2
+time_size = 11                    # 默认比名字小 3（也用于“主播/观众”角色标签）
 time_seconds = false              # true 显示 HH:MM:SS
 anchor = "bottom"                 # 行不足一屏时靠哪一端："bottom"（默认，新行贴底）或 "top"
 hide_latest = false               # true：展示框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）

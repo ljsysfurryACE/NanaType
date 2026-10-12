@@ -362,6 +362,9 @@ pub enum DecorWhen {
     Always,
     /// Only while the name plate shows.
     Speaker,
+    /// Only on the display box (and the skin picker's preview), never in the
+    /// input window: chrome that would look like real controls there.
+    Display,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -561,12 +564,27 @@ impl Default for FontSpec {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Fonts {
     pub body: FontSpec,
     pub name: FontSpec,
     pub accent: FontSpec,
+}
+
+impl Default for Fonts {
+    /// Names are semibold unless a skin says otherwise; the name plate uses
+    /// the weight as given, so a skin can ask for a regular name.
+    fn default() -> Self {
+        Self {
+            body: FontSpec::default(),
+            name: FontSpec {
+                weight: 600,
+                ..FontSpec::default()
+            },
+            accent: FontSpec::default(),
+        }
+    }
 }
 
 impl Fonts {
@@ -997,6 +1015,11 @@ pub struct HistoryAvatar {
     pub size: f32,
     pub ring_color: Option<ColorRef>,
     pub ring_width: f32,
+    /// The streamer's fallback avatar (no picture): a flat fill instead of
+    /// the accent gradient.
+    pub color: Option<ColorRef>,
+    /// Corner radius of a square avatar; default 18% of the size.
+    pub radius: Option<f32>,
 }
 
 impl Default for HistoryAvatar {
@@ -1006,6 +1029,8 @@ impl Default for HistoryAvatar {
             size: 40.0,
             ring_color: None,
             ring_width: 0.0,
+            color: None,
+            radius: None,
         }
     }
 }
@@ -1038,7 +1063,7 @@ impl Default for HistoryNamePlate {
             gradient: None,
             text_color: ColorRef::Role(ColorRole::NameText),
             radius: 10.0,
-            padding: [8.0, 2.0],
+            padding: [9.0, 2.0],
         }
     }
 }
@@ -1192,7 +1217,7 @@ impl Default for History {
             gap: 10.0,
             entrance: HistoryEntrance::SlideUp,
             show_time: false,
-            time_color: Rgba8::rgb(127, 149, 174),
+            time_color: Rgba8::rgb(0x8a, 0xa0, 0xb4),
             bubble_gradient: None,
             bubble_radii: None,
             bubble_border_width: 1.0,

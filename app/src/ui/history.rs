@@ -8,9 +8,11 @@ use std::sync::Arc;
 use nana_ui::runtime::view::{AnyView, IntoView, Transition, computed, dynamic, each, widget};
 use nana_ui::runtime::{NodeStyle, ScrollAxes, ScrollView, Stack, Text};
 use nana_ui_core::{
-    AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec, PositionSpec,
+    AlignSpec, BackgroundImage, BackgroundImageFit, CssGradient, Easing, GradientStop, LengthSpec,
+    LinearGradient, OverflowSpec, PositionSpec,
 };
-use nanatype_model::{Entrance, LineId, SourceKind};
+use nanatype_core::HistoryRow;
+use nanatype_model::{Entrance, HistoryItem, LineId, Rgba8, SourceKind};
 use nanatype_theme::{
     AvatarShape, DecorLayer, HistoryAnchor, HistoryEntrance, HistoryLayout, HistoryTitle, Skin,
 };
@@ -36,8 +38,32 @@ pub fn local_time(unix_ms: u64, seconds: bool) -> String {
     }
 }
 
+/// How long a new row takes to settle in.
+const ROW_ENTER_MS: u64 = 220;
+
+/// Meta text (time, role) is a step below the name: 11px beside a 14px name.
 fn time_size(h: &nanatype_theme::History) -> f32 {
-    h.time_size.unwrap_or((h.name_size - 2.0).max(9.0))
+    h.time_size.unwrap_or((h.name_size - 3.0).max(9.0))
+}
+
+/// `col` mixed `t` of the way to white.
+fn lighten(col: Rgba8, t: f32) -> Rgba8 {
+    let m = |x: u8| (f32::from(x) + (255.0 - f32::from(x)) * t).round() as u8;
+    Rgba8::rgba(m(col.r), m(col.g), m(col.b), col.a)
+}
+
+/// The streamer's picture-less avatar: the accent, lighter towards the
+/// bottom right.
+fn avatar_gradient(from: Rgba8, to: Rgba8) -> BackgroundImage {
+    let stop = |position: f32, col: Rgba8| GradientStop {
+        paint_color: None,
+        position,
+        color: c(col),
+    };
+    BackgroundImage::Gradient(CssGradient::Linear(LinearGradient {
+        angle_deg: 135.0,
+        stops: vec![stop(0.0, from), stop(1.0, to)],
+    }))
 }
 
 /// Space the list loses to the window padding, or to the panel's margin,
@@ -70,7 +96,54 @@ fn column_width(skin: &nanatype_theme::Skin, settings: &nanatype_settings::Setti
     (w - list_inset(&skin.history) - avatar).max(80.0)
 }
 
-fn row_view(ui: Ui, key: u64) -> AnyView {
+/// Viewers' avatars and name pills take one of these, by who they are.
+const VIEWER_COLORS: [Rgba8; 6] = [
+    Rgba8::rgb(0xff, 0x9a, 0xb5),
+    Rgba8::rgb(0x7e, 0xc8, 0xf5),
+    Rgba8::rgb(0xff, 0xc9, 0x4d),
+    Rgba8::rgb(0x8f, 0xd1, 0x8a),
+    Rgba8::rgb(0xb7, 0x9c, 0xf2),
+    Rgba8::rgb(0xff, 0xa7, 0x7a),
+];
+/// Text on a viewer colour (all of them are light).
+const VIEWER_INK: Rgba8 = Rgba8::rgb(16, 22, 32);
+
+/// A viewer's colour: stable for a user id, else for the name.
+fn viewer_color(item: &HistoryItem) -> Rgba8 {
+    let id = item.uid.as_deref().unwrap_or(&item.author);
+    // FNV-1a, so the colour does not change between runs.
+    let hash = id.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    VIEWER_COLORS[(hash % VIEWER_COLORS.len() as u64) as usize]
+}
+
+/// Rows of one speaker this close together share a header.
+const GROUP_MS: u64 = 120_000;
+/// Space between the rows of a group.
+const GROUP_GAP: f32 = 4.0;
+
+/// Whether `row` continues `prev`'s group: same speaker, soon after.
+fn continues(prev: &HistoryItem, row: &HistoryItem) -> bool {
+    !row.author.is_empty()
+        && prev.kind == row.kind
+        && prev.author == row.author
+        && prev.uid == row.uid
+        && row.at >= prev.at
+        && row.at - prev.at < GROUP_MS
+}
+
+/// The shown rows that continue the row above them.
+fn follow_ups(rows: &[HistoryRow], shown: &[u64]) -> Vec<u64> {
+    let item = |k: u64| rows.iter().find(|r| r.key == k).map(|r| &r.item);
+    shown
+        .windows(2)
+        .filter(|w| matches!((item(w[0]), item(w[1])), (Some(a), Some(b)) if continues(a, b)))
+        .map(|w| w[1])
+        .collect()
+}
+
+fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     let skin = ui.skin.get_untracked();
     let settings = ui.settings.get_untracked();
     let h = skin.history.clone();
@@ -81,11 +154,14 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
     else {
         return widget(Stack::row(0.0)).into_any();
     };
+    let inline = h.layout == HistoryLayout::Inline;
+    // Echo-Live's log names every line; bubble lists group.
+    let follows = follows && !inline;
     let show_avatar = settings.history.show_avatar && h.avatar.shape != AvatarShape::None;
     let size = h.avatar.size;
     let radius = match h.avatar.shape {
         AvatarShape::Circle => size / 2.0,
-        _ => size * 0.18,
+        _ => h.avatar.radius.unwrap_or(size * 0.18),
     };
     // Chat rows name a saved picture (`blob:…`); the local speaker's avatar
     // is a path or a URL.
@@ -116,7 +192,15 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         .map(|reply| {
             super::quote::quote_view(ui, &skin, &h.reply, &reply, h.text.size, h.text.color)
         });
-    let accent = c(skin.chrome.accent);
+    let viewer = chat.then(|| viewer_color(&row.item));
+    // A picture-less avatar: the viewer's colour, the skin's fill, or the
+    // accent as a gradient for the streamer.
+    let accent = skin.chrome.accent;
+    let (fill, fill_gradient) = match (viewer, h.avatar.color) {
+        (Some(v), _) => (v, None),
+        (None, Some(col)) => (skin.color(col), None),
+        (None, None) => (accent, Some(avatar_gradient(accent, lighten(accent, 0.35)))),
+    };
     let ring = h
         .avatar
         .ring_color
@@ -127,9 +211,21 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         let l = Arc::make_mut(&mut initial_style.layout);
         l.font_size = Some(size * 0.45);
         l.font_weight = Some(700);
-        l.color = Some(c(crate::skin_theme::on(skin.chrome.accent)));
+        l.color = Some(c(if viewer.is_some() {
+            VIEWER_INK
+        } else {
+            crate::skin_theme::on(fill)
+        }));
     }
-    let avatar: AnyView = if show_avatar {
+    let avatar: AnyView = if show_avatar && follows {
+        // The group's later rows keep the slot, so bubbles line up.
+        widget(
+            Stack::row(0.0)
+                .width(LengthSpec::Px(size))
+                .with_layout(|l| l.flex_shrink = Some(0.0)),
+        )
+        .into_any()
+    } else if show_avatar {
         let has_url = avatar_url.is_some();
         let url = avatar_url.clone();
         let el = widget(
@@ -153,7 +249,10 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
                             l.paint.background_image =
                                 Some(BackgroundImage::url_with_fit(u, BackgroundImageFit::Cover))
                         }
-                        None => l.background = Some(accent),
+                        None => {
+                            l.background = Some(c(fill));
+                            l.paint.background_image = fill_gradient;
+                        }
                     }
                 }),
         );
@@ -179,22 +278,38 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         l.color = Some(c(h.name_color));
         if let Some(p) = &h.name_plate {
             l.color = Some(c(skin.color(p.text_color)));
+            if viewer.is_some() {
+                l.color = Some(c(VIEWER_INK));
+            }
         }
         if let Some(stroke) = &h.name_stroke {
             surface::text_stroke(l, stroke);
         }
     }
-    let name_plate = Surface::history_name_plate(&skin);
+    let mut name_plate = Surface::history_name_plate(&skin);
+    if let (Some(plate), Some(v)) = (&mut name_plate, viewer) {
+        plate.fill = Some(c(v));
+        plate.gradient = None;
+    }
     let plate_pad = h.name_plate.as_ref().map_or([0.0; 2], |p| p.padding);
     let mut time_style = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut time_style.layout);
         l.font_size = Some(time_size(&h));
         l.color = Some(c(h.time_color));
+        l.white_space_nowrap = true;
     }
-    let inline = h.layout == HistoryLayout::Inline;
-    let show_name = settings.history.show_name && !row.item.author.is_empty();
-    let show_time = settings.history.show_time;
+    let show_name = settings.history.show_name && !row.item.author.is_empty() && !follows;
+    let show_time = settings.history.show_time && !follows;
+    // Who is talking, once live chat shares the list.
+    let role = (show_name && !inline && (chat || settings.history.chat.enabled)).then(|| {
+        let key = if chat {
+            "history-role-viewer"
+        } else {
+            "history-role-host"
+        };
+        widget(Text::new(ui.now_t(key)).style(time_style.clone()))
+    });
     let name = show_name.then(|| {
         let plate = name_plate.clone();
         widget(
@@ -216,7 +331,11 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         ui.asset_urls
             .with_untracked(|m| m.get(&format!("skin:{}", f.image)).cloned())
     });
-    let bubble_surface = Surface::bubble(&skin, frame_url);
+    let mut bubble_surface = Surface::bubble(&skin, frame_url);
+    if follows {
+        // Only a group's first bubble points at the avatar.
+        bubble_surface.radii[0] = bubble_surface.radii[0].max(h.bubble_radius);
+    }
     let body = dynamic(
         move || {
             ui.history.with(|rows| {
@@ -305,7 +424,8 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
                 .width(LengthSpec::Px(col_w))
                 .with_layout(|l| {
                     l.min_width = Some(LengthSpec::Px(0.0));
-                    l.align_items = AlignSpec::Start;
+                    // Name, first line and time share a baseline.
+                    l.align_items = AlignSpec::Baseline;
                 }),
         )
         .children((
@@ -324,10 +444,8 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
                 l.min_width = Some(LengthSpec::Px(0.0));
             }))
             .children(bubble),
-            // On the last line of a wrapped message.
             time.map(|t| {
                 widget(Stack::row(0.0).with_layout(|l| {
-                    l.align_self = Some(AlignSpec::End);
                     l.flex_shrink = Some(0.0);
                 }))
                 .children(t)
@@ -335,27 +453,33 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         ))
         .into_any()
     } else {
+        let header = (name.is_some() || time.is_some())
+            .then(|| widget(Stack::row(6.0).align(AlignSpec::Center)).children((name, role, time)));
         widget(
-            Stack::column(4.0)
+            Stack::column(6.0)
                 .width(LengthSpec::Px(col_w))
                 .with_layout(|l| {
                     l.min_width = Some(LengthSpec::Px(0.0));
                     l.align_items = AlignSpec::Start;
                 }),
         )
-        .children((
-            widget(Stack::row(6.0).align(AlignSpec::Center)).children((name, time)),
-            bubble,
-        ))
+        .children((header, bubble))
         .into_any()
     };
 
     let fade_after = settings.history.fade_after_s;
     let at = row.item.at;
+    // A group's later rows sit closer to the one above.
+    let pull = if follows { GROUP_GAP - h.gap } else { 0.0 };
     widget(
         Stack::row(10.0)
             .align(AlignSpec::Start)
-            .width(LengthSpec::Fill),
+            .width(LengthSpec::Fill)
+            .with_layout(move |l| {
+                if pull != 0.0 {
+                    l.margin_top = Some(LengthSpec::Px(pull));
+                }
+            }),
     )
     .bind(move |s: &mut Stack| {
         let Some(after) = fade_after else {
@@ -408,6 +532,10 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             )
         })
     });
+    let follows = computed(move || {
+        let shown = items.get();
+        ui.history.with(|rows| follow_ups(rows, &shown))
+    });
     let key = move || {
         let skin = ui.skin.get();
         let settings = ui.settings.get();
@@ -416,21 +544,27 @@ pub fn history_window(ui: Ui) -> impl IntoView {
     dynamic(key, move |_| {
         let skin = ui.skin.get_untracked();
         let gap = skin.history.gap;
+        let ms = std::time::Duration::from_millis(ROW_ENTER_MS);
+        // Reduced motion keeps the fade and drops the travel.
+        let reduced = ui.reduced_motion.get_untracked();
         let transition = match skin.history.entrance {
             HistoryEntrance::None => None,
-            HistoryEntrance::SlideUp => Some(Transition::slide(
-                0.0,
-                16.0,
-                std::time::Duration::from_millis(220),
-            )),
-            HistoryEntrance::SlideLeft => Some(Transition::slide(
-                -24.0,
-                0.0,
-                std::time::Duration::from_millis(220),
-            )),
-            HistoryEntrance::Fade => Some(Transition::fade(std::time::Duration::from_millis(220))),
-        };
-        let list = each(items, |k: &u64| *k, move |k: u64| row_view(ui, k));
+            _ if reduced => Some(Transition::fade(ms)),
+            HistoryEntrance::SlideUp => Some(Transition::slide(0.0, 16.0, ms)),
+            HistoryEntrance::SlideLeft => Some(Transition::slide(-24.0, 0.0, ms)),
+            HistoryEntrance::Fade => Some(Transition::fade(ms)),
+        }
+        .map(|t| t.ease(Easing::CubicBezier([0.2, 0.8, 0.2, 1.0])));
+        let list = each(
+            items,
+            |k: &u64| *k,
+            move |k: u64| {
+                dynamic(
+                    move || follows.with(|f| f.contains(&k)),
+                    move |f| row_view(ui, k, *f),
+                )
+            },
+        );
         let list = match transition {
             Some(t) => list.transition(t),
             None => list,
@@ -536,5 +670,56 @@ mod tests {
         assert_eq!(shown_keys(all(), 30, Some(LineId(11))), [1, 2]);
         // The cap counts the rows that show.
         assert_eq!(shown_keys(all(), 1, Some(LineId(11))), [2]);
+    }
+
+    fn item(author: &str, kind: SourceKind, at_s: u64) -> HistoryItem {
+        HistoryItem {
+            source: nanatype_model::SourceId::local(),
+            kind,
+            line: None,
+            author: author.into(),
+            avatar: None,
+            doc: nanatype_model::Document::new(),
+            at: at_s * 1000,
+            uid: None,
+            reply: None,
+        }
+    }
+
+    #[test]
+    fn rows_of_one_speaker_close_together_group() {
+        use SourceKind::{Chat, Typewriter};
+        let rows: Vec<HistoryRow> = [
+            item("Nana", Typewriter, 0),
+            item("Nana", Typewriter, 30),
+            item("Nana", Chat, 40),
+            item("Nana", Typewriter, 50),
+            item("Nana", Typewriter, 200),
+            item("Mio", Typewriter, 210),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, item)| HistoryRow {
+            key: i as u64,
+            item,
+            doc: Arc::new(nanatype_model::Document::new()),
+            reveal: None,
+        })
+        .collect();
+        let shown: Vec<u64> = (0..6).collect();
+        // A chat row with the streamer's name, a two-minute pause and a new
+        // speaker each start a group.
+        assert_eq!(follow_ups(&rows, &shown), [1]);
+        // The first shown row always has its header.
+        assert_eq!(follow_ups(&rows, &shown[1..]), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn a_viewer_keeps_their_colour() {
+        let a = item("路过的猫", SourceKind::Chat, 0);
+        assert_eq!(viewer_color(&a), viewer_color(&a.clone()));
+        let mut b = a.clone();
+        b.uid = Some("1002".into());
+        assert!(VIEWER_COLORS.contains(&viewer_color(&b)));
     }
 }

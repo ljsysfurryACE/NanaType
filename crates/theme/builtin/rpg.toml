@@ -87,7 +87,7 @@ bubble_border_width = 2
 bubble_radius = 4
 bubble_gradient = { stops = [[0, "#2840a8e6"], [1, "#0c1450e6"]] }
 time_color = "#c0c8f0"
-avatar = { shape = "square", size = 40, ring_color = "#ffffff", ring_width = 2 }
+avatar = { shape = "square", size = 40, ring_color = "#ffffff", ring_width = 2, radius = 4, color = "#2a3a9a" }
 
 [history.text]
 color = "#ffffff"
