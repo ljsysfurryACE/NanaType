@@ -139,14 +139,35 @@ punct = { comma_ms = 0, stop_ms = 0, ellipsis_ms = 0 }
 kind = "none"
 ms = 0
 
+# Echo-Live's history page at half size (its base font is 36px): one row
+# per line with name, message and HH:MM:SS side by side, no bubbles.
 [history]
-name_color = "#ffffff"
-name_stroke = { color = "#000000", width = 2 }
-bubble_color = "#00000099"
+width = 640
+height = 480
+layout = "inline"
+name_width = 120
+name_size = 18
+time_size = 16
+time_seconds = true
+show_time = true
+gap = 9
+entrance = "none"
+# Like Echo-Live, the line still on the dialogue box joins once it clears.
+hide_latest = true
+bubble_color = "#00000000"
+bubble_border_width = 0
 bubble_radius = 0
-time_color = "#dddddd"
+bubble_padding = [0, 0]
 avatar = { shape = "none" }
+name_weight = 400
+name_color = "#ffffff"
+name_stroke = { color = "#000000", width = 1.5 }
+time_color = "#dddddd"
+panel = { color = "#00000000", padding = [18, 18, 18, 18], gradient = { stops = [[0, "#00000099"], [0.15, "#00000099"], [1, "#00000000"]] } }
 
 [history.text]
 color = "#ffffff"
+size = 18
+line_height = 1.4
 stroke = { color = "#000000", width = 1 }
+shadow = { color = "#000000", blur = 2 }

@@ -108,6 +108,15 @@ fn every_builtin_loads_without_warnings() {
     let echo = registry.load("nanatype.echo_vanilla").unwrap();
     assert_eq!(echo.skin.dialogue.decor.len(), 8);
     assert!(echo.skin.dialogue.continue_.glyph.is_empty());
+    assert_eq!(echo.skin.history.layout, HistoryLayout::Inline);
+    assert!(echo.skin.history.time_seconds);
+    assert_eq!(echo.skin.history.title.as_ref().unwrap().text, "HISTORY");
+    assert_eq!(echo.skin.history.decor.len(), 2);
+    assert!(echo.skin.history.hide_latest);
+    // Skins that say nothing keep the bubble list.
+    assert_eq!(night.skin.history.layout, HistoryLayout::Stack);
+    assert!(night.skin.history.panel.is_none());
+    assert!(!night.skin.history.hide_latest);
 }
 
 #[test]
@@ -460,6 +469,33 @@ fn validation_fails_closed() {
             "dialogue.continue.image",
             "[meta]\nid = \"x\"\n[dialogue.continue]\nimage = \"c.png\"\n",
             &[("c.png", b"garbage".to_vec())],
+        ),
+        (
+            "history.name_weight",
+            "[meta]
+id = \"x\"
+[history]
+name_weight = 50
+",
+            &[],
+        ),
+        (
+            "history.panel.padding",
+            "[meta]
+id = \"x\"
+[history.panel]
+padding = [-1, 0, 0, 0]
+",
+            &[],
+        ),
+        (
+            "history.decor.0.polygon",
+            "[meta]
+id = \"x\"
+[[history.decor]]
+polygon = [[0, 0], [1, 1]]
+",
+            &[],
         ),
         (
             "dialogue.box.gradient",

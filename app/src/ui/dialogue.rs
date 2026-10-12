@@ -522,7 +522,15 @@ fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
 }
 
 fn decor_view(ui: Ui, ctx: &BoxCtx, dec: &DecorSpec) -> AnyView {
-    let skin = &ctx.skin;
+    let speaker = (dec.when == DecorWhen::Speaker).then(|| has_speaker(ui, ctx));
+    decor(&ctx.skin, dec, speaker)
+}
+
+/// One decoration, absolutely placed on its parent; `visible` hides it.
+pub(super) fn decor<F>(skin: &Skin, dec: &DecorSpec, visible: Option<F>) -> AnyView
+where
+    F: Fn() -> bool + Send + 'static,
+{
     let shape = Surface::decor(skin, dec);
     let placement = place(dec.anchor, dec.offset, dec.size);
     let [width, height] = dec.size.map(len);
@@ -550,8 +558,8 @@ fn decor_view(ui: Ui, ctx: &BoxCtx, dec: &DecorSpec) -> AnyView {
                 shape.apply(l);
             }),
     );
-    if dec.when == DecorWhen::Speaker {
-        el = el.visible(has_speaker(ui, ctx));
+    if let Some(visible) = visible {
+        el = el.visible(visible);
     }
     if dec.text.is_empty() {
         return el.into_any();

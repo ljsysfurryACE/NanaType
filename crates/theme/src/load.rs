@@ -8,7 +8,9 @@ use std::sync::{Arc, LazyLock};
 use toml::{Table, Value};
 
 use crate::files::{FileError, SkinFiles, clean_path};
-use crate::manifest::{FileKind, GradientSpec, Len, SKIN_SCHEMA, ShadowSpec, ShapeSpec, Skin};
+use crate::manifest::{
+    DecorSpec, FileKind, GradientSpec, Len, SKIN_SCHEMA, ShadowSpec, ShapeSpec, Skin,
+};
 
 pub const MANIFEST: &str = "skin.toml";
 pub const MAX_IMAGE_SIDE: usize = 8192;
@@ -519,71 +521,16 @@ fn check_shape(
     check_shadows(&format!("{prefix}.shadows"), layers, out);
 }
 
-/// Ranges of the drawn-shape fields: gradients, corners, borders, shadows,
-/// the tail, decorations and the continue indicator.
-fn validate_shapes(skin: &Skin, out: &mut Vec<SkinDiagnostic>) {
-    let d = &skin.dialogue;
-    let b = &d.box_;
-    check_shape(
-        "dialogue.box",
-        &b.shape,
-        b.radius,
-        b.border_width,
-        &b.shadow_layers(),
-        out,
-    );
-    check_borders(
-        "dialogue.box.inner_border_width",
-        [b.inner_border_width; 4],
-        out,
-    );
-    let [top, right, bottom, left] = b.margin;
-    if !b.margin.iter().all(|m| in_range(*m, 0.0, 1024.0))
-        || left + right >= d.region[0]
-        || top + bottom >= d.region[1]
-    {
+/// Placement, shape, polygon and glyph ranges of a decoration list.
+fn check_decor(field: &str, decor: &[DecorSpec], out: &mut Vec<SkinDiagnostic>) {
+    if decor.len() > MAX_DECOR {
         out.push(SkinDiagnostic::error(
-            "dialogue.box.margin",
-            "margins must be 0–1024 and leave room for the box",
-        ));
-    }
-
-    let p = &d.nameplate;
-    check_shape(
-        "dialogue.nameplate",
-        &p.shape,
-        p.radius,
-        p.border_width,
-        &p.shape.shadows,
-        out,
-    );
-    if !in_range(p.rotate, -360.0, 360.0) {
-        out.push(SkinDiagnostic::error(
-            "dialogue.nameplate.rotate",
-            "must be -360–360",
-        ));
-    }
-
-    if let Some(t) = &d.tail
-        && (!in_range(t.at, 0.0, 1.0)
-            || !in_range(t.width, 4.0, 1024.0)
-            || !in_range(t.length, 2.0, 512.0)
-            || !in_range(t.lean, -512.0, 512.0))
-    {
-        out.push(SkinDiagnostic::error(
-            "dialogue.tail",
-            "at must be 0–1, width 4–1024, length 2–512 and lean -512–512",
-        ));
-    }
-
-    if d.decor.len() > MAX_DECOR {
-        out.push(SkinDiagnostic::error(
-            "dialogue.decor",
+            field,
             format!("at most {MAX_DECOR} decorations"),
         ));
     }
-    for (i, dec) in d.decor.iter().enumerate() {
-        let prefix = format!("dialogue.decor.{i}");
+    for (i, dec) in decor.iter().enumerate() {
+        let prefix = format!("{field}.{i}");
         let f = |k: &str| format!("{prefix}.{k}");
         let size_ok = dec.size.iter().all(|s| match s {
             Len::Px(v) => in_range(*v, 0.0, 4096.0),
@@ -641,6 +588,66 @@ fn validate_shapes(skin: &Skin, out: &mut Vec<SkinDiagnostic>) {
             ));
         }
     }
+}
+
+/// Ranges of the drawn-shape fields: gradients, corners, borders, shadows,
+/// the tail, decorations, the continue indicator and the history panel.
+fn validate_shapes(skin: &Skin, out: &mut Vec<SkinDiagnostic>) {
+    let d = &skin.dialogue;
+    let b = &d.box_;
+    check_shape(
+        "dialogue.box",
+        &b.shape,
+        b.radius,
+        b.border_width,
+        &b.shadow_layers(),
+        out,
+    );
+    check_borders(
+        "dialogue.box.inner_border_width",
+        [b.inner_border_width; 4],
+        out,
+    );
+    let [top, right, bottom, left] = b.margin;
+    if !b.margin.iter().all(|m| in_range(*m, 0.0, 1024.0))
+        || left + right >= d.region[0]
+        || top + bottom >= d.region[1]
+    {
+        out.push(SkinDiagnostic::error(
+            "dialogue.box.margin",
+            "margins must be 0–1024 and leave room for the box",
+        ));
+    }
+
+    let p = &d.nameplate;
+    check_shape(
+        "dialogue.nameplate",
+        &p.shape,
+        p.radius,
+        p.border_width,
+        &p.shape.shadows,
+        out,
+    );
+    if !in_range(p.rotate, -360.0, 360.0) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.nameplate.rotate",
+            "must be -360–360",
+        ));
+    }
+
+    if let Some(t) = &d.tail
+        && (!in_range(t.at, 0.0, 1.0)
+            || !in_range(t.width, 4.0, 1024.0)
+            || !in_range(t.length, 2.0, 512.0)
+            || !in_range(t.lean, -512.0, 512.0))
+    {
+        out.push(SkinDiagnostic::error(
+            "dialogue.tail",
+            "at must be 0–1, width 4–1024, length 2–512 and lean -512–512",
+        ));
+    }
+
+    check_decor("dialogue.decor", &d.decor, out);
 
     let c = &d.continue_;
     if !(1..=64).contains(&c.frames) {
@@ -688,6 +695,58 @@ fn validate_shapes(skin: &Skin, out: &mut Vec<SkinDiagnostic>) {
         check_corners("history.name_plate.radius", [np.radius; 4], out);
     }
     check_borders("history.avatar.ring_width", [h.avatar.ring_width; 4], out);
+    if !in_range(h.name_width, 0.0, 2048.0) {
+        out.push(SkinDiagnostic::error(
+            "history.name_width",
+            "must be 0–2048",
+        ));
+    }
+    if !(100..=1000).contains(&h.name_weight) {
+        out.push(SkinDiagnostic::error(
+            "history.name_weight",
+            "must be 100–1000",
+        ));
+    }
+    if h.time_size.is_some_and(|s| !in_range(s, 4.0, 400.0)) {
+        out.push(SkinDiagnostic::error(
+            "history.time_size",
+            "font size must be 4–400",
+        ));
+    }
+    if let Some(p) = &h.panel {
+        check_shape(
+            "history.panel",
+            &p.shape,
+            p.radius,
+            p.border_width,
+            &p.shape.shadows,
+            out,
+        );
+        if !p
+            .padding
+            .iter()
+            .chain(&p.margin)
+            .all(|v| in_range(*v, 0.0, 1024.0))
+        {
+            out.push(SkinDiagnostic::error(
+                "history.panel.padding",
+                "padding and margin must be 0–1024",
+            ));
+        }
+    }
+    if let Some(t) = &h.title
+        && (!in_range(t.size, 4.0, 400.0)
+            || !in_range(t.height, 0.0, 1024.0)
+            || !in_range(t.padding, 0.0, 1024.0)
+            || !(100..=1000).contains(&t.weight)
+            || t.text.chars().count() > 64)
+    {
+        out.push(SkinDiagnostic::error(
+            "history.title",
+            "size must be 4–400, height and padding 0–1024, weight 100–1000 and text at most 64 characters",
+        ));
+    }
+    check_decor("history.decor", &h.decor, out);
 
     let tags = &skin.meta.tags;
     let bad_tag = |t: &String| {

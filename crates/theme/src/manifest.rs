@@ -951,6 +951,74 @@ impl Default for HistoryNamePlate {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryLayout {
+    /// Name and time above the bubble.
+    #[default]
+    Stack,
+    /// Name, line and time side by side on one row, like a chat log.
+    Inline,
+}
+
+/// A surface behind the whole history list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HistoryPanel {
+    pub color: Rgba8,
+    pub border_color: Option<ColorRef>,
+    pub border_width: f32,
+    pub radius: f32,
+    #[serde(flatten)]
+    pub shape: ShapeSpec,
+    /// List inset inside the panel: `[left, top, right, bottom]`.
+    pub padding: [f32; 4],
+    /// Space around the panel inside the window: `[top, right, bottom, left]`.
+    pub margin: [f32; 4],
+}
+
+impl Default for HistoryPanel {
+    fn default() -> Self {
+        Self {
+            color: Rgba8::rgba(0, 0, 0, 0),
+            border_color: None,
+            border_width: 0.0,
+            radius: 0.0,
+            shape: ShapeSpec::default(),
+            padding: [12.0; 4],
+            margin: [0.0; 4],
+        }
+    }
+}
+
+/// A header bar across the top of the history panel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HistoryTitle {
+    pub text: String,
+    pub color: Rgba8,
+    pub size: f32,
+    pub weight: u16,
+    pub background: Rgba8,
+    pub height: f32,
+    /// Horizontal inset of the text.
+    pub padding: f32,
+}
+
+impl Default for HistoryTitle {
+    fn default() -> Self {
+        Self {
+            text: "HISTORY".into(),
+            color: Rgba8::rgb(96, 98, 102),
+            size: 20.0,
+            weight: 600,
+            background: Rgba8::rgba(0, 0, 0, 0),
+            height: 40.0,
+            padding: 16.0,
+        }
+    }
+}
+
 /// The blivechat-style list: avatar, name, then a bubble per line.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -976,6 +1044,21 @@ pub struct History {
     pub bubble_border_width: f32,
     pub bubble_shadows: Vec<ShadowSpec>,
     pub name_plate: Option<HistoryNamePlate>,
+    pub layout: HistoryLayout,
+    /// Width of the name column in the inline layout.
+    pub name_width: f32,
+    pub name_weight: u16,
+    /// Defaults to two points under the name.
+    pub time_size: Option<f32>,
+    /// Show `HH:MM:SS` instead of `HH:MM`.
+    pub time_seconds: bool,
+    pub panel: Option<HistoryPanel>,
+    pub title: Option<HistoryTitle>,
+    /// Decorations placed on the panel (or the window, without one).
+    pub decor: Vec<DecorSpec>,
+    /// Leave out the line still on the dialogue box until it clears; the
+    /// user's setting can override this.
+    pub hide_latest: bool,
 }
 
 impl Default for History {
@@ -1006,6 +1089,15 @@ impl Default for History {
             bubble_border_width: 1.0,
             bubble_shadows: Vec::new(),
             name_plate: None,
+            layout: HistoryLayout::Stack,
+            name_width: 96.0,
+            name_weight: 700,
+            time_size: None,
+            time_seconds: false,
+            panel: None,
+            title: None,
+            decor: Vec::new(),
+            hide_latest: false,
         }
     }
 }

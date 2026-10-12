@@ -215,6 +215,19 @@ impl Surface {
         })
     }
 
+    /// The surface behind the whole history list, when the skin has one.
+    pub fn history_panel(skin: &Skin) -> Option<Self> {
+        let p = skin.history.panel.as_ref()?;
+        Some(Self::shaped(
+            skin,
+            Some(p.color.into()),
+            &p.shape,
+            p.radius,
+            p.border_color,
+            p.border_width,
+        ))
+    }
+
     pub fn decor(skin: &Skin, d: &DecorSpec) -> Self {
         Self {
             polygon: (d.polygon.len() >= 3).then(|| d.polygon.clone()),

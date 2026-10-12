@@ -13,8 +13,8 @@ use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind};
 use nanatype_playback::QueuePolicy;
 use nanatype_settings::{
-    CaptureBackground, ChromeMode, HistorySync, InputMode, InputPresence, Lock, QuickPhrase,
-    SendKey, Settings,
+    CaptureBackground, ChromeMode, HideLatest, HistorySync, InputMode, InputPresence, Lock,
+    QuickPhrase, SendKey, Settings,
 };
 
 use super::Page;
@@ -1173,6 +1173,34 @@ fn history(ui: Ui) -> AnyView {
                                 "submit" => HistorySync::OnSubmit,
                                 "complete" => HistorySync::OnComplete,
                                 _ => HistorySync::Reveal,
+                            }
+                        },
+                    ),
+                ),
+                row(
+                    ui,
+                    "history-hide-latest",
+                    Some("history-hide-latest-hint"),
+                    select(
+                        ui,
+                        select_keys(
+                            ui,
+                            &[
+                                ("skin", "history-hide-latest-skin"),
+                                ("always", "history-hide-latest-always"),
+                                ("never", "history-hide-latest-never"),
+                            ],
+                        ),
+                        |s| match s.history.hide_latest {
+                            HideLatest::Skin => "skin".into(),
+                            HideLatest::Always => "always".into(),
+                            HideLatest::Never => "never".into(),
+                        },
+                        |s, v| {
+                            s.history.hide_latest = match v {
+                                "always" => HideLatest::Always,
+                                "never" => HideLatest::Never,
+                                _ => HideLatest::Skin,
                             }
                         },
                     ),

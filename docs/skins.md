@@ -183,6 +183,21 @@ bubble_shadows = [{ color = "#00000020", dy = 2, blur = 8 }]
 bubble_frame = { image = "images/bubble.png", slice = [12, 12, 12, 12] }
 gap = 10
 entrance = "slide_up"             # none | slide_up | fade | slide_left
+layout = "stack"                  # stack：名字和时间在气泡上方 | inline：名字、台词、时间同一行（聊天记录式）
+name_width = 96                   # inline 时名字栏宽度
+name_weight = 700
+time_size = 12                    # 默认比名字小 2
+time_seconds = false              # true 显示 HH:MM:SS
+hide_latest = false               # true：对话框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）
+# 整个列表背后的面板（可选）；也支持 gradient / radii / border_widths / border_style / shadows
+panel = { color = "#edeef0", border_color = "#888888", border_width = 0, radius = 0, padding = [18, 18, 18, 18], margin = [0, 0, 0, 0] }   # padding 左上右下，margin 上右下左
+title = { text = "HISTORY", color = "#606266", size = 21, weight = 600, background = "#ffffff", height = 42, padding = 18 }   # 面板顶部标题栏（可选）
+
+[[history.decor]]                 # 面板上的装饰，字段同 [[dialogue.decor]]（when 不适用）
+anchor = "top_right"
+size = [11, 11]
+polygon = [[0, 0], [100, 0], [100, 100]]
+color = "#00000026"
 
 [history.text]
 color = "#3a2230"

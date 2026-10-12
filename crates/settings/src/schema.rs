@@ -340,6 +340,28 @@ pub enum HistorySync {
     OnComplete,
 }
 
+/// Whether the history leaves out the line still on the dialogue box, until
+/// the box clears or the next line replaces it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HideLatest {
+    /// As the skin says (`history.hide_latest`).
+    #[default]
+    Skin,
+    Always,
+    Never,
+}
+
+impl HideLatest {
+    pub fn resolve(self, skin: bool) -> bool {
+        match self {
+            Self::Skin => skin,
+            Self::Always => true,
+            Self::Never => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HistorySettings {
@@ -353,6 +375,7 @@ pub struct HistorySettings {
     pub show_name: bool,
     pub show_time: bool,
     pub sync: HistorySync,
+    pub hide_latest: HideLatest,
 }
 
 impl Default for HistorySettings {
@@ -365,6 +388,7 @@ impl Default for HistorySettings {
             show_name: true,
             show_time: false,
             sync: HistorySync::Reveal,
+            hide_latest: HideLatest::Skin,
         }
     }
 }

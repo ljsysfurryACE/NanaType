@@ -7,20 +7,47 @@ use std::sync::Arc;
 
 use nana_ui::runtime::view::{AnyView, IntoView, Transition, computed, dynamic, each, widget};
 use nana_ui::runtime::{NodeStyle, ScrollAxes, ScrollView, Stack, Text};
-use nana_ui_core::{AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec};
-use nanatype_model::Entrance;
-use nanatype_theme::{AvatarShape, HistoryEntrance};
+use nana_ui_core::{
+    AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec, PositionSpec,
+};
+use nanatype_model::{Entrance, LineId};
+use nanatype_theme::{AvatarShape, DecorLayer, HistoryEntrance, HistoryLayout, HistoryTitle, Skin};
 
-use super::dialogue::{Base, Timing, document};
+use super::dialogue::{self, Base, Timing, document};
 use super::surface::{self, Surface};
 use super::{Ui, c};
 use crate::assets::file_url;
 
 pub fn local_hm(unix_ms: u64) -> String {
+    local_time(unix_ms, false)
+}
+
+fn local_time(unix_ms: u64, seconds: bool) -> String {
     let offset = crate::localtime::offset_seconds();
     let secs = (unix_ms / 1000) as i64 + offset;
     let day = secs.rem_euclid(86_400);
-    format!("{:02}:{:02}", day / 3600, (day % 3600) / 60)
+    let hm = format!("{:02}:{:02}", day / 3600, (day % 3600) / 60);
+    if seconds {
+        format!("{hm}:{:02}", day % 60)
+    } else {
+        hm
+    }
+}
+
+fn time_size(h: &nanatype_theme::History) -> f32 {
+    h.time_size.unwrap_or((h.name_size - 2.0).max(9.0))
+}
+
+/// Space the list loses to the window padding, or to the panel's margin,
+/// border and padding.
+fn list_inset(h: &nanatype_theme::History) -> f32 {
+    match &h.panel {
+        Some(p) => {
+            let [_, right, _, left] = p.shape.border_widths(p.border_width);
+            p.margin[1] + p.margin[3] + left + right + p.padding[0] + p.padding[2]
+        }
+        None => 16.0 + 8.0,
+    }
 }
 
 fn initial(name: &str) -> String {
@@ -38,7 +65,7 @@ fn column_width(skin: &nanatype_theme::Skin, settings: &nanatype_settings::Setti
     } else {
         0.0
     };
-    (w - 16.0 - 8.0 - avatar).max(80.0)
+    (w - list_inset(&skin.history) - avatar).max(80.0)
 }
 
 fn row_view(ui: Ui, key: u64) -> AnyView {
@@ -124,7 +151,7 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
     {
         let l = Arc::make_mut(&mut name_style.layout);
         l.font_size = Some(h.name_size);
-        l.font_weight = Some(700);
+        l.font_weight = Some(h.name_weight);
         l.color = Some(c(h.name_color));
         if let Some(p) = &h.name_plate {
             l.color = Some(c(skin.color(p.text_color)));
@@ -138,27 +165,27 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
     let mut time_style = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut time_style.layout);
-        l.font_size = Some((h.name_size - 2.0).max(9.0));
+        l.font_size = Some(time_size(&h));
         l.color = Some(c(h.time_color));
     }
+    let inline = h.layout == HistoryLayout::Inline;
     let show_name = settings.history.show_name && !row.item.author.is_empty();
     let show_time = settings.history.show_time;
-    let header = widget(Stack::row(6.0).align(AlignSpec::Center)).children((
-        show_name.then(|| {
-            let plate = name_plate.clone();
-            widget(
-                Stack::row(0.0)
-                    .padding_xy(plate_pad[0], plate_pad[1])
-                    .with_layout(move |l| {
-                        if let Some(p) = &plate {
-                            p.apply(l);
-                        }
-                    }),
-            )
-            .children(widget(Text::new(row.item.author.clone()).style(name_style)))
-        }),
-        show_time.then(|| widget(Text::new(local_hm(row.item.at)).style(time_style))),
-    ));
+    let name = show_name.then(|| {
+        let plate = name_plate.clone();
+        widget(
+            Stack::row(0.0)
+                .padding_xy(plate_pad[0], plate_pad[1])
+                .with_layout(move |l| {
+                    if let Some(p) = &plate {
+                        p.apply(l);
+                    }
+                }),
+        )
+        .children(widget(Text::new(row.item.author.clone()).style(name_style)))
+    });
+    let time = show_time
+        .then(|| widget(Text::new(local_time(row.item.at, h.time_seconds)).style(time_style)));
 
     let pad = h.bubble_padding;
     let frame_url = h.bubble_frame.as_ref().and_then(|f| {
@@ -203,16 +230,82 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
             document(ui, &row.doc, &base, timing)
         },
     );
+    // Inline rows share the column with the name and the time; the time's
+    // width is estimated from its digits.
+    let bubble_max = if inline {
+        let name_w = if show_name { h.name_width + 10.0 } else { 0.0 };
+        let digits = if h.time_seconds { 4.6 } else { 2.9 };
+        let time_w = if show_time {
+            time_size(&h) * digits + 10.0
+        } else {
+            0.0
+        };
+        (col_w - name_w - time_w).max(40.0)
+    } else {
+        col_w
+    };
     let bubble = widget(
         Stack::column(0.0)
             .width(LengthSpec::Shrink)
             .padding_xy(pad[0], pad[1])
             .with_layout(move |l| {
-                l.max_width = Some(LengthSpec::Px(col_w));
+                l.max_width = Some(LengthSpec::Px(bubble_max));
                 bubble_surface.apply(l);
             }),
     )
     .children(body);
+
+    let content = if inline {
+        let name_w = h.name_width;
+        widget(
+            Stack::row(10.0)
+                .width(LengthSpec::Px(col_w))
+                .with_layout(|l| {
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.align_items = AlignSpec::Start;
+                }),
+        )
+        .children((
+            name.map(|n| {
+                widget(
+                    Stack::row(0.0)
+                        .width(LengthSpec::Px(name_w))
+                        .with_layout(|l| l.flex_shrink = Some(0.0)),
+                )
+                .children(n)
+            }),
+            // Takes the spare width, so the time sits at the right edge.
+            widget(Stack::row(0.0).with_layout(|l| {
+                l.flex_grow = Some(1.0);
+                l.flex_shrink = Some(1.0);
+                l.min_width = Some(LengthSpec::Px(0.0));
+            }))
+            .children(bubble),
+            // On the last line of a wrapped message.
+            time.map(|t| {
+                widget(Stack::row(0.0).with_layout(|l| {
+                    l.align_self = Some(AlignSpec::End);
+                    l.flex_shrink = Some(0.0);
+                }))
+                .children(t)
+            }),
+        ))
+        .into_any()
+    } else {
+        widget(
+            Stack::column(4.0)
+                .width(LengthSpec::Px(col_w))
+                .with_layout(|l| {
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.align_items = AlignSpec::Start;
+                }),
+        )
+        .children((
+            widget(Stack::row(6.0).align(AlignSpec::Center)).children((name, time)),
+            bubble,
+        ))
+        .into_any()
+    };
 
     let fade_after = settings.history.fade_after_s;
     let at = row.item.at;
@@ -232,27 +325,44 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         taken = taken.with_layout(|l| l.opacity = Some(opacity));
         *s = taken;
     })
-    .children((
-        avatar,
-        widget(
-            Stack::column(4.0)
-                .width(LengthSpec::Px(col_w))
-                .with_layout(|l| {
-                    l.min_width = Some(LengthSpec::Px(0.0));
-                    l.align_items = AlignSpec::Start;
-                }),
-        )
-        .children((header, bubble)),
-    ))
+    // Inline rows drop the empty avatar slot, so the name sits at the edge.
+    .children(((show_avatar || !inline).then_some(avatar), content))
     .into_any()
+}
+
+/// The newest `visible` rows, leaving out the line `on_screen`.
+fn shown_keys(
+    rows: impl Iterator<Item = (u64, Option<LineId>)>,
+    visible: usize,
+    on_screen: Option<LineId>,
+) -> Vec<u64> {
+    let keys: Vec<u64> = rows
+        .filter(|(_, line)| on_screen.is_none() || *line != on_screen)
+        .map(|(key, _)| key)
+        .collect();
+    let start = keys.len().saturating_sub(visible);
+    keys[start..].to_vec()
 }
 
 pub fn history_window(ui: Ui) -> impl IntoView {
     let items = computed(move || {
-        let visible = ui.settings.with(|s| s.history.visible_items) as usize;
+        let (visible, hide) = ui
+            .settings
+            .with(|s| (s.history.visible_items as usize, s.history.hide_latest));
+        let hide = hide.resolve(ui.skin.with(|k| k.history.hide_latest));
+        // The line still on the dialogue box joins once the box clears or
+        // the next line replaces it.
+        let on_screen = if hide {
+            ui.display.with(|d| d.line)
+        } else {
+            None
+        };
         ui.history.with(|rows| {
-            let start = rows.len().saturating_sub(visible);
-            rows[start..].iter().map(|r| r.key).collect::<Vec<u64>>()
+            shown_keys(
+                rows.iter().map(|r| (r.key, r.item.line)),
+                visible,
+                on_screen,
+            )
         })
     });
     let key = move || {
@@ -282,23 +392,99 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             Some(t) => list.transition(t),
             None => list,
         };
-        widget(Stack::fill_column(0.0).padding(8.0))
-            .bind(move |s: &mut Stack| {
-                let editing = ui
-                    .settings
-                    .with(|x| x.overlays.history.lock == nanatype_settings::Lock::EditLayout);
-                let accent = c(ui.skin.with(|k| k.chrome.accent));
-                let mut taken = std::mem::replace(s, Stack::row(0.0));
-                taken = taken.with_layout(|l| super::dialogue::edit_outline(l, editing, accent));
-                *s = taken;
-            })
-            .children(
+        let h = &skin.history;
+        let [mt, mr, mb, ml] = h.panel.as_ref().map_or([8.0; 4], |p| p.margin);
+        let [pl, pt, pr, pb] = h.panel.as_ref().map_or([4.0; 4], |p| p.padding);
+        let panel_surface = Surface::history_panel(&skin);
+        let decor = |layer: DecorLayer| -> Vec<AnyView> {
+            h.decor
+                .iter()
+                .filter(|d| d.layer == layer)
+                .map(|d| dialogue::decor(&skin, d, None::<fn() -> bool>))
+                .collect()
+        };
+        let (below, above) = (decor(DecorLayer::Below), decor(DecorLayer::Above));
+        let title = h.title.as_ref().map(|t| title_view(&skin, t));
+        widget(Stack::fill_column(0.0).with_layout(move |l| {
+            l.padding_top = Some(LengthSpec::Px(mt));
+            l.padding_right = Some(LengthSpec::Px(mr));
+            l.padding_bottom = Some(LengthSpec::Px(mb));
+            l.padding_left = Some(LengthSpec::Px(ml));
+        }))
+        .bind(move |s: &mut Stack| {
+            let editing = ui
+                .settings
+                .with(|x| x.overlays.history.lock == nanatype_settings::Lock::EditLayout);
+            let accent = c(ui.skin.with(|k| k.chrome.accent));
+            let mut taken = std::mem::replace(s, Stack::row(0.0));
+            taken = taken.with_layout(|l| super::dialogue::edit_outline(l, editing, accent));
+            *s = taken;
+        })
+        .children(
+            widget(Stack::fill_column(0.0).with_layout(move |l| {
+                l.position = PositionSpec::Relative;
+                if let Some(s) = &panel_surface {
+                    s.apply(l);
+                }
+            }))
+            .children((
+                below,
+                title,
                 widget(ScrollView::new(ScrollAxes::Vertical).follow_end(true)).children(
-                    widget(Stack::column(gap).padding_xy(4.0, 4.0).with_layout(|l| {
+                    widget(Stack::column(gap).with_layout(move |l| {
+                        l.padding_left = Some(LengthSpec::Px(pl));
+                        l.padding_top = Some(LengthSpec::Px(pt));
+                        l.padding_right = Some(LengthSpec::Px(pr));
+                        l.padding_bottom = Some(LengthSpec::Px(pb));
                         l.justify_content = nana_ui_core::JustifySpec::End;
                     }))
                     .children(list),
                 ),
-            )
+                above,
+            )),
+        )
     })
+}
+
+/// The header bar across the top of the panel.
+fn title_view(skin: &Skin, t: &HistoryTitle) -> AnyView {
+    let mut st = NodeStyle::default();
+    {
+        let l = Arc::make_mut(&mut st.layout);
+        l.font_size = Some(t.size);
+        l.font_weight = Some(t.weight);
+        l.font_family = skin.fonts.name.families.first().cloned();
+        l.color = Some(c(t.color));
+        l.white_space_nowrap = true;
+    }
+    let background = c(t.background);
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Fill)
+            .height(LengthSpec::Px(t.height))
+            .padding_xy(t.padding, 0.0)
+            .align(AlignSpec::Center)
+            .with_layout(move |l| {
+                l.background = Some(background);
+                l.flex_shrink = Some(0.0);
+            }),
+    )
+    .children(widget(Text::new(t.text.clone()).style(st)))
+    .into_any()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_line_on_screen_waits_until_it_leaves() {
+        let rows = [(1, Some(LineId(10))), (2, None), (3, Some(LineId(11)))];
+        let all = || rows.iter().copied();
+        assert_eq!(shown_keys(all(), 30, None), [1, 2, 3]);
+        // Only the line still on the box is left out; external rows stay.
+        assert_eq!(shown_keys(all(), 30, Some(LineId(11))), [1, 2]);
+        // The cap counts the rows that show.
+        assert_eq!(shown_keys(all(), 1, Some(LineId(11))), [2]);
+    }
 }
