@@ -513,7 +513,7 @@ cheat-se = Play a sound effect
 cheat-sticker = Insert a sticker
 cheat-at = Mention a viewer
 cheat-newline = New line
-cheat-recall = Previous / next sent line
+cheat-recall = Recall a sent line
 cheat-hide = Hide the input window
 ## end wave3-input
 

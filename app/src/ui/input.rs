@@ -760,7 +760,7 @@ pub fn cheat_sheet(ui: Ui) -> AnyView {
     ]
     .into_iter()
     .map(|(kind, icon, markup, key)| {
-        sheet_row(marker_chip(&look, kind, icon, markup), 124.0, t(key))
+        sheet_row(marker_chip(&look, kind, icon, markup), 116.0, t(key))
     })
     .collect();
     let (send, newline) = match ui.settings.with_untracked(|s| s.general.send_key) {
@@ -793,7 +793,7 @@ pub fn cheat_sheet(ui: Ui) -> AnyView {
             .children((caption(title), rows))
             .into_any()
     };
-    widget(Stack::row(20.0).padding(4.0))
+    widget(Stack::row(16.0).padding(4.0))
         .children((
             column(t("cheat-markers"), markers),
             column(t("cheat-shortcuts"), keys),
