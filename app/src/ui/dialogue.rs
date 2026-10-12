@@ -48,6 +48,7 @@ pub struct Base {
     pub entrance: Entrance,
     pub reduced_motion: bool,
     pub align: TextAlign,
+    pub mention: super::rich::MentionLook,
 }
 
 impl Base {
@@ -72,6 +73,7 @@ impl Base {
             entrance,
             reduced_motion: reduced,
             align: t.align,
+            mention: super::rich::MentionLook::from_skin(skin),
         }
     }
 
@@ -101,6 +103,7 @@ impl Base {
             body: self.family.clone(),
             name: self.name_family.clone(),
             accent: self.accent_family.clone(),
+            mention: self.mention.clone(),
         }
     }
 
@@ -383,11 +386,43 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         l.padding_right = Some(LengthSpec::Px(padding[2]));
         l.padding_bottom = Some(LengthSpec::Px(padding[3]));
     }))
-    .children(text_port(ui, source, content));
+    .children((
+        (source == Source::Display).then(|| reply_quote(ui)),
+        text_port(ui, source, content),
+    ));
 
     outer.children(frame.children((
         below, tail_below, the_box, tail_above, above, portrait, plate, cont,
     )))
+}
+
+/// The chat message the line on the typewriter answers, above its text
+/// (outside the text area, so following long text leaves it in place).
+fn reply_quote(ui: Ui) -> AnyView {
+    dynamic(
+        move || ui.display.get().revision,
+        move |_| {
+            let skin = ui.skin.get_untracked();
+            let view = ui.display.get_untracked();
+            let shown = !view.empty
+                && skin.dialogue.reply.visible
+                && ui
+                    .settings
+                    .with_untracked(|s| s.integrations.blivechat.quote_on_display);
+            match view.reply.as_ref().filter(|_| shown) {
+                Some(reply) => super::quote::quote_view(
+                    ui,
+                    &skin,
+                    &skin.dialogue.reply,
+                    reply,
+                    skin.dialogue.text.size,
+                    skin.dialogue.text.color,
+                ),
+                None => widget(Stack::column(0.0)).into_any(),
+            }
+        },
+    )
+    .into_any()
 }
 
 /// The text area: clips at the box's padding edge. On the typewriter the
@@ -809,6 +844,7 @@ pub fn has_effects(doc: &Document) -> bool {
             Inline::Text(r) => !r.effects.continuous.is_empty(),
             Inline::Ruby(r) => !r.base.effects.continuous.is_empty(),
             Inline::Atom(a) => !a.effects.continuous.is_empty(),
+            Inline::Mention(m) => !m.effects.continuous.is_empty(),
             Inline::Marker(_) => false,
         })
     })

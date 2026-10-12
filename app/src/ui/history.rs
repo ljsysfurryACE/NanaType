@@ -10,7 +10,7 @@ use nana_ui::runtime::{NodeStyle, ScrollAxes, ScrollView, Stack, Text};
 use nana_ui_core::{
     AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec, PositionSpec,
 };
-use nanatype_model::{Entrance, LineId};
+use nanatype_model::{Entrance, LineId, SourceKind};
 use nanatype_theme::{AvatarShape, DecorLayer, HistoryEntrance, HistoryLayout, HistoryTitle, Skin};
 
 use super::dialogue::{self, Base, Timing, document};
@@ -22,7 +22,7 @@ pub fn local_hm(unix_ms: u64) -> String {
     local_time(unix_ms, false)
 }
 
-fn local_time(unix_ms: u64, seconds: bool) -> String {
+pub fn local_time(unix_ms: u64, seconds: bool) -> String {
     let offset = crate::localtime::offset_seconds();
     let secs = (unix_ms / 1000) as i64 + offset;
     let day = secs.rem_euclid(86_400);
@@ -85,13 +85,35 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
         AvatarShape::Circle => size / 2.0,
         _ => size * 0.18,
     };
+    // Chat rows name a saved picture (`blob:…`); the local speaker's avatar
+    // is a path or a URL.
     let avatar_url = row.item.avatar.as_ref().map(|p| {
-        if p.contains("://") {
+        if let Some(url) = ui.asset_urls.with_untracked(|u| u.get(p).cloned()) {
+            url
+        } else if p.contains("://") {
             p.clone()
         } else {
             file_url(std::path::Path::new(p))
         }
     });
+    let chat = row.item.kind != SourceKind::Typewriter;
+    // Chat rows are drawn a little lighter than the streamer's lines.
+    let skin = if chat {
+        let mut s = (*skin).clone();
+        let a = f32::from(s.history.bubble_color.a) * s.history.chat.bubble_opacity.clamp(0.0, 1.0);
+        s.history.bubble_color = s.history.bubble_color.with_alpha(a.round() as u8);
+        Arc::new(s)
+    } else {
+        skin
+    };
+    let quote = row
+        .item
+        .reply
+        .clone()
+        .filter(|_| settings.history.show_quote && h.reply.visible)
+        .map(|reply| {
+            super::quote::quote_view(ui, &skin, &h.reply, &reply, h.text.size, h.text.color)
+        });
     let accent = c(skin.chrome.accent);
     let ring = h
         .avatar
@@ -222,7 +244,13 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
                 kind: skin.dialogue.reveal.entrance.kind,
                 ms: skin.dialogue.reveal.entrance.ms,
             };
-            let base = Base::history(&skin, entrance, ui.reduced_motion.get_untracked());
+            let mut base = Base::history(&skin, entrance, ui.reduced_motion.get_untracked());
+            if row.item.kind != SourceKind::Typewriter {
+                let scale = skin.history.chat.text_scale;
+                if scale.is_finite() && scale > 0.0 {
+                    base.size *= scale.clamp(0.3, 3.0);
+                }
+            }
             let timing = match &row.reveal {
                 Some(r) => Timing::Reveal(r.clone()),
                 None => Timing::Static,
@@ -254,6 +282,19 @@ fn row_view(ui: Ui, key: u64) -> AnyView {
             }),
     )
     .children(body);
+    let bubble = match quote {
+        Some(q) => widget(
+            Stack::column(2.0)
+                .width(LengthSpec::Shrink)
+                .with_layout(move |l| {
+                    l.max_width = Some(LengthSpec::Px(bubble_max));
+                    l.align_items = AlignSpec::Start;
+                }),
+        )
+        .children((q, bubble))
+        .into_any(),
+        None => bubble.into_any(),
+    };
 
     let content = if inline {
         let name_w = h.name_width;

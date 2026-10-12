@@ -7,6 +7,7 @@
 - **历史记录**：头像 + 名字 + 气泡的聊天列表，可随打字同步出现。
 - **接入 OBS**：Spout2（GPU 共享纹理，零回读，窗口隐藏时也持续输出）或透明窗口捕获。
 - **联动**：VTube Studio（表情、热键、参数和口型同步，`[expr]` / `[vts]` 标记按打字位置触发）、OSC、本地 WebSocket 广播。
+- **blivechat 弹幕**：连接本机运行的 [blivechat](https://github.com/xfgryujk/blivechat)，弹幕面板里可 @ 或回复观众，观众以带头像和昵称的标签出现在台词中；弹幕、醒目留言、礼物、上舰也可以混入历史记录。
 - **皮肤**：内置 5 套（光环、夜色、羊皮纸、ADV 经典、RPG 窗口），可导入 / 导出 `.ntskin` 皮肤包。
 - **多语言**：简体中文、English、日本語。
 
@@ -23,6 +24,22 @@
 
 - **编辑后发送**：写完后发送，展示框按打字机节奏播放。
 - **实时镜像**：展示框实时跟随输入，发送后台词进入历史。
+
+### blivechat 弹幕
+
+1. 运行 blivechat（默认 `127.0.0.1:12450`）。
+2. 设置 › 联动 › blivechat 弹幕：填入开放平台身份码（或房间号），点「连接」。
+3. 托盘菜单或设置里打开**弹幕面板**。它是只给主播看的普通窗口，不会被采集，也不走 Spout。
+4. 每条弹幕右侧：**@** 在输入框光标处插入观众标签（头像 + 昵称）；**回复** 同时把这条弹幕作为引用挂到下一句台词上，对话框与历史记录会在台词上方显示「头像 · 昵称：原文」。输入框底部的回复条可以取消。
+5. 设置 › 历史记录 › 弹幕：让弹幕、醒目留言、礼物、上舰与台词一起出现在历史记录里，可按类型和礼物价值筛选。
+
+头像与表情会下载到本地缓存后再显示，所以对话框、历史记录和 Spout 输出里同样可见。标签与引用的样式由皮肤的 `[mention]`、`[dialogue.reply]`、`[history.reply]`、`[history.chat]` 决定（见 [docs/skins.md](docs/skins.md)），标记写法是 `[at=uid name="昵称"]`（见 [docs/markup.md](docs/markup.md)）。
+
+没有直播间时可以用模拟服务器试用，它按 blivechat 的格式循环发送弹幕：
+
+```bash
+cargo run -p nanatype-blive --example mock_blivechat
+```
 
 ### 接入 OBS
 
@@ -89,6 +106,7 @@ pwsh scripts/package.ps1
 | `crates/settings` | 设置结构、版本迁移、原子写入、窗口位置 |
 | `crates/audio` | 解码、混音与按采样时刻调度 |
 | `crates/bridge` | VTube Studio、OSC、WebSocket |
+| `crates/blive` | blivechat 客户端：协议解析、连接与重连 |
 | `crates/core` | 会话逻辑：草稿、发送、继续、队列、历史、回溯 |
 | `app` | NanaUI 宿主、窗口、视图、热键、托盘、Spout |
 

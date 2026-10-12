@@ -205,6 +205,25 @@ color = "#00000026"
 color = "#3a2230"
 size = 18
 
+[history.chat]                    # blivechat 弹幕行（设置 › 历史记录 › 弹幕 打开后出现）
+text_scale = 0.88                 # 弹幕文字相对 history.text 的大小
+bubble_opacity = 0.7              # 弹幕气泡相对 bubble_color 的不透明度
+
+[history.reply]                   # 回复弹幕的台词，气泡上方的一行引用：头像 · 昵称：原文
+visible = true
+size = 12                         # 默认是正文的 62%
+color = "#7a6070"                 # 原文颜色，默认同正文，可写颜色角色；昵称用 accent
+opacity = 0.8
+
+[dialogue.reply]                  # 对话框上的回复引用，字段同 [history.reply]
+visible = true                    # 用户也可在 设置 › 联动 › blivechat 里关闭
+
+[mention]                         # 台词里的 [at=…]：带头像和昵称的标签，输入框、对话框和历史记录一致
+fill = "accent"                   # 标签底色，可写颜色角色
+text_color = "#ffffff"
+scale = 0.82                      # 相对周围文字的字号
+avatar = true                     # 昵称前显示头像
+
 [sounds]
 typing = { files = ["sounds/key1.ogg", "sounds/key2.ogg"], volume = 0.6, pitch_jitter = 0.05, every_n = 1, min_interval_ms = 30 }
 open = "sounds/open.ogg"          # 一句开始

@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{AnyView, IntoView, Signal, dynamic, signal, widget};
-use nana_ui::runtime::{Activate, Button, Chip, IconButton, Stack, StatusBadge, Text};
+use nana_ui::runtime::{
+    Activate, Button, Chip, IconButton, Stack, StatusBadge, Text, TextChanged, TextInput,
+    TextSubmitted,
+};
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{
     AlignSpec, BackgroundImage, CssGradient, GradientStop, LengthSpec, LinearGradient,
@@ -13,8 +16,8 @@ use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind, Overflow, VtsReset};
 use nanatype_playback::QueuePolicy;
 use nanatype_settings::{
-    CaptureBackground, ChromeMode, HideLatest, HistorySync, InputMode, InputPresence, Lock,
-    QuickPhrase, SendKey, Settings,
+    BliveRoomKind, CaptureBackground, ChromeMode, HideLatest, HistorySync, InputMode,
+    InputPresence, Lock, QuickPhrase, SendKey, Settings,
 };
 
 use super::Page;
@@ -1179,133 +1182,336 @@ fn windows(ui: Ui) -> AnyView {
 
 fn history(ui: Ui) -> AnyView {
     widget(Stack::column(0.0))
-        .children((section(
-            ui,
-            "settings-history",
-            vec![
-                row(
-                    ui,
-                    "history-sync",
-                    None,
-                    select(
+        .children((
+            section(
+                ui,
+                "settings-history",
+                vec![
+                    row(
                         ui,
-                        select_keys(
+                        "history-sync",
+                        None,
+                        select(
                             ui,
-                            &[
-                                ("submit", "history-sync-submit"),
-                                ("reveal", "history-sync-reveal"),
-                                ("complete", "history-sync-complete"),
-                            ],
+                            select_keys(
+                                ui,
+                                &[
+                                    ("submit", "history-sync-submit"),
+                                    ("reveal", "history-sync-reveal"),
+                                    ("complete", "history-sync-complete"),
+                                ],
+                            ),
+                            |s| match s.history.sync {
+                                HistorySync::OnSubmit => "submit".into(),
+                                HistorySync::Reveal => "reveal".into(),
+                                HistorySync::OnComplete => "complete".into(),
+                            },
+                            |s, v| {
+                                s.history.sync = match v {
+                                    "submit" => HistorySync::OnSubmit,
+                                    "complete" => HistorySync::OnComplete,
+                                    _ => HistorySync::Reveal,
+                                }
+                            },
                         ),
-                        |s| match s.history.sync {
-                            HistorySync::OnSubmit => "submit".into(),
-                            HistorySync::Reveal => "reveal".into(),
-                            HistorySync::OnComplete => "complete".into(),
-                        },
-                        |s, v| {
-                            s.history.sync = match v {
-                                "submit" => HistorySync::OnSubmit,
-                                "complete" => HistorySync::OnComplete,
-                                _ => HistorySync::Reveal,
-                            }
-                        },
                     ),
-                ),
-                row(
-                    ui,
-                    "history-hide-latest",
-                    Some("history-hide-latest-hint"),
-                    select(
+                    row(
                         ui,
-                        select_keys(
+                        "history-hide-latest",
+                        Some("history-hide-latest-hint"),
+                        select(
                             ui,
-                            &[
-                                ("skin", "history-hide-latest-skin"),
-                                ("always", "history-hide-latest-always"),
-                                ("never", "history-hide-latest-never"),
-                            ],
+                            select_keys(
+                                ui,
+                                &[
+                                    ("skin", "history-hide-latest-skin"),
+                                    ("always", "history-hide-latest-always"),
+                                    ("never", "history-hide-latest-never"),
+                                ],
+                            ),
+                            |s| match s.history.hide_latest {
+                                HideLatest::Skin => "skin".into(),
+                                HideLatest::Always => "always".into(),
+                                HideLatest::Never => "never".into(),
+                            },
+                            |s, v| {
+                                s.history.hide_latest = match v {
+                                    "always" => HideLatest::Always,
+                                    "never" => HideLatest::Never,
+                                    _ => HideLatest::Skin,
+                                }
+                            },
                         ),
-                        |s| match s.history.hide_latest {
-                            HideLatest::Skin => "skin".into(),
-                            HideLatest::Always => "always".into(),
-                            HideLatest::Never => "never".into(),
-                        },
-                        |s, v| {
-                            s.history.hide_latest = match v {
-                                "always" => HideLatest::Always,
-                                "never" => HideLatest::Never,
-                                _ => HideLatest::Skin,
-                            }
-                        },
                     ),
-                ),
-                row(
-                    ui,
-                    "history-visible",
-                    None,
-                    number(
+                    row(
                         ui,
-                        (1.0, 200.0),
-                        |s| f64::from(s.history.visible_items),
-                        |s, v| s.history.visible_items = v as u32,
+                        "history-visible",
+                        None,
+                        number(
+                            ui,
+                            (1.0, 200.0),
+                            |s| f64::from(s.history.visible_items),
+                            |s, v| s.history.visible_items = v as u32,
+                        ),
                     ),
-                ),
-                row(
-                    ui,
-                    "history-max",
-                    None,
-                    number(
+                    row(
                         ui,
-                        (1.0, 5000.0),
-                        |s| f64::from(s.history.max_items),
-                        |s, v| s.history.max_items = v as u32,
+                        "history-max",
+                        None,
+                        number(
+                            ui,
+                            (1.0, 5000.0),
+                            |s| f64::from(s.history.max_items),
+                            |s, v| s.history.max_items = v as u32,
+                        ),
                     ),
-                ),
-                row(
-                    ui,
-                    "history-fade",
-                    None,
-                    slider(
+                    row(
                         ui,
-                        (0.0, 300.0, 5.0),
-                        "s",
-                        |s| f64::from(s.history.fade_after_s.unwrap_or(0)),
-                        |s, v| s.history.fade_after_s = (v > 0.0).then_some(v as u32),
+                        "history-fade",
+                        None,
+                        slider(
+                            ui,
+                            (0.0, 300.0, 5.0),
+                            "s",
+                            |s| f64::from(s.history.fade_after_s.unwrap_or(0)),
+                            |s, v| s.history.fade_after_s = (v > 0.0).then_some(v as u32),
+                        ),
                     ),
-                ),
-                row(
-                    ui,
-                    "history-avatar",
-                    None,
-                    switch(
+                    row(
                         ui,
-                        |s| s.history.show_avatar,
-                        |s, v| s.history.show_avatar = v,
+                        "history-avatar",
+                        None,
+                        switch(
+                            ui,
+                            |s| s.history.show_avatar,
+                            |s, v| s.history.show_avatar = v,
+                        ),
                     ),
-                ),
-                row(
-                    ui,
-                    "history-name",
-                    None,
-                    switch(ui, |s| s.history.show_name, |s, v| s.history.show_name = v),
-                ),
-                row(
-                    ui,
-                    "history-time",
-                    None,
-                    switch(ui, |s| s.history.show_time, |s, v| s.history.show_time = v),
-                ),
-                row(
-                    ui,
-                    "history-clear",
-                    None,
-                    button(ui, "history-clear", || {
-                        Msg::Core(nanatype_core::Cmd::ClearHistory)
-                    }),
-                ),
-            ],
-        ),))
+                    row(
+                        ui,
+                        "history-name",
+                        None,
+                        switch(ui, |s| s.history.show_name, |s, v| s.history.show_name = v),
+                    ),
+                    row(
+                        ui,
+                        "history-time",
+                        None,
+                        switch(ui, |s| s.history.show_time, |s, v| s.history.show_time = v),
+                    ),
+                    row(
+                        ui,
+                        "history-clear",
+                        None,
+                        button(ui, "history-clear", || {
+                            Msg::Core(nanatype_core::Cmd::ClearHistory)
+                        }),
+                    ),
+                ],
+            ),
+            section(ui, "history-chat", {
+                let mut rows = vec![
+                    row(
+                        ui,
+                        "history-chat-show",
+                        Some("history-chat-show-hint"),
+                        switch(
+                            ui,
+                            |s| s.history.chat.enabled,
+                            |s, v| s.history.chat.enabled = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "history-show-quote",
+                        Some("history-show-quote-hint"),
+                        switch(
+                            ui,
+                            |s| s.history.show_quote,
+                            |s, v| s.history.show_quote = v,
+                        ),
+                    ),
+                ];
+                rows.extend([
+                    row(
+                        ui,
+                        "chat-filter-text",
+                        None,
+                        switch(
+                            ui,
+                            |s| s.history.chat.filter.text,
+                            |s, v| s.history.chat.filter.text = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "chat-filter-super-chat",
+                        None,
+                        switch(
+                            ui,
+                            |s| s.history.chat.filter.super_chat,
+                            |s, v| s.history.chat.filter.super_chat = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "chat-filter-gift",
+                        None,
+                        switch(
+                            ui,
+                            |s| s.history.chat.filter.gift,
+                            |s, v| s.history.chat.filter.gift = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "chat-filter-member",
+                        None,
+                        switch(
+                            ui,
+                            |s| s.history.chat.filter.member,
+                            |s, v| s.history.chat.filter.member = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "chat-min-gift",
+                        Some("chat-min-gift-hint"),
+                        number(
+                            ui,
+                            (0.0, 10000.0),
+                            |s| f64::from(s.history.chat.filter.min_gift_coin) / 1000.0,
+                            |s, v| {
+                                s.history.chat.filter.min_gift_coin = (v * 1000.0).round() as u32
+                            },
+                        ),
+                    ),
+                ]);
+                rows
+            }),
+        ))
         .into_any()
+}
+
+/// The blivechat room: typed freely, applied on Enter or with the button so
+/// a half-typed code does not connect.
+fn room_field(ui: Ui) -> AnyView {
+    let draft = signal(
+        ui.settings
+            .with_untracked(|s| s.integrations.blivechat.room.clone()),
+    );
+    let apply = move || {
+        let room = draft.get_untracked().trim().to_owned();
+        Msg::Edit(Box::new(move |s: &mut Settings| {
+            s.integrations.blivechat.room = room;
+            if !s.integrations.blivechat.room.is_empty() {
+                s.integrations.blivechat.enabled = true;
+            }
+        }))
+    };
+    widget(Stack::row(6.0).align(AlignSpec::Center))
+        .children((
+            widget(Stack::row(0.0).width(LengthSpec::Px(200.0))).children(
+                widget(
+                    TextInput::new(draft.get_untracked())
+                        .placeholder(ui.now_t("int-blive-room-placeholder"))
+                        .size(ControlSize::Small),
+                )
+                .on(move |e: &TextChanged| draft.set(e.value.to_string()))
+                .on_cx(move |_, _: &TextSubmitted, cx| cx.dispatch_program_all(apply())),
+            ),
+            widget(
+                Button::new(ui.now_t("int-blive-connect"))
+                    .kind(ButtonKind::Primary)
+                    .size(ControlSize::Small),
+            )
+            .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(apply())),
+        ))
+        .into_any()
+}
+
+fn blivechat(ui: Ui) -> AnyView {
+    let rows = vec![
+        row(
+            ui,
+            "int-blive",
+            Some("int-blive-hint"),
+            switch(
+                ui,
+                |s| s.integrations.blivechat.enabled,
+                |s, v| s.integrations.blivechat.enabled = v,
+            ),
+        ),
+        row(
+            ui,
+            "int-blive-room-kind",
+            Some("int-blive-room-kind-hint"),
+            select(
+                ui,
+                select_keys(
+                    ui,
+                    &[
+                        ("auth_code", "int-blive-auth-code"),
+                        ("room_id", "int-blive-room-id"),
+                    ],
+                ),
+                |s| match s.integrations.blivechat.room_kind {
+                    BliveRoomKind::AuthCode => "auth_code".into(),
+                    BliveRoomKind::RoomId => "room_id".into(),
+                },
+                |s, v| {
+                    s.integrations.blivechat.room_kind = match v {
+                        "room_id" => BliveRoomKind::RoomId,
+                        _ => BliveRoomKind::AuthCode,
+                    }
+                },
+            ),
+        ),
+        row(ui, "int-blive-room", None, room_field(ui)),
+        row(
+            ui,
+            "int-blive-host",
+            Some("int-blive-host-hint"),
+            text(
+                ui,
+                "127.0.0.1".into(),
+                180.0,
+                |s| s.integrations.blivechat.host.clone(),
+                |s, v| s.integrations.blivechat.host = v,
+            ),
+        ),
+        row(
+            ui,
+            "int-blive-port",
+            None,
+            number(
+                ui,
+                (1.0, 65535.0),
+                |s| f64::from(s.integrations.blivechat.port),
+                |s, v| s.integrations.blivechat.port = v as u16,
+            ),
+        ),
+        row_text(String::new(), None, status_text(ui, |s| s.blive.clone())),
+        row(
+            ui,
+            "int-blive-panel",
+            Some("int-blive-panel-hint"),
+            button(ui, "int-blive-open-panel", || {
+                Msg::ShowWindow(WindowKind::Chat)
+            }),
+        ),
+        row(
+            ui,
+            "int-blive-quote-display",
+            Some("int-blive-quote-display-hint"),
+            switch(
+                ui,
+                |s| s.integrations.blivechat.quote_on_display,
+                |s, v| s.integrations.blivechat.quote_on_display = v,
+            ),
+        ),
+    ];
+    section(ui, "int-blive-section", rows)
 }
 
 fn hotkeys(ui: Ui) -> AnyView {
@@ -1664,6 +1870,7 @@ fn integrations(ui: Ui) -> AnyView {
     );
     widget(Stack::column(0.0))
         .children((
+            blivechat(ui),
             section(
                 ui,
                 "int-vts",

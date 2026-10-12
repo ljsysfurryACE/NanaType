@@ -13,6 +13,7 @@ use crate::windows::WindowKind;
 const ID_INPUT: &str = "nt.input";
 const ID_DISPLAY: &str = "nt.display";
 const ID_HISTORY: &str = "nt.history";
+const ID_CHAT: &str = "nt.chat";
 const ID_LOCK: &str = "nt.lock";
 const ID_COMPOSE: &str = "nt.mode.compose";
 const ID_MIRROR: &str = "nt.mode.mirror";
@@ -26,6 +27,7 @@ pub struct Tray {
     input: CheckMenuItem,
     display: CheckMenuItem,
     history: CheckMenuItem,
+    chat: CheckMenuItem,
     lock: CheckMenuItem,
     mode: Submenu,
     compose: CheckMenuItem,
@@ -53,6 +55,7 @@ impl Tray {
         let input = check(ID_INPUT);
         let display = check(ID_DISPLAY);
         let history = check(ID_HISTORY);
+        let chat = check(ID_CHAT);
         let lock = check(ID_LOCK);
         let compose = check(ID_COMPOSE);
         let mirror = check(ID_MIRROR);
@@ -68,6 +71,7 @@ impl Tray {
             &input,
             &display,
             &history,
+            &chat,
             &lock,
             &PredefinedMenuItem::separator(),
             &mode,
@@ -94,6 +98,7 @@ impl Tray {
                 ID_INPUT => Msg::ToggleWindow(WindowKind::Input),
                 ID_DISPLAY => Msg::ToggleWindow(WindowKind::Display),
                 ID_HISTORY => Msg::ToggleWindow(WindowKind::History),
+                ID_CHAT => Msg::ToggleWindow(WindowKind::Chat),
                 ID_LOCK => Msg::Edit(Box::new(|s: &mut Settings| {
                     let locked = s.overlays.display.lock == Lock::Locked;
                     let lock = if locked {
@@ -138,6 +143,7 @@ impl Tray {
             input,
             display,
             history,
+            chat,
             lock,
             mode,
             compose,
@@ -155,6 +161,7 @@ impl Tray {
         self.input.set_text(t("tray-show-input"));
         self.display.set_text(t("tray-show-display"));
         self.history.set_text(t("tray-show-history"));
+        self.chat.set_text(t("tray-show-chat"));
         self.lock.set_text(t("tray-lock-overlays"));
         self.mode.set_text(t("tray-mode"));
         self.compose.set_text(t("mode-compose"));
@@ -169,6 +176,7 @@ impl Tray {
         self.input.set_checked(s.overlays.input.visible);
         self.display.set_checked(s.overlays.display.visible);
         self.history.set_checked(s.overlays.history.visible);
+        self.chat.set_checked(s.integrations.blivechat.panel_open);
         self.lock
             .set_checked(s.overlays.display.lock == Lock::Locked);
         self.compose

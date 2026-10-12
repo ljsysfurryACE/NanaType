@@ -192,6 +192,89 @@ fn history_sync_on_submit_and_on_complete() {
     assert_eq!(core.history().len(), 1);
 }
 
+fn viewer() -> nanatype_model::ChatRef {
+    nanatype_model::ChatRef::new(
+        nanatype_model::ChatUser {
+            uid: "42".into(),
+            name: "观众".into(),
+            avatar: None,
+        },
+        "主播  晚上好\n呀",
+        nanatype_model::SourceKind::Chat,
+    )
+}
+
+#[test]
+fn a_reply_rides_on_the_next_sent_line_only() {
+    let mut core = core_with(|_| {});
+    let fx = core.handle(Cmd::SetReply(Some(viewer())), 0);
+    assert!(fx.reply_changed);
+    assert_eq!(core.pending_reply().unwrap().text, "主播 晚上好 呀");
+    let fx = type_and_send(&mut core, "晚上好", 100);
+    assert!(fx.reply_changed, "the send used the reply");
+    assert!(core.pending_reply().is_none());
+    assert_eq!(core.display().reply.as_ref().unwrap().user.name, "观众");
+    assert_eq!(
+        core.history()[0].item.reply.as_ref().unwrap().user.uid,
+        "42"
+    );
+    let fx = type_and_send(&mut core, "下一句", 5_000);
+    assert!(!fx.reply_changed);
+    assert!(core.display().reply.is_none());
+    assert!(core.history()[1].item.reply.is_none());
+}
+
+#[test]
+fn quick_phrases_and_a_dropped_reply_send_without_a_quote() {
+    let mut core = core_with(|_| {});
+    core.handle(Cmd::SetReply(Some(viewer())), 0);
+    core.handle(Cmd::SendMarkup("你好".into()), 10);
+    assert!(core.display().reply.is_none());
+    assert!(
+        core.pending_reply().is_some(),
+        "a phrase leaves the reply pending"
+    );
+    let fx = core.handle(Cmd::SetReply(None), 20);
+    assert!(fx.reply_changed);
+    type_and_send(&mut core, "嗯", 5_000);
+    assert!(core.display().reply.is_none());
+}
+
+#[test]
+fn mirror_mode_shows_the_pending_reply_while_typing() {
+    let mut core = core_with(|s| s.general.input_mode = InputMode::Mirror);
+    core.handle(Cmd::DraftChanged(Document::plain("哈")), 0);
+    core.handle(Cmd::SetReply(Some(viewer())), 10);
+    assert!(core.display().reply.is_some());
+    core.handle(Cmd::Send, 20);
+    assert!(
+        core.display().reply.is_some(),
+        "the committed line keeps it"
+    );
+    assert!(core.history()[0].item.reply.is_some());
+}
+
+#[test]
+fn chat_rows_join_the_history_with_their_uid() {
+    let mut core = core_with(|_| {});
+    let fx = core.handle(
+        Cmd::External(nanatype_model::HistoryItem {
+            source: nanatype_model::SourceId("blivechat".into()),
+            kind: nanatype_model::SourceKind::Chat,
+            line: None,
+            author: "观众".into(),
+            avatar: Some("blob:bili-face-42".into()),
+            doc: Document::plain("草"),
+            at: 0,
+            uid: Some("42".into()),
+            reply: None,
+        }),
+        0,
+    );
+    assert!(fx.history_changed);
+    assert_eq!(core.history()[0].item.uid.as_deref(), Some("42"));
+}
+
 #[test]
 fn mirror_mode_follows_typing_including_repeats_and_commits_on_send() {
     let mut core = core_with(|s| s.general.input_mode = InputMode::Mirror);

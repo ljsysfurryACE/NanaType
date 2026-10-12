@@ -379,6 +379,54 @@ pub struct HistorySettings {
     pub show_time: bool,
     pub sync: HistorySync,
     pub hide_latest: HideLatest,
+    /// Live chat (blivechat) rows mixed into the list.
+    pub chat: HistoryChat,
+    /// Show the chat message a line answers above it.
+    pub show_quote: bool,
+}
+
+/// Which live-chat messages a list shows.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChatFilter {
+    pub text: bool,
+    pub super_chat: bool,
+    pub gift: bool,
+    pub member: bool,
+    /// Gifts worth less than this many gold coins (1000 = ¥1) are left out;
+    /// free gifts are worth nothing.
+    pub min_gift_coin: u32,
+}
+
+impl Default for ChatFilter {
+    fn default() -> Self {
+        Self {
+            text: true,
+            super_chat: true,
+            gift: true,
+            member: true,
+            min_gift_coin: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HistoryChat {
+    pub enabled: bool,
+    pub filter: ChatFilter,
+}
+
+impl Default for HistoryChat {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            filter: ChatFilter {
+                min_gift_coin: 1,
+                ..ChatFilter::default()
+            },
+        }
+    }
 }
 
 impl Default for HistorySettings {
@@ -392,6 +440,8 @@ impl Default for HistorySettings {
             show_time: false,
             sync: HistorySync::Reveal,
             hide_latest: HideLatest::Skin,
+            chat: HistoryChat::default(),
+            show_quote: true,
         }
     }
 }
@@ -528,12 +578,56 @@ impl Default for WsSettings {
     }
 }
 
+/// What the blivechat room value is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BliveRoomKind {
+    /// The streamer's 身份码 from the Bilibili live open platform.
+    #[default]
+    AuthCode,
+    /// A live room number.
+    RoomId,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BlivechatSettings {
+    pub enabled: bool,
+    /// Where the blivechat server runs.
+    pub host: String,
+    pub port: u16,
+    pub room_kind: BliveRoomKind,
+    pub room: String,
+    /// What the chat panel lists.
+    pub panel: ChatFilter,
+    /// Quote the answered message on the dialogue box.
+    pub quote_on_display: bool,
+    /// The chat panel was open when the app last quit.
+    pub panel_open: bool,
+}
+
+impl Default for BlivechatSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "127.0.0.1".into(),
+            port: 12450,
+            room_kind: BliveRoomKind::AuthCode,
+            room: String::new(),
+            panel: ChatFilter::default(),
+            quote_on_display: true,
+            panel_open: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Integrations {
     pub vts: VtsSettings,
     pub osc: OscSettings,
     pub websocket: WsSettings,
+    pub blivechat: BlivechatSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -636,6 +730,15 @@ impl Settings {
             self.skin.id = DEFAULT_SKIN.into();
         }
         self.general.speaker_name = self.general.speaker_name.chars().take(64).collect();
+        let b = &mut self.integrations.blivechat;
+        b.host = b.host.trim().to_owned();
+        if b.host.is_empty() {
+            b.host = "127.0.0.1".into();
+        }
+        if b.port == 0 {
+            b.port = 12450;
+        }
+        b.room = b.room.trim().to_owned();
         *self != before
     }
 }

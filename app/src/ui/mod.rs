@@ -1,10 +1,12 @@
 //! Views. Every window reads the same [`Ui`] signals, so the input preview,
 //! the typewriter and the history list always agree on how a line looks.
 
+pub mod danmaku;
 pub mod dialogue;
 pub mod history;
 pub mod input;
 pub mod overflow;
+pub mod quote;
 pub mod rich;
 pub mod settings;
 pub mod surface;
@@ -15,7 +17,7 @@ use std::sync::{Arc, LazyLock};
 use nana_ui::runtime::view::{NodeRef, Signal, node_ref, signal};
 use nanatype_core::{DisplayView, HistoryRow};
 use nanatype_i18n::{Arg, I18n, Locale};
-use nanatype_model::{Document, Entrance, EntranceKind};
+use nanatype_model::{ChatRef, Document, Entrance, EntranceKind};
 use nanatype_settings::Settings;
 use nanatype_theme::Skin;
 
@@ -40,6 +42,9 @@ pub struct Status {
     pub vts_hotkeys: Vec<(String, String)>,
     pub osc: String,
     pub ws: String,
+    /// blivechat: what the panel and the settings say, and the dot's state.
+    pub blive: String,
+    pub blive_link: danmaku::Link,
     pub spout_display: String,
     pub spout_history: String,
     pub notices: Vec<Notice>,
@@ -121,6 +126,12 @@ pub struct Ui {
     pub text_port: NodeRef,
     /// How far the typewriter's text is scrolled up (logical px).
     pub text_scroll: Signal<f32>,
+    /// Live chat, oldest first (capped).
+    pub chat: Signal<Arc<Vec<Arc<crate::chat::ChatMessage>>>>,
+    /// The chat message the next sent line answers.
+    pub reply: Signal<Option<ChatRef>>,
+    /// The chat panel's width, so its rows can lay text out to it.
+    pub chat_width: Signal<f32>,
 }
 
 impl Ui {
@@ -154,6 +165,9 @@ impl Ui {
             text_node: node_ref(),
             text_port: node_ref(),
             text_scroll: signal(0.0),
+            chat: signal(Arc::new(Vec::new())),
+            reply: signal(None),
+            chat_width: signal(400.0),
         }
     }
 

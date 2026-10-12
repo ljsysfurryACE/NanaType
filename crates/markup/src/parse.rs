@@ -1,9 +1,9 @@
 use std::ops::Range;
 
 use nanatype_model::{
-    AssetRef, Atom, AtomKind, Continuous, ContinuousKind, Document, Effects, Entrance,
-    EntranceKind, FontSlot, Inline, LineMeta, Marker, Pace, Paragraph, Rgba8, RubyGroup, Shadow,
-    Size, Stroke, Style, TextRun, VtsAction,
+    AssetRef, Atom, AtomKind, ChatUser, Continuous, ContinuousKind, Document, Effects, Entrance,
+    EntranceKind, FontSlot, Inline, LineMeta, Marker, Mention, Pace, Paragraph, Rgba8, RubyGroup,
+    Shadow, Size, Stroke, Style, TextRun, VtsAction,
 };
 
 use crate::value::{self, Tag, parse_tag};
@@ -446,6 +446,26 @@ impl Builder<'_> {
                     height_em,
                     alt: tag.arg("alt").unwrap_or_default().to_owned(),
                     effects,
+                }))
+            }
+            "at" => {
+                let Some(name) = tag.arg("name").filter(|n| !n.trim().is_empty()) else {
+                    return Some(None);
+                };
+                let avatar = match tag.arg("avatar") {
+                    Some(a) => match a.parse::<AssetRef>() {
+                        Ok(a) => Some(a),
+                        Err(_) => return Some(None),
+                    },
+                    None => None,
+                };
+                Some(Inline::Mention(Mention {
+                    user: ChatUser {
+                        uid: v.unwrap_or_default().to_owned(),
+                        name: name.to_owned(),
+                        avatar,
+                    },
+                    effects: self.current_run().effects,
                 }))
             }
             _ => return None,

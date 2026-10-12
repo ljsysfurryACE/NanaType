@@ -38,6 +38,7 @@ fn same(prev: &Document, a: &Unit, next: &Document, b: &Unit) -> bool {
             x.annotation == y.annotation && x.base.same_attrs(&y.base)
         }
         (Some(Inline::Atom(x)), Some(Inline::Atom(y))) => x == y,
+        (Some(Inline::Mention(x)), Some(Inline::Mention(y))) => x == y,
         _ => false,
     }
 }

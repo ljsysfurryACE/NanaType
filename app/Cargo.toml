@@ -23,6 +23,7 @@ nanatype-i18n.workspace = true
 nanatype-settings.workspace = true
 nanatype-audio.workspace = true
 nanatype-bridge.workspace = true
+nanatype-blive.workspace = true
 nanatype-core.workspace = true
 nana-ui.workspace = true
 nana-ui-platform.workspace = true
@@ -37,6 +38,7 @@ notify = { version = "8", default-features = false, features = ["macos_fsevent"]
 crossbeam-channel = "0.5"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 tray-icon = "0.21"
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 
 [target.'cfg(windows)'.dependencies]
 nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout", rev = "106e124cdbe3a5eb9ee104715ee1d54c3903b217", default-features = false, features = ["gpu-dx11-shared"] }

@@ -107,6 +107,39 @@ fn missing_fields_take_defaults_instead_of_resetting_everything() {
 }
 
 #[test]
+fn files_from_before_blivechat_get_its_defaults() {
+    let json = r#"{"schema": 1, "integrations": {"osc": {"enabled": true}}}"#;
+    let s: Settings = serde_json::from_str(json).unwrap();
+    let b = &s.integrations.blivechat;
+    assert!(!b.enabled);
+    assert_eq!((b.host.as_str(), b.port), ("127.0.0.1", 12450));
+    assert_eq!(b.room_kind, BliveRoomKind::AuthCode);
+    assert!(b.quote_on_display && b.panel.text && b.panel.gift);
+    assert!(
+        !s.history.chat.enabled,
+        "chat stays out of history until asked"
+    );
+    assert_eq!(
+        s.history.chat.filter.min_gift_coin, 1,
+        "no free gifts in history"
+    );
+    assert!(s.history.show_quote);
+}
+
+#[test]
+fn blivechat_values_are_clamped() {
+    let mut s = Settings::default();
+    let b = &mut s.integrations.blivechat;
+    b.host = "  ".into();
+    b.port = 0;
+    b.room = " 123 ".into();
+    assert!(s.sanitize());
+    let b = &s.integrations.blivechat;
+    assert_eq!((b.host.as_str(), b.port), ("127.0.0.1", 12450));
+    assert_eq!(b.room, "123");
+}
+
+#[test]
 fn corrupt_files_are_quarantined_not_overwritten() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("settings.json");

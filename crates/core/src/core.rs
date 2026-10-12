@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use nanatype_model::{
-    Document, Entrance, EntranceKind, HistoryItem, Line, LineId, LineMeta, Overflow, SourceId,
-    SourceKind, Speaker, VtsAction, unix_millis,
+    ChatRef, Document, Entrance, EntranceKind, HistoryItem, Line, LineId, LineMeta, Overflow,
+    SourceId, SourceKind, Speaker, VtsAction, unix_millis,
 };
 use nanatype_playback::{
     Cue, CueKind, LineQueue, PacingParams, Phase, Player, PlayerEffect, QueueDecision, Timeline,
@@ -54,9 +54,12 @@ pub enum Cmd {
     CueFired(CueKind),
     SetSettings(Box<Settings>),
     SetSkin(Arc<Skin>),
-    /// A row from another message source (future danmaku).
+    /// A row from another message source (live chat).
     External(HistoryItem),
     ClearHistory,
+    /// Answer a chat message with the next line sent from the editor;
+    /// `None` drops the pending reply.
+    SetReply(Option<ChatRef>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,6 +120,8 @@ pub struct Effects {
     pub hide_input: bool,
     pub display_changed: bool,
     pub history_changed: bool,
+    /// The pending reply changed (set, dropped, or used by a send).
+    pub reply_changed: bool,
 }
 
 struct Active {
@@ -150,6 +155,8 @@ pub struct Core {
     speaking: bool,
     /// Line meta typed in the markup source, for the next send.
     draft_meta: LineMeta,
+    /// The chat message the next sent line answers.
+    reply: Option<ChatRef>,
 }
 
 fn global(generation: u64, epoch: u64) -> u64 {
@@ -180,6 +187,7 @@ impl Core {
             mirror_committed: false,
             speaking: false,
             draft_meta: LineMeta::default(),
+            reply: None,
         };
         core.refresh_params();
         core.display.entrance = core.entrance();
@@ -204,6 +212,11 @@ impl Core {
 
     pub fn history(&self) -> &VecDeque<HistoryRow> {
         &self.history
+    }
+
+    /// The chat message the next sent line answers.
+    pub fn pending_reply(&self) -> Option<&ChatRef> {
+        self.reply.as_ref()
     }
 
     pub fn queued(&self) -> usize {
@@ -313,6 +326,19 @@ impl Core {
             Cmd::ClearHistory => {
                 self.history.clear();
                 fx.history_changed = true;
+            }
+            Cmd::SetReply(reply) => {
+                if reply != self.reply {
+                    self.reply = reply;
+                    fx.reply_changed = true;
+                    if self.mode() == InputMode::Mirror
+                        && self.display.line.is_none()
+                        && !self.mirror_committed
+                    {
+                        self.display.reply = self.reply.clone();
+                        self.touch_display(&mut fx);
+                    }
+                }
             }
         }
         fx
@@ -434,6 +460,7 @@ impl Core {
         self.display.empty = doc.is_blank();
         self.display.doc = Arc::new(doc);
         self.display.speaker = self.speaker();
+        self.display.reply = self.reply.clone();
         self.display.reveal = reveal;
         self.display.fade = None;
         self.display.continue_indicator = false;
@@ -488,6 +515,8 @@ impl Core {
         }
         let mut line = Line::new(doc, self.speaker());
         line.meta = std::mem::take(&mut self.draft_meta);
+        line.reply = self.reply.take().map(Box::new);
+        fx.reply_changed |= line.reply.is_some();
         if self.mode() == InputMode::Mirror {
             self.commit_mirror(line, now, fx);
         } else {
@@ -546,6 +575,8 @@ impl Core {
             avatar: self.settings.general.avatar.clone(),
             doc: line.doc.clone(),
             at: unix_millis(),
+            uid: None,
+            reply: line.reply.clone(),
         }
     }
 
@@ -590,6 +621,7 @@ impl Core {
         self.display.line = Some(line.id);
         self.display.doc = Arc::new(line.doc.clone());
         self.display.speaker = line.speaker.clone();
+        self.display.reply = line.reply.as_deref().cloned();
         self.display.fade = None;
         self.display.shake = None;
         self.display.empty = false;

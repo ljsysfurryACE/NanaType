@@ -873,6 +873,75 @@ pub struct Dialogue {
     pub background: Option<String>,
     pub tail: Option<TailSpec>,
     pub decor: Vec<DecorSpec>,
+    /// The quoted chat message above a line that answers one.
+    pub reply: ReplySpec,
+}
+
+/// A chat message a line answers, quoted in one small line above it:
+/// avatar · name: text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ReplySpec {
+    pub visible: bool,
+    /// Text size; `None` is 62% of the line's text.
+    pub size: Option<f32>,
+    /// Defaults to the text colour; the name takes the accent colour.
+    pub color: Option<ColorRef>,
+    pub opacity: f32,
+}
+
+impl Default for ReplySpec {
+    fn default() -> Self {
+        Self {
+            visible: true,
+            size: None,
+            color: None,
+            opacity: 0.8,
+        }
+    }
+}
+
+/// A live-chat viewer named in a line (`[at=…]`): a pill with their avatar
+/// and name, drawn the same in the editor, on the dialogue box and in
+/// history.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MentionSpec {
+    pub fill: ColorRef,
+    pub text_color: ColorRef,
+    /// Size relative to the text around it.
+    pub scale: f32,
+    pub avatar: bool,
+}
+
+impl Default for MentionSpec {
+    fn default() -> Self {
+        Self {
+            fill: ColorRef::Role(ColorRole::Accent),
+            text_color: ColorRef::Rgba(Rgba8::rgb(255, 255, 255)),
+            scale: 0.82,
+            avatar: true,
+        }
+    }
+}
+
+/// How history shows live-chat rows next to the streamer's own lines.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HistoryChatSpec {
+    /// Chat text size relative to the history text.
+    pub text_scale: f32,
+    /// Bubble opacity of chat rows.
+    pub bubble_opacity: f32,
+}
+
+impl Default for HistoryChatSpec {
+    fn default() -> Self {
+        Self {
+            text_scale: 0.88,
+            bubble_opacity: 0.7,
+        }
+    }
 }
 
 impl Default for Dialogue {
@@ -892,6 +961,7 @@ impl Default for Dialogue {
             background: None,
             tail: None,
             decor: Vec::new(),
+            reply: ReplySpec::default(),
         }
     }
 }
@@ -1066,6 +1136,10 @@ pub struct History {
     /// Leave out the line still on the dialogue box until it clears; the
     /// user's setting can override this.
     pub hide_latest: bool,
+    /// Live-chat rows.
+    pub chat: HistoryChatSpec,
+    /// The chat message a row answers, quoted above its bubble.
+    pub reply: ReplySpec,
 }
 
 impl Default for History {
@@ -1105,6 +1179,8 @@ impl Default for History {
             title: None,
             decor: Vec::new(),
             hide_latest: false,
+            chat: HistoryChatSpec::default(),
+            reply: ReplySpec::default(),
         }
     }
 }
@@ -1202,6 +1278,7 @@ pub struct Skin {
     pub history: History,
     pub sounds: Sounds,
     pub effects: EffectDefaults,
+    pub mention: MentionSpec,
 }
 
 impl Skin {

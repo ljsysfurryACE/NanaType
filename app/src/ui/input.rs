@@ -759,18 +759,88 @@ fn status_line(ui: Ui) -> AnyView {
             .height(LengthSpec::Px(STATUS_H))
             .padding_xy(12.0, 2.0),
     )
-    .children(
-        widget(Text::new("").style(st).truncating()).bind(move |t: &mut Text| {
-            let (value, error) = text();
-            if t.value != value {
-                t.value = value;
-            }
-            t.style.foreground = Some(if error {
-                SemanticColorRole::Danger
-            } else {
-                SemanticColorRole::Muted
+    .children((
+        widget(Stack::row(0.0).with_layout(|l| {
+            l.flex_grow = Some(1.0);
+            l.min_width = Some(LengthSpec::Px(0.0));
+        }))
+        .visible(move || ui.reply.with(Option::is_none))
+        .children(
+            widget(Text::new("").style(st).truncating()).bind(move |t: &mut Text| {
+                let (value, error) = text();
+                if t.value != value {
+                    t.value = value;
+                }
+                t.style.foreground = Some(if error {
+                    SemanticColorRole::Danger
+                } else {
+                    SemanticColorRole::Muted
+                });
+            }),
+        ),
+        reply_bar(ui),
+    ))
+    .into_any()
+}
+
+/// "Replying to": the quoted chat message the next line answers, with a
+/// button that drops it.
+fn reply_bar(ui: Ui) -> AnyView {
+    dynamic(
+        move || ui.reply.get(),
+        move |reply| {
+            let Some(reply) = reply else {
+                return widget(Stack::row(0.0)).into_any();
+            };
+            let skin = ui.skin.get_untracked();
+            let url = reply.user.avatar.as_ref().and_then(|a| {
+                ui.asset_urls
+                    .with_untracked(|u| u.get(&a.to_string()).cloned())
             });
-        }),
+            let mut label = NodeStyle::default();
+            {
+                let l = Arc::make_mut(&mut label.layout);
+                l.font_size = Some(12.0);
+                l.font_weight = Some(700);
+                l.color = Some(super::c(skin.chrome.accent));
+                l.white_space_nowrap = true;
+                l.flex_shrink = Some(0.0);
+            }
+            let mut body = NodeStyle::default();
+            Arc::make_mut(&mut body.layout).font_size = Some(12.0);
+            body.foreground = Some(SemanticColorRole::Muted);
+            widget(
+                Stack::row(6.0)
+                    .align(AlignSpec::Center)
+                    .width(LengthSpec::Fill),
+            )
+            .children((
+                widget(
+                    Text::new(I18N.tr_in(
+                        ui.locale.get_untracked(),
+                        "chat-replying",
+                        &[("name", reply.user.name.as_str().into())],
+                    ))
+                    .style(label),
+                ),
+                super::danmaku::avatar(url, &reply.user.name, 18.0, super::c(skin.chrome.accent)),
+                widget(Stack::row(0.0).with_layout(|l| {
+                    l.flex_grow = Some(1.0);
+                    l.flex_shrink = Some(1.0);
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                }))
+                .children(widget(
+                    Text::new(reply.text.clone()).style(body).truncating(),
+                )),
+                widget(
+                    IconButton::new(ti::X, ui.now_t("chat-reply-cancel"))
+                        .size(ControlSize::Small)
+                        .with_tooltip(ui.now_t("chat-reply-cancel")),
+                )
+                .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::ClearReply)),
+            ))
+            .into_any()
+        },
     )
     .into_any()
 }

@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::Document;
+use crate::{ChatRef, Document};
 
 /// Unique within a process run; ordered by creation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -59,6 +59,9 @@ pub struct Line {
     pub meta: LineMeta,
     /// Unix milliseconds.
     pub created_at: u64,
+    /// The chat message this line answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<Box<ChatRef>>,
 }
 
 impl Line {
@@ -69,6 +72,7 @@ impl Line {
             speaker,
             meta: LineMeta::default(),
             created_at: unix_millis(),
+            reply: None,
         }
     }
 }

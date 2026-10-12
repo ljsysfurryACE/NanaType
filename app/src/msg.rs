@@ -3,6 +3,7 @@
 //! changes state.
 
 use nanatype_audio::AudioStatus;
+use nanatype_blive::BliveStatus;
 use nanatype_bridge::BridgeStatus;
 use nanatype_core::Cmd;
 use nanatype_playback::CueKind;
@@ -150,6 +151,20 @@ pub enum Msg {
     },
     /// The input window's native handle (for the summon hotkey).
     InputHwnd(isize),
+    /// A chat message whose pictures are saved.
+    Chat(std::sync::Arc<crate::chat::ChatMessage>),
+    /// The blivechat connection changed.
+    ChatStatus(BliveStatus),
+    /// Put a label for the chat message's author at the caret; `reply` also
+    /// quotes the message above the next line sent.
+    ChatMention {
+        seq: u64,
+        reply: bool,
+    },
+    /// Drop the pending reply.
+    ClearReply,
+    /// Empty the chat panel.
+    ClearChat,
     /// Show a message in the status line.
     Notice {
         text: String,

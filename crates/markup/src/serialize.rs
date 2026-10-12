@@ -182,6 +182,24 @@ pub fn serialize(doc: &Document) -> String {
                     }
                     w.out.push(']');
                 }
+                Inline::Mention(mention) => {
+                    let mut target: Vec<SpanTag> =
+                        w.open.iter().take_while(|t| !t.effect).cloned().collect();
+                    target.extend(effect_tags(&mention.effects, None));
+                    w.transition(&target);
+                    let user = &mention.user;
+                    w.out.push_str("[at");
+                    if !user.uid.is_empty() {
+                        w.out.push('=');
+                        w.out.push_str(&quote(&user.uid));
+                    }
+                    w.out.push_str(&format!(" name={}", quote(&user.name)));
+                    if let Some(avatar) = &user.avatar {
+                        w.out
+                            .push_str(&format!(" avatar={}", quote(&avatar.to_string())));
+                    }
+                    w.out.push(']');
+                }
                 Inline::Marker(marker) => {
                     w.out.push('[');
                     w.out.push_str(&marker_tag(marker));

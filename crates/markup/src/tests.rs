@@ -266,7 +266,40 @@ fn arb_inline() -> impl Strategy<Value = Inline> {
             alt,
             effects,
         })),
+        1 => (arb_effects(), "[0-9]{0,4}", r#"[a-z奈 \]"]{0,3}[a-z奈]"#, prop::bool::ANY)
+            .prop_map(|(effects, uid, name, avatar)| Inline::Mention(Mention {
+                user: ChatUser {
+                    uid,
+                    name,
+                    avatar: avatar.then(|| AssetRef::Blob("bili-face-1".into())),
+                },
+                effects,
+            })),
     ]
+}
+
+#[test]
+fn mention_parses_with_uid_name_and_avatar() {
+    let parsed = parse(r#"hi [at=1234 name="奈 奈" avatar=blob:bili-face-1234]!"#);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let inlines = &parsed.doc.paragraphs[0].inlines;
+    assert_eq!(
+        inlines[1],
+        Inline::Mention(Mention::new(ChatUser {
+            uid: "1234".into(),
+            name: "奈 奈".into(),
+            avatar: Some(AssetRef::Blob("bili-face-1234".into())),
+        }))
+    );
+    assert_eq!(parsed.doc.unit_count(), 5);
+    assert_eq!(parsed.doc.plain_text(), "hi @奈 奈!");
+}
+
+#[test]
+fn mention_without_name_stays_literal() {
+    let parsed = parse("[at=1]");
+    assert_eq!(parsed.diagnostics.len(), 1);
+    assert_eq!(parsed.doc.plain_text(), "[at=1]");
 }
 
 proptest! {

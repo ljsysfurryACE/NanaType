@@ -21,7 +21,7 @@ use crate::app::{App, SEND_KEY};
 use crate::clock;
 use crate::msg::{Msg, Tool};
 use crate::ui::overflow::{self, LineSpan, Measure, PageKey};
-use crate::ui::{dialogue, history, input, settings};
+use crate::ui::{danmaku, dialogue, history, input, settings};
 use crate::windows::WindowKind;
 
 pub struct Host {
@@ -118,6 +118,11 @@ impl Host {
                     .mount_view_root(doc_id, move || settings::settings_window(ui))
                     .map_err(err)?;
             }
+            WindowKind::Chat => {
+                context
+                    .mount_view_root(doc_id, move || danmaku::chat_window(ui))
+                    .map_err(err)?;
+            }
             WindowKind::Input => {
                 let (_, (editor, source)) = context
                     .mount_view_root(doc_id, move || input::input_window(ui))
@@ -198,6 +203,10 @@ impl Host {
                     settings: desc,
                 });
             }
+        }
+        // The chat panel comes back if it was open at quit.
+        if self.app.settings.integrations.blivechat.panel_open {
+            self.app.open_chat();
         }
     }
 }
@@ -336,7 +345,7 @@ impl RuntimeProgram for Host {
 
     fn appearance_backdrop_opacity_for(&self, id: WindowId) -> f32 {
         match WindowKind::from_id(id) {
-            Some(WindowKind::Settings) => 1.0,
+            Some(WindowKind::Settings | WindowKind::Chat) => 1.0,
             _ => 0.0,
         }
     }
@@ -367,6 +376,9 @@ impl RuntimeProgram for Host {
                 if let Some(kind) = WindowKind::from_id(id) {
                     let handle = context.window();
                     self.app.windows.ready(kind, handle.clone());
+                    if kind == WindowKind::Chat {
+                        self.app.chat_resized(geometry.logical_size.0);
+                    }
                     self.app
                         .windows
                         .moved(kind, geometry.logical_position, geometry.logical_size);
@@ -395,6 +407,9 @@ impl RuntimeProgram for Host {
                         .moved(kind, geometry.logical_position, geometry.logical_size);
                     // A drag-resize in layout mode becomes the window's size.
                     let (w, h) = geometry.logical_size;
+                    if kind == WindowKind::Chat {
+                        self.app.chat_resized(w);
+                    }
                     let editing = kind
                         .overlay(&self.app.settings)
                         .is_some_and(|o| o.lock == nanatype_settings::Lock::EditLayout);
@@ -412,6 +427,9 @@ impl RuntimeProgram for Host {
                 }
             }
             WindowEvent::CloseRequested { id } => match WindowKind::from_id(id) {
+                Some(WindowKind::Chat) => {
+                    self.app.close_chat();
+                }
                 Some(WindowKind::Settings) | None => {
                     return RuntimeProgramUpdate {
                         window_commands: vec![WindowCommand::Close(id)],

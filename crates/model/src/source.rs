@@ -1,12 +1,12 @@
 //! Message sources feeding the history list.
 //!
-//! Today the only source is the local typewriter. Live-platform chat (for
-//! example Bilibili danmaku) plugs in later as another [`MessageSource`]
-//! without the history view changing.
+//! The local typewriter is one source; live-platform chat (Bilibili danmaku
+//! through blivechat) is another. Both arrive as [`HistoryItem`]s, so the
+//! history view does not care where a row came from.
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Document, LineId};
+use crate::{AssetRef, Document, LineId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SourceId(pub String);
@@ -34,6 +34,49 @@ pub enum SourceKind {
     Event,
 }
 
+/// A viewer on a live platform, as a line names or quotes them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ChatUser {
+    /// Platform user id; empty when the platform did not give one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub uid: String,
+    pub name: String,
+    /// Cached avatar picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<AssetRef>,
+}
+
+/// A chat message a line answers: shown as a small quote above the line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatRef {
+    pub user: ChatUser,
+    /// The message as plain text, already shortened for display.
+    pub text: String,
+    #[serde(default = "chat_kind")]
+    pub kind: SourceKind,
+}
+
+fn chat_kind() -> SourceKind {
+    SourceKind::Chat
+}
+
+impl ChatRef {
+    /// Longest quote kept, in characters; longer text ends in an ellipsis.
+    pub const MAX_CHARS: usize = 60;
+
+    pub fn new(user: ChatUser, text: &str, kind: SourceKind) -> Self {
+        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = if flat.chars().count() > Self::MAX_CHARS {
+            let mut cut: String = flat.chars().take(Self::MAX_CHARS - 1).collect();
+            cut.push('…');
+            cut
+        } else {
+            flat
+        };
+        Self { user, text, kind }
+    }
+}
+
 /// One row of the history list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryItem {
@@ -49,11 +92,17 @@ pub struct HistoryItem {
     pub doc: Document,
     /// Unix milliseconds.
     pub at: u64,
+    /// The platform user id of a chat row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
+    /// The chat message this row answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply: Option<Box<ChatRef>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SourceEvent {
-    Item(HistoryItem),
+    Item(Box<HistoryItem>),
     /// The source connected, reconnected or failed; `detail` is for the UI.
     Status {
         connected: bool,

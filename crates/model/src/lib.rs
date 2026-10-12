@@ -22,12 +22,14 @@ mod tests;
 pub use chars::{CharClass, PunctKind, classify, is_cjk_grapheme};
 pub use color::{ParseColorError, Rgba8};
 pub use document::{
-    AssetRef, Atom, AtomKind, Document, Inline, Item, MAX_UNITS, Marker, Paragraph, RubyGroup,
-    TextRun, Unit, UnitKind, VtsAction, VtsReset,
+    AssetRef, Atom, AtomKind, Document, Inline, Item, MAX_UNITS, Marker, Mention, Paragraph,
+    RubyGroup, TextRun, Unit, UnitKind, VtsAction, VtsReset,
 };
 pub use envelope::{DOCUMENT_FORMAT, DOCUMENT_VERSION, DocumentEnvelope, EnvelopeError};
 pub use line::{AfterLine, Line, LineId, LineMeta, Speaker, unix_millis};
-pub use source::{HistoryItem, MessageSource, SourceEvent, SourceId, SourceKind};
+pub use source::{
+    ChatRef, ChatUser, HistoryItem, MessageSource, SourceEvent, SourceId, SourceKind,
+};
 pub use style::{
     Continuous, ContinuousKind, Effects, Entrance, EntranceKind, FontSlot, Overflow, Pace, Shadow,
     Size, Stroke, Style,

@@ -9,10 +9,13 @@ use std::sync::Arc;
 
 use nana_ui::runtime::{DocumentId, RuntimeDocument};
 use nana_ui_devtools::agent::RuntimeAgentSession;
-use nanatype::ui::{Ui, dialogue, history, input, settings};
+use nanatype::chat::{ChatKind, ChatMessage};
+use nanatype::ui::{Ui, danmaku, dialogue, history, input, settings};
+use nanatype_blive::Guard;
 use nanatype_core::{Cmd, Core};
 use nanatype_i18n::Locale;
 use nanatype_markup::parse;
+use nanatype_model::{AssetRef, ChatUser, Document};
 use nanatype_settings::Settings;
 use nanatype_theme::SkinRegistry;
 
@@ -58,6 +61,89 @@ fn main() {
     }
 }
 
+/// A few viewers with drawn avatars, and what they said.
+fn sample_chat(
+    out: &std::path::Path,
+    urls: &mut std::collections::HashMap<String, String>,
+) -> Vec<ChatMessage> {
+    let dir = out.join("avatars");
+    std::fs::create_dir_all(&dir).unwrap();
+    let viewers = [
+        ("1001", "星野ほたる", [232u8, 106, 146], Guard::Captain),
+        ("1002", "路过的猫", [61, 155, 233], Guard::None),
+        ("1003", "老板大气", [247, 201, 72], Guard::Admiral),
+        ("1004", "夜猫子", [123, 201, 111], Guard::None),
+    ];
+    for (uid, _, [r, g, b], _) in viewers {
+        let img = image::RgbaImage::from_fn(64, 64, |x, y| {
+            let shade = 1.0 - (x + y) as f32 / 256.0;
+            let f = |c: u8| (f32::from(c) * shade) as u8;
+            image::Rgba([f(r), f(g), f(b), 255])
+        });
+        let path = dir.join(format!("{uid}.png"));
+        img.save(&path).unwrap();
+        urls.insert(
+            format!("blob:bili-face-{uid}"),
+            nanatype::assets::file_url(&path),
+        );
+    }
+    let message = |seq: u64, who: usize, kind: ChatKind, text: &str| {
+        let (uid, name, _, guard) = viewers[who];
+        ChatMessage {
+            seq,
+            id: seq.to_string(),
+            kind,
+            user: ChatUser {
+                uid: uid.into(),
+                name: name.into(),
+                avatar: Some(AssetRef::Blob(format!("bili-face-{uid}"))),
+            },
+            guard,
+            owner: false,
+            admin: false,
+            medal_level: if guard == Guard::None { 0 } else { 12 },
+            medal_name: if guard == Guard::None {
+                String::new()
+            } else {
+                "奈奈团".into()
+            },
+            doc: Document::plain(text),
+            at: 1_760_000_000_000 + seq * 7_000,
+        }
+    };
+    vec![
+        message(1, 0, ChatKind::Text, "主播晚上好！今天打什么字呀"),
+        message(2, 1, ChatKind::Text, "来了来了"),
+        message(
+            3,
+            2,
+            ChatKind::SuperChat { price: 50 },
+            "今天也辛苦啦，早点休息",
+        ),
+        message(
+            4,
+            3,
+            ChatKind::Gift {
+                name: "小花花".into(),
+                num: 5,
+                coin: 500,
+            },
+            "",
+        ),
+        message(
+            5,
+            0,
+            ChatKind::Member {
+                num: 1,
+                unit: "月".into(),
+                coin: 198_000,
+            },
+            "",
+        ),
+        message(6, 1, ChatKind::Text, "这个字幕效果好可爱"),
+    ]
+}
+
 fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
     std::fs::create_dir_all(out).unwrap();
     let loaded = registry.load(skin_id).expect("skin");
@@ -70,6 +156,9 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     settings.general.speaker_name = "奈奈".into();
     settings.skin.id = skin_id.to_owned();
     settings.history.show_time = true;
+    settings.history.chat.enabled = true;
+    settings.integrations.blivechat.enabled = true;
+    settings.integrations.blivechat.room = "21452505".into();
     let theme = nanatype::skin_theme::compile(
         &skin,
         skin.chrome.appearance == nanatype_theme::Appearance::Dark,
@@ -77,8 +166,9 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), locale);
     ui.skins
         .set(Arc::new(nanatype::ui::skin_rows(registry, locale)));
-    ui.asset_urls
-        .set(Arc::new(nanatype::assets::skin_urls(&*loaded.files)));
+    let mut urls = nanatype::assets::skin_urls(&*loaded.files);
+    let chat = sample_chat(out, &mut urls);
+    ui.asset_urls.set(Arc::new(urls));
 
     let mut core = Core::new(settings.clone(), skin.clone());
     for line in [
@@ -88,8 +178,29 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         core.handle(Cmd::SendMarkup(line.into()), 0);
         core.handle(Cmd::Skip, 1);
     }
+    // Live chat joins the history; the last line answers a viewer.
+    for m in &chat {
+        core.handle(Cmd::External(m.history_item(locale)), 0);
+    }
+    core.handle(Cmd::SetReply(Some(chat[0].quote(locale))), 0);
+    core.handle(
+        Cmd::DraftChanged(
+            parse("[at=1001 name=星野ほたる avatar=blob:bili-face-1001] 晚上好！今天也谢谢你来～")
+                .doc,
+        ),
+        0,
+    );
+    core.handle(Cmd::Send, 0);
+    core.handle(Cmd::Skip, 1);
+    ui.chat
+        .set(Arc::new(chat.iter().cloned().map(Arc::new).collect()));
+    ui.reply.set(Some(chat[1].quote(locale)));
+    let mut status = (*ui.status.get_untracked()).clone();
+    status.blive = "已进入房间 21452505".into();
+    status.blive_link = danmaku::Link::Connected;
+    ui.status.set(Arc::new(status));
     std::thread::sleep(std::time::Duration::from_millis(1500));
-    let draft = "[b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[se=coin]";
+    let draft = "[at=1002 name=路过的猫 avatar=blob:bili-face-1002] [b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[se=coin]";
     let parsed = parse(draft);
     ui.draft.set(Arc::new(parsed.doc.clone()));
     let look = dialogue::Base::editor(&skin).look();
@@ -143,6 +254,11 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
                 .unwrap();
         },
     );
+    shot("chat", out, 400, 640, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || danmaku::chat_window(ui))
+            .unwrap();
+    });
     for page in settings::Page::ALL {
         ui.page.set(page);
         shot(

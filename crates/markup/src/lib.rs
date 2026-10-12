@@ -3,7 +3,7 @@
 //! ```text
 //! [@auto=1500 after=fade]
 //! [b][color=#e86a92]你好[/color][/b]，[wait=400][shake]我是[ruby=なな]奈奈[/ruby][/shake]！
-//! [pause][se=coin][sticker=lib:cats/hello]
+//! [pause][se=coin][sticker=lib:cats/hello][at=1234 name="观众"]
 //! ```
 //!
 //! Quick phrases, templates, the rich clipboard and the editor's source view
@@ -42,4 +42,5 @@ pub const POINT_TAGS: &[&str] = &[
     "sticker",
     "emote",
     "img",
+    "at",
 ];

@@ -2,8 +2,9 @@
 //!
 //! The dialogue box, the history bubbles and the editor are all NanaUI rich
 //! text nodes. A [`Document`] becomes one `RichText`: runs become spans,
-//! ruby groups become annotations, stickers become inline image objects, and
-//! (in the editor only) markers become labelled tags. Effects and pacing
+//! ruby groups become annotations, stickers become inline image objects,
+//! mentions of chat viewers become styled labels with their avatar, and (in
+//! the editor only) markers become labelled tags. Effects and pacing
 //! have no rich-text field of their own, so each distinct combination is
 //! interned in a table and the span carries its index as `effect`; the same
 //! table yields the glyph effects the display plays. Converting back
@@ -14,8 +15,8 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use nana_ui_core::{
-    GlyphEffect, GlyphIntro, PaintColor, RevealSchedule, RichObject, RichObjectContent,
-    RichSpanStyle, RichText, RichTextShadow, RichTextStroke, TextDecorationLine,
+    GlyphEffect, GlyphIntro, PaintColor, RevealSchedule, RichLabelStyle, RichObject,
+    RichObjectContent, RichSpanStyle, RichText, RichTextShadow, RichTextStroke, TextDecorationLine,
     TextStrokePlacement,
 };
 use nanatype_core::Reveal;
@@ -37,6 +38,65 @@ pub struct Look {
     pub body: Option<String>,
     pub name: Option<String>,
     pub accent: Option<String>,
+    pub mention: MentionLook,
+}
+
+/// How a mentioned chat viewer is drawn: the skin's `[mention]`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MentionLook {
+    pub fill: [f32; 4],
+    pub text: [f32; 4],
+    pub scale: f32,
+    pub avatar: bool,
+}
+
+impl Default for MentionLook {
+    fn default() -> Self {
+        Self::from_skin(&nanatype_theme::Skin::default())
+    }
+}
+
+impl MentionLook {
+    pub fn from_skin(skin: &nanatype_theme::Skin) -> Self {
+        let m = &skin.mention;
+        Self {
+            fill: crate::skin_theme::rgba(skin.color(m.fill)),
+            text: crate::skin_theme::rgba(skin.color(m.text_color)),
+            scale: if m.scale.is_finite() {
+                m.scale.clamp(0.3, 2.0)
+            } else {
+                0.82
+            },
+            avatar: m.avatar,
+        }
+    }
+
+    /// The label for `mention`, with its avatar when one has a URL.
+    pub fn object(
+        &self,
+        id: u64,
+        mention: &nanatype_model::Mention,
+        urls: &HashMap<String, String>,
+    ) -> RichObject {
+        let icon = self
+            .avatar
+            .then_some(mention.user.avatar.as_ref())
+            .flatten()
+            .and_then(|a| urls.get(&a.to_string()))
+            .map(|u| Arc::<str>::from(u.as_str()));
+        RichObject::label(
+            id,
+            mention.alt(),
+            RichLabelStyle {
+                fill: self.fill,
+                text: self.text,
+                scale: self.scale,
+                weight: Some(700),
+                icon,
+                ..RichLabelStyle::default()
+            },
+        )
+    }
 }
 
 // ---- interned attribute combinations -----------------------------------
@@ -126,7 +186,7 @@ static OBJECTS: LazyLock<Mutex<Objects>> = LazyLock::new(|| {
     })
 });
 
-/// An object id for an atom or marker; equal inlines share one id.
+/// An object id for an atom, mention or marker; equal inlines share one id.
 pub fn object_id(inline: &Inline) -> u64 {
     let mut o = OBJECTS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((id, _)) = o.by_id.iter().find(|(_, v)| *v == inline) {
@@ -300,6 +360,15 @@ pub fn to_rich(doc: &Document, env: &Env<'_>) -> RichText {
                     b.object(object);
                     len += replacement;
                 }
+                Inline::Mention(m) => {
+                    let id = object_id(inline);
+                    let s = span_style(&Style::default(), &m.effects, Pace::Inherit, env.look);
+                    if !s.is_empty() {
+                        object_spans.push((len, s));
+                    }
+                    b.object(env.look.mention.object(id, m, env.urls));
+                    len += replacement;
+                }
                 Inline::Marker(m) => {
                     if env.editor {
                         let id = object_id(inline);
@@ -432,8 +501,10 @@ pub fn from_rich(rich: &RichText, look: &Look) -> Document {
                 _ => None,
             });
             if let Some(mut inline) = inline {
-                if let Inline::Atom(a) = &mut inline {
-                    a.effects = style_back(rich.style_at(pos), look).1;
+                match &mut inline {
+                    Inline::Atom(a) => a.effects = style_back(rich.style_at(pos), look).1,
+                    Inline::Mention(m) => m.effects = style_back(rich.style_at(pos), look).1,
+                    _ => {}
                 }
                 current.inlines.push(inline);
             }
@@ -547,6 +618,7 @@ mod tests {
             body: None,
             name: Some("Name Font".into()),
             accent: Some("Accent Font".into()),
+            mention: MentionLook::default(),
         }
     }
 
@@ -580,6 +652,34 @@ mod tests {
         round_trip("[ruby=かんじ]漢字[/ruby]と[b][ruby=よ]読[/ruby][/b]");
         round_trip("一[wait=500]二[pause]三[page]四[se=coin][expr=smile][screenshake=4,200]");
         round_trip("第一段\n第二段\n\n第四段");
+        round_trip(
+            "你好[at=42 name=观众 avatar=blob:bili-face-42]！[wave][at name=\"无 uid\"][/wave]",
+        );
+    }
+
+    #[test]
+    fn a_mention_is_one_label_object_with_its_avatar() {
+        let doc = nanatype_markup::parse("[at=42 name=观众 avatar=blob:bili-face-42]").doc;
+        let mut urls = HashMap::new();
+        urls.insert(
+            "blob:bili-face-42".to_owned(),
+            "file:///f/42.png".to_owned(),
+        );
+        let look = look();
+        let env = Env {
+            look: &look,
+            urls: &urls,
+            editor: false,
+            locale: Locale::ZhCn,
+        };
+        let rich = to_rich(&doc, &env);
+        let (_, object) = &rich.objects()[0];
+        assert_eq!(
+            object.tag_label().map(|l| l.to_string()),
+            Some("@观众".into())
+        );
+        let style = object.label_style().expect("a styled label");
+        assert_eq!(style.icon.as_deref(), Some("file:///f/42.png"));
     }
 
     #[test]

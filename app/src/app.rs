@@ -1,6 +1,6 @@
 //! Application state and the single update function.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -10,22 +10,25 @@ use nana_ui::{CompiledTheme, RuntimeProgramContext, RuntimeProgramUpdate};
 use nana_ui_core::{FileDialogKind, FileDialogRequest, FileFilter};
 use nana_ui_platform::host::WindowCommand;
 use nanatype_audio::{AudioEngine, AudioHandle, AudioStatus, Bus, Scheduled};
+use nanatype_blive::{BliveConfig, BliveHandle, BliveStatus, RoomKey};
 use nanatype_bridge::{
     BridgeEvent, BridgeHandle, BridgeStatus, LipSync, OscConfig, Sink, VtsConfig, WsConfig,
 };
 use nanatype_core::{Cmd, Core, Effects, Event, UiSound};
 use nanatype_i18n::Locale;
 use nanatype_markup::{parse, serialize};
-use nanatype_model::{AssetRef, Document};
+use nanatype_model::{AssetRef, Document, Inline};
 use nanatype_playback::CueKind;
 use nanatype_settings::{GeometryStore, InputPresence, LoadNote, SendKey, Settings};
 use nanatype_theme::{LoadedSkin, SkinRegistry, TomlTable};
 
 use crate::assets::AssetLibrary;
+use crate::chat::ChatMessage;
 use crate::clock;
 use crate::msg::{FileTarget, GlobalAction, MarkupEdit, Msg};
 use crate::paths::Paths;
 use crate::scheduler::Scheduler;
+use crate::services::chat_assets::ChatAssets;
 use crate::services::hotkeys::{self, Hotkeys};
 use crate::services::persist::Persist;
 use crate::services::sounds::{self, Bank};
@@ -33,6 +36,9 @@ use crate::services::tray::Tray;
 use crate::skin_theme;
 use crate::ui::{I18N, Notice, StickerRow, Ui};
 use crate::windows::{self, WindowKind, WindowManager};
+
+/// Chat messages the panel keeps.
+const CHAT_CAP: usize = 500;
 
 /// Send-key mode shared with the editor's key handler.
 pub static SEND_KEY: AtomicU8 = AtomicU8::new(0);
@@ -52,6 +58,11 @@ pub struct App {
     pub audio: AudioHandle,
     pub bank: Bank,
     pub bridge: BridgeHandle,
+    /// The blivechat connection and the thread saving its pictures.
+    pub blive: BliveHandle,
+    _chat_assets: ChatAssets,
+    /// Live chat, oldest first, capped at the panel's size.
+    chat: VecDeque<Arc<ChatMessage>>,
     pub hotkeys: Hotkeys,
     pub tray: Option<Tray>,
     pub persist: Persist,
@@ -139,6 +150,20 @@ impl App {
             let post = post.clone();
             move |s| post(Msg::Bridge(s))
         });
+        let chat_assets = ChatAssets::start(paths.blobs(), {
+            let post = post.clone();
+            move |m| post(Msg::Chat(Arc::new(m)))
+        });
+        let blive = {
+            let to_assets = chat_assets.sender();
+            let post = post.clone();
+            BliveHandle::new(
+                move |s| post(Msg::ChatStatus(s)),
+                move |e| {
+                    let _ = to_assets.send(e);
+                },
+            )
+        };
         let hotkeys = Hotkeys::start(
             {
                 let post = post.clone();
@@ -168,6 +193,9 @@ impl App {
             audio,
             bank: Vec::new(),
             bridge,
+            blive,
+            _chat_assets: chat_assets,
+            chat: VecDeque::new(),
             hotkeys,
             tray: None,
             persist,
@@ -368,23 +396,22 @@ impl App {
                 }
             })
             .collect();
-        // Atoms referencing files or pasted images in the current views.
-        let mut extra = |doc: &Document| {
-            for p in &doc.paragraphs {
-                for i in &p.inlines {
-                    if let nanatype_model::Inline::Atom(a) = i
-                        && !urls.contains_key(&a.asset.to_string())
-                        && let Some(u) = self.assets.url(&a.asset, Some(&self.loaded))
-                    {
-                        urls.insert(a.asset.to_string(), u);
-                    }
-                }
-            }
-        };
-        extra(self.core.draft());
-        extra(&self.core.display().doc);
+        // Pictures of files, pasted images and chat in the current views.
+        let mut wanted = doc_assets(self.core.draft());
+        wanted.extend(display_assets(self.core.display()));
         for row in self.core.history() {
-            extra(&row.doc);
+            wanted.extend(row_assets(&row.item, &row.doc));
+        }
+        for m in &self.chat {
+            wanted.extend(message_assets(m));
+        }
+        for asset in wanted {
+            let key = asset.to_string();
+            if !urls.contains_key(&key)
+                && let Some(u) = self.assets.url(&asset, Some(&self.loaded))
+            {
+                urls.insert(key, u);
+            }
         }
         let mut portraits = HashMap::new();
         let p = &self.skin.dialogue.portrait;
@@ -511,6 +538,23 @@ impl App {
         self.bridge.set_ws(i.websocket.enabled.then_some(WsConfig {
             port: i.websocket.port,
         }));
+        let b = &i.blivechat;
+        let room = RoomKey::parse(
+            b.room_kind == nanatype_settings::BliveRoomKind::AuthCode,
+            &b.room,
+        );
+        let blive = room.filter(|_| b.enabled).map(|room| BliveConfig {
+            host: b.host.clone(),
+            port: b.port,
+            room,
+        });
+        let blive_off = blive.is_none();
+        let blive_hint = self.ui.now_t(if b.enabled {
+            "chat-status-no-room"
+        } else {
+            "int-status-off"
+        });
+        self.blive.set(blive);
         let off = self.ui.now_t("int-status-off");
         self.edit_status(|s| {
             if !i.vts.enabled {
@@ -521,6 +565,10 @@ impl App {
             }
             if !i.websocket.enabled {
                 s.ws = off.clone();
+            }
+            if blive_off {
+                s.blive = blive_hint;
+                s.blive_link = crate::ui::danmaku::Link::Off;
             }
         });
         self.refresh_spout_status();
@@ -640,6 +688,7 @@ impl App {
                 WindowKind::Display,
                 WindowKind::History,
                 WindowKind::Settings,
+                WindowKind::Chat,
             ] {
                 self.commands.push(WindowCommand::SetTitle {
                     id: kind.id(),
@@ -759,6 +808,9 @@ impl App {
         if self.ui.status.with_untracked(|s| s.queued != queued) {
             self.edit_status(|s| s.queued = queued);
         }
+        if fx.reply_changed {
+            self.ui.reply.set(self.core.pending_reply().cloned());
+        }
         if fx.display_changed || fx.history_changed {
             self.refresh_atom_urls();
         }
@@ -768,20 +820,10 @@ impl App {
     /// Resolve the pictures of the display, the draft and the newest
     /// history row.
     fn refresh_atom_urls(&mut self) {
-        let mut assets = Vec::new();
-        let mut collect = |doc: &Document| {
-            for p in &doc.paragraphs {
-                for i in &p.inlines {
-                    if let nanatype_model::Inline::Atom(a) = i {
-                        assets.push(a.asset.clone());
-                    }
-                }
-            }
-        };
-        collect(&self.core.display().doc);
-        collect(self.core.draft());
+        let mut assets = display_assets(self.core.display());
+        assets.extend(doc_assets(self.core.draft()));
         if let Some(row) = self.core.history().back() {
-            collect(&row.doc);
+            assets.extend(row_assets(&row.item, &row.doc));
         }
         self.ensure_urls(assets);
     }
@@ -1012,9 +1054,8 @@ impl App {
             // Built the way the editor's text builds it: a tag for a marker,
             // a picture at its own aspect.
             Tool::Insert(inline) => {
-                if let nanatype_model::Inline::Atom(a) = &inline {
-                    self.ensure_urls([a.asset.clone()]);
-                }
+                let doc = Document::from_inlines(vec![inline.clone()]);
+                self.ensure_urls(doc_assets(&doc));
                 let doc = Document::from_inlines(vec![inline]);
                 match self.editor_rich(&doc).objects().first() {
                     Some((_, object)) => RichEditCommand::InsertObject(object.clone()),
@@ -1254,6 +1295,8 @@ impl App {
                     self.summoned = !self.summoned;
                 }
                 WindowKind::Settings => self.open_settings(),
+                WindowKind::Chat if self.windows.is_open(WindowKind::Chat) => self.close_chat(),
+                WindowKind::Chat => self.open_chat(),
                 kind => self.edit(|s| {
                     if let Some(o) = kind.overlay_mut(s) {
                         o.visible = !o.visible;
@@ -1270,6 +1313,7 @@ impl App {
                         .push(WindowCommand::Focus(WindowKind::Input.id()));
                 }
                 WindowKind::Settings => self.open_settings(),
+                WindowKind::Chat => self.open_chat(),
                 kind => self.edit(|s| {
                     if let Some(o) = kind.overlay_mut(s) {
                         o.visible = true;
@@ -1374,6 +1418,14 @@ impl App {
                 });
             }
             Msg::Bridge(status) => self.bridge_status(status),
+            Msg::Chat(message) => self.chat_message(message),
+            Msg::ChatStatus(status) => self.chat_status(status),
+            Msg::ChatMention { seq, reply } => self.mention(seq, reply),
+            Msg::ClearReply => self.run(Cmd::SetReply(None)),
+            Msg::ClearChat => {
+                self.chat.clear();
+                self.publish_chat();
+            }
             Msg::AssetsChanged => self.refresh_assets(),
             Msg::SkinFilesChanged => {
                 self.registry.rescan();
@@ -1539,6 +1591,112 @@ impl App {
         }
     }
 
+    // ---- live chat ----------------------------------------------------------
+
+    fn chat_message(&mut self, message: Arc<ChatMessage>) {
+        self.ensure_urls(message_assets(&message));
+        let history = &self.settings.history.chat;
+        if history.enabled && message.passes(&history.filter) {
+            let locale = self.ui.locale.get_untracked();
+            self.run(Cmd::External(message.history_item(locale)));
+        }
+        self.chat.push_back(message);
+        while self.chat.len() > CHAT_CAP {
+            self.chat.pop_front();
+        }
+        self.publish_chat();
+    }
+
+    fn publish_chat(&self) {
+        self.ui
+            .chat
+            .set(Arc::new(self.chat.iter().cloned().collect()));
+    }
+
+    fn chat_status(&mut self, status: BliveStatus) {
+        use crate::ui::danmaku::Link;
+        let room = self.settings.integrations.blivechat.room.clone();
+        let (text, link) = match status {
+            BliveStatus::Off => (self.ui.now_t("int-status-off"), Link::Off),
+            BliveStatus::Connecting => (self.ui.now_t("int-status-connecting"), Link::Connecting),
+            BliveStatus::Connected => (
+                self.ui
+                    .tr("chat-status-joined", &[("room", room.as_str().into())]),
+                Link::Connected,
+            ),
+            BliveStatus::Error(message) => (
+                self.ui
+                    .tr("chat-status-retrying", &[("message", message.into())]),
+                Link::Error,
+            ),
+            BliveStatus::Fatal(_, message) => {
+                let text = self.ui.tr("chat-fatal", &[("message", message.into())]);
+                self.notice(text.clone(), true);
+                (text, Link::Error)
+            }
+        };
+        self.edit_status(|s| {
+            s.blive = text;
+            s.blive_link = link;
+        });
+    }
+
+    /// Label the author of chat message `seq` at the editor's caret; a reply
+    /// also quotes the message above the next line.
+    fn mention(&mut self, seq: u64, reply: bool) {
+        let Some(message) = self.chat.iter().rev().find(|m| m.seq == seq).cloned() else {
+            return;
+        };
+        let mention = Inline::Mention(nanatype_model::Mention::new(message.user.clone()));
+        self.tool(crate::msg::Tool::Insert(mention));
+        // A space after the label, so typing goes on as text.
+        if self.ui.source_mode.get_untracked() {
+            self.markup(MarkupEdit::Insert(" ".into()));
+        } else {
+            self.rich_commands
+                .push(nana_ui::runtime::RichEditCommand::InsertText(" ".into()));
+        }
+        if reply {
+            let locale = self.ui.locale.get_untracked();
+            self.run(Cmd::SetReply(Some(message.quote(locale))));
+        }
+        self.update(Msg::ShowWindow(WindowKind::Input));
+    }
+
+    pub fn open_chat(&mut self) {
+        if !self.settings.integrations.blivechat.panel_open {
+            self.edit(|s| s.integrations.blivechat.panel_open = true);
+        }
+        if self.windows.is_open(WindowKind::Chat) {
+            if let Some(h) = self.windows.handle(WindowKind::Chat) {
+                drop(h.set_visible(true));
+                drop(h.focus());
+            }
+            return;
+        }
+        let title = self.ui.now_t(WindowKind::Chat.title_key());
+        let desc = windows::descriptor(WindowKind::Chat, &title, &self.skin, &self.settings);
+        self.commands.push(WindowCommand::Open {
+            id: WindowKind::Chat.id(),
+            settings: desc,
+        });
+    }
+
+    /// The chat panel's width changed; rows re-wrap past a few pixels.
+    pub fn chat_resized(&mut self, width: f32) {
+        if (self.ui.chat_width.get_untracked() - width).abs() >= 4.0 {
+            self.ui.chat_width.set(width);
+        }
+    }
+
+    pub fn close_chat(&mut self) {
+        if self.settings.integrations.blivechat.panel_open {
+            self.edit(|s| s.integrations.blivechat.panel_open = false);
+        }
+        self.commands
+            .push(WindowCommand::Close(WindowKind::Chat.id()));
+    }
+
     fn hotkey(&mut self, action: GlobalAction) {
         match action {
             GlobalAction::Summon => {
@@ -1586,20 +1744,15 @@ impl App {
 
     /// Native window state for this frame.
     pub fn reconcile_windows(&mut self) -> Vec<WindowCommand> {
-        let want: Vec<_> = [
-            WindowKind::Input,
-            WindowKind::Display,
-            WindowKind::History,
-            WindowKind::Settings,
-        ]
-        .into_iter()
-        .map(|k| {
-            (
-                k,
-                windows::desired(k, &self.skin, &self.settings, self.summoned),
-            )
-        })
-        .collect();
+        let want: Vec<_> = WindowKind::ALL
+            .into_iter()
+            .map(|k| {
+                (
+                    k,
+                    windows::desired(k, &self.skin, &self.settings, self.summoned),
+                )
+            })
+            .collect();
         let mut out = std::mem::take(&mut self.commands);
         out.extend(self.windows.reconcile(&want));
         self.save_geometry();
@@ -1614,6 +1767,44 @@ impl App {
             ..RuntimeProgramUpdate::redraw_all()
         }
     }
+}
+
+/// Pictures `doc` shows: atoms and the avatars of mentioned viewers.
+fn doc_assets(doc: &Document) -> Vec<AssetRef> {
+    doc.paragraphs
+        .iter()
+        .flat_map(|p| &p.inlines)
+        .filter_map(|i| match i {
+            Inline::Atom(a) => Some(a.asset.clone()),
+            Inline::Mention(m) => m.user.avatar.clone(),
+            _ => None,
+        })
+        .collect()
+}
+
+fn display_assets(view: &nanatype_core::DisplayView) -> Vec<AssetRef> {
+    let mut out = doc_assets(&view.doc);
+    out.extend(view.reply.as_ref().and_then(|r| r.user.avatar.clone()));
+    out
+}
+
+/// A history row's pictures: its text's, its avatar (chat rows name a
+/// saved one) and the avatar of the message it answers.
+fn row_assets(item: &nanatype_model::HistoryItem, doc: &Document) -> Vec<AssetRef> {
+    let mut out = doc_assets(doc);
+    out.extend(
+        item.avatar
+            .as_deref()
+            .and_then(|a| a.parse::<AssetRef>().ok()),
+    );
+    out.extend(item.reply.as_ref().and_then(|r| r.user.avatar.clone()));
+    out
+}
+
+fn message_assets(m: &ChatMessage) -> Vec<AssetRef> {
+    let mut out = doc_assets(&m.doc);
+    out.extend(m.user.avatar.clone());
+    out
 }
 
 fn clamp_sel(text: &str, (a, b): (usize, usize)) -> (usize, usize) {

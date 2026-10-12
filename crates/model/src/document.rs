@@ -5,7 +5,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{CharClass, Effects, Pace, Style, classify};
+use crate::{CharClass, ChatUser, Effects, Pace, Style, classify};
 
 /// A line longer than this many reveal units is cut at normalization.
 pub const MAX_UNITS: usize = 4096;
@@ -101,6 +101,29 @@ pub struct Atom {
 
 fn default_atom_height() -> f32 {
     1.0
+}
+
+/// A live-chat viewer named inline: drawn as a label with their avatar and
+/// name. Like an atom it is one reveal unit and wraps as a whole.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Mention {
+    pub user: ChatUser,
+    #[serde(default, skip_serializing_if = "Effects::is_none")]
+    pub effects: Effects,
+}
+
+impl Mention {
+    pub fn new(user: ChatUser) -> Self {
+        Self {
+            user,
+            effects: Effects::default(),
+        }
+    }
+
+    /// The plain-text form: `@name`.
+    pub fn alt(&self) -> String {
+        format!("@{}", self.user.name)
+    }
 }
 
 /// A zero-width point event. Markers are chips in the editor and never paint
@@ -243,12 +266,18 @@ pub enum Inline {
     Text(TextRun),
     Ruby(RubyGroup),
     Atom(Atom),
+    Mention(Mention),
     Marker(Marker),
 }
 
 impl Inline {
     pub fn text(text: impl Into<String>) -> Self {
         Self::Text(TextRun::plain(text))
+    }
+
+    /// An atom or a mention: one reveal unit with no text of its own.
+    pub fn is_object(&self) -> bool {
+        matches!(self, Self::Atom(_) | Self::Mention(_))
     }
 }
 
@@ -329,7 +358,7 @@ impl Document {
             p.inlines.iter().all(|inline| match inline {
                 Inline::Text(run) => run.text.trim().is_empty(),
                 Inline::Ruby(ruby) => ruby.base.text.trim().is_empty(),
-                Inline::Atom(_) => false,
+                Inline::Atom(_) | Inline::Mention(_) => false,
                 Inline::Marker(_) => true,
             })
         })
@@ -347,6 +376,7 @@ impl Document {
                     Inline::Text(run) => out.push_str(&run.text),
                     Inline::Ruby(ruby) => out.push_str(&ruby.base.text),
                     Inline::Atom(atom) => out.push_str(&atom.alt),
+                    Inline::Mention(mention) => out.push_str(&mention.alt()),
                     Inline::Marker(_) => {}
                 }
             }
@@ -384,7 +414,7 @@ impl Document {
                 match inline {
                     Inline::Text(run) => seen += run.text.graphemes(true).count(),
                     Inline::Ruby(ruby) => seen += ruby.base.text.graphemes(true).count(),
-                    Inline::Atom(_) => seen += 1,
+                    Inline::Atom(_) | Inline::Mention(_) => seen += 1,
                     Inline::Marker(marker) => out.push((seen, marker)),
                 }
             }
@@ -413,7 +443,7 @@ impl Document {
                 match inline {
                     Inline::Text(run) => text_units(run, false, &mut visit),
                     Inline::Ruby(ruby) => text_units(&ruby.base, true, &mut visit),
-                    Inline::Atom(_) => visit(Item::Unit(Unit {
+                    Inline::Atom(_) | Inline::Mention(_) => visit(Item::Unit(Unit {
                         para,
                         inline: inline_index,
                         bytes: 0..0,
@@ -506,12 +536,12 @@ impl Document {
                             current.push(Inline::Ruby(ruby));
                         }
                     }
-                    Inline::Atom(atom) => {
+                    Inline::Atom(_) | Inline::Mention(_) => {
                         if budget == 0 {
                             continue;
                         }
                         budget -= 1;
-                        current.push(Inline::Atom(atom));
+                        current.push(inline);
                     }
                     Inline::Marker(marker) => current.push(Inline::Marker(marker)),
                 }
@@ -584,11 +614,11 @@ impl Document {
                         ruby.base.text = base;
                         inlines.push(Inline::Ruby(ruby));
                     }
-                    Inline::Atom(atom) if left > 0 => {
+                    Inline::Atom(_) | Inline::Mention(_) if left > 0 => {
                         left -= 1;
-                        inlines.push(Inline::Atom(atom.clone()));
+                        inlines.push(inline.clone());
                     }
-                    Inline::Atom(_) => {}
+                    Inline::Atom(_) | Inline::Mention(_) => {}
                     Inline::Marker(marker) => inlines.push(Inline::Marker(marker.clone())),
                 }
                 if left == 0 {
@@ -627,11 +657,11 @@ impl Document {
                         skip -= run.text.drain(..cut).as_str().graphemes(true).count();
                         units += run.text.graphemes(true).count();
                     }
-                    Inline::Atom(_) if skip > 0 => {
+                    Inline::Atom(_) | Inline::Mention(_) if skip > 0 => {
                         skip -= 1;
                         continue;
                     }
-                    Inline::Atom(_) => units += 1,
+                    Inline::Atom(_) | Inline::Mention(_) => units += 1,
                     Inline::Marker(_) if skip > 0 => continue,
                     Inline::Marker(_) => {}
                 }

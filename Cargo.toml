@@ -9,6 +9,7 @@ members = [
     "crates/settings",
     "crates/audio",
     "crates/bridge",
+    "crates/blive",
     "crates/core",
     "app",
 ]
@@ -29,11 +30,12 @@ nanatype-i18n = { path = "crates/i18n" }
 nanatype-settings = { path = "crates/settings" }
 nanatype-audio = { path = "crates/audio" }
 nanatype-bridge = { path = "crates/bridge" }
+nanatype-blive = { path = "crates/blive" }
 nanatype-core = { path = "crates/core" }
-nana-ui-platform = { git = "https://github.com/sena-nana/NanaUI", rev = "5b5b18e120d4142e77dd6e4add3f04ccbf7bc50a", default-features = false }
-nana-ui-core = { git = "https://github.com/sena-nana/NanaUI", rev = "5b5b18e120d4142e77dd6e4add3f04ccbf7bc50a", default-features = false }
-nana-ui-devtools = { git = "https://github.com/sena-nana/NanaUI", rev = "5b5b18e120d4142e77dd6e4add3f04ccbf7bc50a" }
-nana-ui = { git = "https://github.com/sena-nana/NanaUI", rev = "5b5b18e120d4142e77dd6e4add3f04ccbf7bc50a", default-features = false, features = [
+nana-ui-platform = { git = "https://github.com/sena-nana/NanaUI", rev = "147ee250c06b377309686ec188b741d8d01386a8", default-features = false }
+nana-ui-core = { git = "https://github.com/sena-nana/NanaUI", rev = "147ee250c06b377309686ec188b741d8d01386a8", default-features = false }
+nana-ui-devtools = { git = "https://github.com/sena-nana/NanaUI", rev = "147ee250c06b377309686ec188b741d8d01386a8" }
+nana-ui = { git = "https://github.com/sena-nana/NanaUI", rev = "147ee250c06b377309686ec188b741d8d01386a8", default-features = false, features = [
     "hosted",
     "bundled-fonts",
     "wgpu-interop",

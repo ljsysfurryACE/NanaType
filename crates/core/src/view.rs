@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use nanatype_model::{Document, Entrance, HistoryItem, LineId, Speaker};
+use nanatype_model::{ChatRef, Document, Entrance, HistoryItem, LineId, Speaker};
 
 use crate::Millis;
 
@@ -101,6 +101,8 @@ pub struct DisplayView {
     /// The line, markers included (they never paint, but keep unit indices).
     pub doc: Arc<Document>,
     pub speaker: Speaker,
+    /// The chat message the line answers, quoted above it.
+    pub reply: Option<ChatRef>,
     pub reveal: Reveal,
     /// Active portrait variant.
     pub portrait: Option<String>,
@@ -120,6 +122,7 @@ impl DisplayView {
             line: None,
             doc: Arc::new(Document::new()),
             speaker: Speaker::default(),
+            reply: None,
             reveal: Reveal::full(0),
             portrait: None,
             continue_indicator: false,
