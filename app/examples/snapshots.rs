@@ -310,4 +310,56 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             },
         );
     }
+
+    // VTube Studio authorised with a model's hotkeys listed (one mapped by
+    // hand), and quick phrases with a hotkey.
+    let mut on = (*ui.settings.get_untracked()).clone();
+    on.integrations.blivechat.enabled = false;
+    on.integrations.vts.token = Some("token".into());
+    on.integrations
+        .vts
+        .expressions
+        .insert("blush".into(), "hk-3".into());
+    on.assets.phrases = vec![
+        nanatype_settings::QuickPhrase {
+            label: "开场".into(),
+            markup: "大家好，我是[b]{speaker}[/b]！".into(),
+            send: true,
+            hotkey: Some(nanatype_settings::Hotkey {
+                alt: true,
+                ..nanatype_settings::Hotkey::ctrl("Digit1")
+            }),
+        },
+        nanatype_settings::QuickPhrase {
+            label: "感谢".into(),
+            markup: "谢谢[wave]大家[/wave]～".into(),
+            send: false,
+            hotkey: None,
+        },
+    ];
+    ui.settings.set(Arc::new(on));
+    ui.status.set(Arc::new(nanatype::ui::Status {
+        vts: LinkState::Connected("Connected · Hiyori".into()),
+        vts_hotkeys: vec![
+            ("hk-1".into(), "Smile".into()),
+            ("hk-2".into(), "Angry Face".into()),
+            ("hk-3".into(), "Heart Eyes".into()),
+        ],
+        ..Default::default()
+    }));
+    for page in [settings::Page::Integrations, settings::Page::Assets] {
+        ui.page.set(page);
+        shot(
+            &format!("settings-{page:?}-filled"),
+            out,
+            920,
+            1100,
+            theme.clone(),
+            |doc, id| {
+                doc.context_mut()
+                    .mount_view_root(id, move || settings::settings_window(ui))
+                    .unwrap();
+            },
+        );
+    }
 }

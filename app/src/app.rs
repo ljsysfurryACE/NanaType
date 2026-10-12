@@ -608,8 +608,7 @@ impl App {
     // ---- services ---------------------------------------------------------
 
     fn hotkey_bindings(&self) -> hotkeys::Bindings {
-        GlobalAction::ALL
-            .into_iter()
+        GlobalAction::all_in(&self.settings)
             .filter_map(|a| a.get(&self.settings).cloned().map(|h| (a, h)))
             .collect()
     }
@@ -1392,10 +1391,11 @@ impl App {
                     self.ui.recording.set(None);
                     self.edit(|s| {
                         // A chord can belong to one action only.
-                        for other in GlobalAction::ALL {
-                            if other != action && other.get(s) == Some(&hotkey) {
-                                other.set(s, None);
-                            }
+                        let taken: Vec<GlobalAction> = GlobalAction::all_in(s)
+                            .filter(|o| *o != action && o.get(s) == Some(&hotkey))
+                            .collect();
+                        for other in taken {
+                            other.set(s, None);
                         }
                         action.set(s, Some(hotkey));
                     });
@@ -1466,6 +1466,7 @@ impl App {
             }
             Msg::DuplicateSkin(base) => self.duplicate_skin(&base),
             Msg::OpenFolder(path) => crate::services::reveal(&path),
+            Msg::OpenUrl(url) => crate::services::open_url(url),
             Msg::CopyText(text) => {
                 let ok = {
                     use nana_ui_platform::ClipboardHost;
@@ -1832,6 +1833,7 @@ impl App {
                 s.overlays.display.visible = show;
                 s.overlays.history.visible = show;
             }),
+            GlobalAction::Phrase(i) => self.update(Msg::InsertPhrase(i)),
         }
     }
 

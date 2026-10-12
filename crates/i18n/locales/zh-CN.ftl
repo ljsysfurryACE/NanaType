@@ -204,7 +204,7 @@ playback-device = 输出设备
 playback-device-default = 系统默认
 
 ## 皮肤
-skins-active = 当前皮肤
+skins-active = 当前
 skins-library = 皮肤库
 skins-import = 导入皮肤…
 skins-export = 导出…
@@ -244,9 +244,8 @@ skins-replaced = 已将「{ $name }」从 { $previous } 更新
 skins-import-failed = 皮肤无法导入
 skins-fallback = 皮肤「{ $id }」无法加载，已改用默认皮肤
 skins-preview = 预览
-skins-preview-show = 预览这款皮肤
 skins-preview-name = 奈奈
-skins-preview-line = 大家好！今天也来[b]打字[/b]啦～[wave]波浪[/wave]、[rainbow]彩虹[/rainbow]和[shake]抖动[/shake]都可以哦。
+skins-preview-line = 大家好！今天也来[b]打字[/b]啦～[wave]波浪[/wave]、还有[rainbow]彩虹[/rainbow]和[shake]抖动[/shake]都可以哦。
 skins-filter-all = 全部
 skins-tag-light = 浅色
 skins-tag-dark = 深色
@@ -338,7 +337,6 @@ output-spout-unsupported = Spout2 仅支持 Windows，请使用窗口捕获
 output-sample = 播放示例台词
 output-sample-line = [b]你好！[/b]这是 NanaType 的[wave]示例台词[/wave]。[wait=300][shake]看得到吗？[/shake]
 output-obs-title = 在 OBS 中接入
-output-obs-spout = 安装 OBS 的 Spout2 插件，添加「Spout2 Capture」来源，选择上面的发送端名称，并将合成模式设为「预乘 Alpha」。
 output-obs-window = 也可以使用「窗口捕获」（捕获方式选 Windows 10 (1903 及以上)），展示框窗口背景为透明。
 output-obs-mac = macOS 上请使用「macOS 屏幕捕获」并选择展示框窗口。
 
@@ -349,12 +347,10 @@ int-vts-port = 端口
 int-vts-authorize = 请求授权
 int-vts-authorize-hint = 点击后请在 VTube Studio 中允许 NanaType 插件
 int-vts-map = 表情映射
-int-vts-map-expression = 表情名称
+int-vts-map-expression = 标记
 int-vts-map-hotkey = VTS 热键
-int-vts-map-auto = 同名自动匹配
+int-vts-map-auto = 自动（同名）
 int-vts-refresh = 刷新热键列表
-int-vts-mapped-to = 热键：{ $hotkey }
-int-vts-unmap = 删除映射
 int-vts-lipsync = 口型同步
 int-vts-lipsync-hint = 打字时让模型的嘴动起来
 int-vts-mouth-param = 嘴部参数
@@ -493,3 +489,28 @@ int-blive-panel-hint = 仅供主播操作的窗口，不会被采集
 int-blive-open-panel = 打开弹幕面板
 int-blive-quote-display = 对话框显示回复引用
 int-blive-quote-display-hint = 回复弹幕时，对话框文字上方显示被回复的弹幕
+
+## wave3-settings
+settings-group-input = 输入
+settings-group-look = 外观
+settings-group-stream = 直播
+settings-general-sub = 语言、你的名字，以及输入框的行为
+settings-playback-sub = 台词如何逐字出现、推进与发声
+settings-skins-sub = 为对话框挑选外观，并按你的喜好调整
+settings-windows-sub = 显示、锁定或重置展示框、历史记录和输入框
+settings-history-sub = 历史记录保留和显示哪些内容
+settings-hotkeys-sub = 全局快捷键，在游戏或 OBS 里同样有效
+settings-output-sub = 把展示框和历史记录送进 OBS
+settings-integrations-sub = 弹幕、VTube Studio 与其他应用联动
+settings-assets-sub = 输入框可用的贴纸和快捷短语
+settings-about-sub = 版本、文件夹与链接
+onboard-got-it = 知道了
+onboard-dismiss = 关闭
+output-obs-step-plugin = 为 OBS 安装 Spout2 插件
+output-obs-step-source = 添加「Spout2 Capture」来源，选择这个发送端：
+output-obs-step-alpha = 将合成模式设为「预乘 Alpha」
+output-obs-other = 其他方式
+int-vts-authorized = 已授权
+int-vts-map-empty = 连接并授权后即可列出你的 VTS 热键
+skins-more = 更多操作
+## end wave3-settings

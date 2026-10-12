@@ -204,7 +204,7 @@ playback-device = 出力デバイス
 playback-device-default = システムの既定
 
 ## スキン
-skins-active = 使用中のスキン
+skins-active = 使用中
 skins-library = スキン一覧
 skins-import = スキンを読み込む…
 skins-export = 書き出す…
@@ -244,7 +244,6 @@ skins-replaced = 「{ $name }」を { $previous } から更新しました
 skins-import-failed = スキンを読み込めませんでした
 skins-fallback = スキン「{ $id }」を読み込めないため既定のスキンを使用しています
 skins-preview = プレビュー
-skins-preview-show = このスキンをプレビュー
 skins-preview-name = ナナ
 skins-preview-line = みなさんこんにちは！今日も[b]タイピング[/b]していくよ～[wave]なみなみ[/wave]、[rainbow]にじいろ[/rainbow]、[shake]ぶるぶる[/shake]もできるよ。
 skins-filter-all = すべて
@@ -338,7 +337,6 @@ output-spout-unsupported = Spout2 は Windows 専用です。ウィンドウキ�
 output-sample = サンプルを再生
 output-sample-line = [b]こんにちは！[/b]NanaType の[wave]サンプルセリフ[/wave]です。[wait=300][shake]見えていますか？[/shake]
 output-obs-title = OBS に接続する
-output-obs-spout = OBS 用 Spout2 プラグインを入れ、「Spout2 Capture」ソースを追加して上のセンダー名を選び、合成モードを「乗算済みアルファ」にします。
 output-obs-window = 「ウィンドウキャプチャ」（方式：Windows 10 1903 以降）も使えます。表示ウィンドウの背景は透明です。
 output-obs-mac = macOS では「macOS 画面キャプチャ」で表示ウィンドウを選んでください。
 
@@ -349,12 +347,10 @@ int-vts-port = ポート
 int-vts-authorize = 接続を許可してもらう
 int-vts-authorize-hint = VTube Studio 側で NanaType プラグインを許可してください
 int-vts-map = 表情の割り当て
-int-vts-map-expression = 表情名
+int-vts-map-expression = マーカー
 int-vts-map-hotkey = VTS ホットキー
-int-vts-map-auto = 同じ名前で自動対応
+int-vts-map-auto = 自動（同じ名前）
 int-vts-refresh = ホットキーを再取得
-int-vts-mapped-to = ホットキー：{ $hotkey }
-int-vts-unmap = 対応付けを削除
 int-vts-lipsync = リップシンク
 int-vts-lipsync-hint = 文字を打っている間モデルの口を動かす
 int-vts-mouth-param = 口のパラメーター
@@ -493,3 +489,28 @@ int-blive-panel-hint = 配信者用のウィンドウで、キャプチャされ
 int-blive-open-panel = コメントパネルを開く
 int-blive-quote-display = ダイアログに返信の引用を表示
 int-blive-quote-display-hint = コメントに返信するとき、テキストの上にそのコメントを表示します
+
+## wave3-settings
+settings-group-input = 入力
+settings-group-look = 見た目
+settings-group-stream = 配信
+settings-general-sub = 言語、名前、入力ウィンドウの動作
+settings-playback-sub = セリフの表示、送り、効果音
+settings-skins-sub = ダイアログの見た目を選んで自分好みに
+settings-windows-sub = 表示・履歴・入力ウィンドウの表示、ロック、リセット
+settings-history-sub = 履歴ウィンドウに残す内容と表示
+settings-hotkeys-sub = ゲームや OBS の操作中にも効くグローバルショートカット
+settings-output-sub = 表示と履歴を OBS に送る
+settings-integrations-sub = コメント、VTube Studio、ほかのアプリとの連携
+settings-assets-sub = 入力ウィンドウで使うスタンプと定型文
+settings-about-sub = バージョン、フォルダー、リンク
+onboard-got-it = わかった
+onboard-dismiss = 閉じる
+output-obs-step-plugin = OBS に Spout2 プラグインを入れる
+output-obs-step-source = 「Spout2 Capture」ソースを追加し、このセンダーを選ぶ：
+output-obs-step-alpha = 合成モードを「乗算済みアルファ」にする
+output-obs-other = その他の方法
+int-vts-authorized = 許可済み
+int-vts-map-empty = 接続して許可すると VTS のホットキーが一覧に出ます
+skins-more = その他の操作
+## end wave3-settings

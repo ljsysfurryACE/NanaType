@@ -23,9 +23,13 @@ pub enum GlobalAction {
     Clear,
     ToggleMode,
     ToggleOverlays,
+    /// Quick phrase `n` (Settings › Assets), inserted or sent like its menu
+    /// item. Not in [`Self::ALL`]: phrases come and go with the settings.
+    Phrase(usize),
 }
 
 impl GlobalAction {
+    /// The fixed actions, in the order the Hotkeys page lists them.
     pub const ALL: [Self; 6] = [
         Self::Summon,
         Self::Continue,
@@ -43,7 +47,16 @@ impl GlobalAction {
             Self::Clear => "hotkeys-clear",
             Self::ToggleMode => "hotkeys-toggle-mode",
             Self::ToggleOverlays => "hotkeys-toggle-overlays",
+            Self::Phrase(_) => "assets-phrase-hotkey",
         }
+    }
+
+    /// Every action a chord can be bound to: the fixed ones, then one per
+    /// quick phrase.
+    pub fn all_in(s: &Settings) -> impl Iterator<Item = Self> + '_ {
+        Self::ALL
+            .into_iter()
+            .chain((0..s.assets.phrases.len()).map(Self::Phrase))
     }
 
     pub fn get(self, s: &Settings) -> Option<&Hotkey> {
@@ -55,10 +68,17 @@ impl GlobalAction {
             Self::Clear => h.clear.as_ref(),
             Self::ToggleMode => h.toggle_mode.as_ref(),
             Self::ToggleOverlays => h.toggle_overlays.as_ref(),
+            Self::Phrase(i) => s.assets.phrases.get(i)?.hotkey.as_ref(),
         }
     }
 
     pub fn set(self, s: &mut Settings, value: Option<Hotkey>) {
+        if let Self::Phrase(i) = self {
+            if let Some(p) = s.assets.phrases.get_mut(i) {
+                p.hotkey = value;
+            }
+            return;
+        }
         let h = &mut s.hotkeys;
         *match self {
             Self::Summon => &mut h.summon,
@@ -67,6 +87,7 @@ impl GlobalAction {
             Self::Clear => &mut h.clear,
             Self::ToggleMode => &mut h.toggle_mode,
             Self::ToggleOverlays => &mut h.toggle_overlays,
+            Self::Phrase(_) => unreachable!("handled above"),
         } = value;
     }
 }
@@ -113,6 +134,8 @@ pub enum Msg {
     ExportSkin(String),
     DuplicateSkin(String),
     OpenFolder(std::path::PathBuf),
+    /// Open a web page in the default browser.
+    OpenUrl(&'static str),
     CopyText(String),
     PlaySample,
     VtsAuthorize,
