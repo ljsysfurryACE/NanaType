@@ -536,10 +536,7 @@ impl FontSpec {
     /// The system sans stack for a BCP-47 language tag: Japanese text needs
     /// Japanese faces first or Han characters take Chinese glyph shapes.
     pub fn locale_families(tag: &str) -> Vec<String> {
-        let names: &[&str] = if tag
-            .get(..2)
-            .is_some_and(|l| l.eq_ignore_ascii_case("ja"))
-        {
+        let names: &[&str] = if tag.get(..2).is_some_and(|l| l.eq_ignore_ascii_case("ja")) {
             &["Yu Gothic UI", "Meiryo UI", "Hiragino Sans", "Noto Sans JP"]
         } else {
             &["Microsoft YaHei UI", "PingFang SC", "Noto Sans SC"]

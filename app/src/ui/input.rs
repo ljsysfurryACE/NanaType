@@ -632,7 +632,8 @@ fn toolbar(ui: Ui) -> AnyView {
         ));
         // Below this width the low-frequency tools fold into a "…" menu so
         // Send and the mode switch always stay on screen.
-        let compact = crate::windows::size_of(WindowKind::Input, &skin, &settings).0 < COMPACT_BELOW;
+        let compact =
+            crate::windows::size_of(WindowKind::Input, &skin, &settings).0 < COMPACT_BELOW;
         let [more_open] = std::array::from_fn(|_| signal(false));
         let open_item = |label: String, target: Signal<bool>| -> AnyView {
             widget(ActionMenuItem::new(label))
@@ -792,7 +793,12 @@ fn toolbar(ui: Ui) -> AnyView {
 }
 
 /// Nana pink, for live states (mirroring).
-const PINK: [f32; 4] = [0xe8 as f32 / 255.0, 0x6a as f32 / 255.0, 0x92 as f32 / 255.0, 1.0];
+const PINK: [f32; 4] = [
+    0xe8 as f32 / 255.0,
+    0x6a as f32 / 255.0,
+    0x92 as f32 / 255.0,
+    1.0,
+];
 
 /// The mirroring chip pulses over this period.
 /// Period of a breathing status pulse (ms).
@@ -866,11 +872,7 @@ fn status_line(ui: Ui) -> AnyView {
         } else if let Some(d) = diag {
             Line::Text(d, true)
         } else if queued > 0 {
-            Line::Queued(I18N.tr_in(
-                locale,
-                "status-queued-chip",
-                &[("position", queued.into())],
-            ))
+            Line::Queued(I18N.tr_in(locale, "status-queued-chip", &[("position", queued.into())]))
         } else if mode == InputMode::Mirror {
             Line::Mirror(I18N.t_in(locale, "status-mirror"))
         } else {
@@ -899,8 +901,9 @@ fn status_line(ui: Ui) -> AnyView {
             }
             Line::Mirror(text) => {
                 let fill = [PINK[0], PINK[1], PINK[2], 0.16];
-                let mut chip_view = widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
-                    .children(chip(format!("● {text}"), PINK, Some(fill), 12.0, 10.0));
+                let mut chip_view =
+                    widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
+                        .children(chip(format!("● {text}"), PINK, Some(fill), 12.0, 10.0));
                 if !reduced {
                     // Opacity breathes once per PULSE_MS.
                     chip_view = chip_view.bind(move |s: &mut Stack| {

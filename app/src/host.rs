@@ -148,9 +148,8 @@ impl Host {
                 self.editor_fx = None;
             }
         }
-        doc.context_mut().set_default_language(default_language(
-            self.app.ui.locale.get_untracked().tag(),
-        ));
+        doc.context_mut()
+            .set_default_language(default_language(self.app.ui.locale.get_untracked().tag()));
         self.docs.insert(id, doc);
         Ok(())
     }

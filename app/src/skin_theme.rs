@@ -334,8 +334,14 @@ mod tests {
                 }
             }
         }
-        assert!(bad.is_empty(), "
-{}", bad.join("
-"));
+        assert!(
+            bad.is_empty(),
+            "
+{}",
+            bad.join(
+                "
+"
+            )
+        );
     }
 }
