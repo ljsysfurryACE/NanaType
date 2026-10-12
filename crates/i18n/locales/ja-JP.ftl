@@ -547,3 +547,14 @@ windows-input-na = 「—」は対象外：入力ウィンドウは常に操作�
 history-window-link = ウィンドウとキャプチャ
 history-window-link-hint = 履歴ウィンドウの表示・ロック・サイズ、OBS への送出
 ## end wave4-skins
+
+## wave4-onboarding
+onboard-step = ステップ { $step } / { $total }
+onboard-skin-hint = ダイアログの見た目を選びましょう。下のプレビューにすぐ反映されます。細かい調整は「スキン」ページで。
+onboard-mode-body = セリフを表示ウィンドウに出す方法を選びます。あとから入力ウィンドウでいつでも切り替えられます。
+onboard-obs-hint = Spout2 で表示ウィンドウを配信画面に送ります
+onboard-reopen = このガイドは「情報」ページからもう一度開けます。
+about-setup-guide = セットアップガイドを表示
+playback-reduced-system-on = システム設定：オン
+playback-reduced-system-off = システム設定：オフ
+## end wave4-onboarding

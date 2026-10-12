@@ -146,6 +146,7 @@ impl App {
             skin_theme::dark_mode(&skin, settings.skin.chrome, system_dark),
         );
         let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), locale);
+        ui.system_reduced_motion.set(ctx.reduced_motion());
         ui.reduced_motion
             .set(settings.playback.reduced_motion || ctx.reduced_motion());
 
@@ -776,9 +777,7 @@ impl App {
             matches!(s.general.send_key, SendKey::CtrlEnter) as u8,
             Ordering::Relaxed,
         );
-        self.ui
-            .reduced_motion
-            .set(s.playback.reduced_motion || self.ctx.reduced_motion());
+        self.sync_reduced_motion();
         if locale_changed {
             let locale = locale_of(s);
             self.ui.locale.set(locale);
@@ -1877,7 +1876,21 @@ impl App {
         out
     }
 
+    /// Motion is reduced when the setting or the system asks for it.
+    pub fn sync_reduced_motion(&self) {
+        let reduced =
+            self.settings.playback.reduced_motion || self.ui.system_reduced_motion.get_untracked();
+        if self.ui.reduced_motion.get_untracked() != reduced {
+            self.ui.reduced_motion.set(reduced);
+        }
+    }
+
     pub fn update_result(&mut self) -> RuntimeProgramUpdate {
+        // The input window rises in as it is summoned (see `ui::motion`).
+        let shown = self.input_visible();
+        if self.ui.input_shown.get_untracked() != shown {
+            self.ui.input_shown.set(shown);
+        }
         let window_commands = self.reconcile_windows();
         self.sync_tray();
         RuntimeProgramUpdate {

@@ -373,6 +373,24 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             },
         );
     }
+    // The first-run guide, one shot per step.
+    ui.page.set(settings::Page::General);
+    for n in 0..4u8 {
+        ui.onboard_step.set(n);
+        shot(
+            &format!("settings-General-onboard-{}", n + 1),
+            out,
+            920,
+            760,
+            theme.clone(),
+            |doc, id| {
+                doc.context_mut()
+                    .mount_view_root(id, move || settings::settings_window(ui))
+                    .unwrap();
+            },
+        );
+    }
+    ui.onboard_step.set(0);
 
     // Pages taller than the window, whole: the skin grid and the history
     // page's last row.

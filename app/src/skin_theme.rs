@@ -421,17 +421,27 @@ pub fn compile(skin: &Skin, dark: bool) -> Arc<CompiledTheme> {
     } else {
         ThemeDefinition::NANA_LIGHT
     };
-    let def = base
+    // Toasts arrive and leave on the app's motion tokens.
+    let toast = nana_ui_core::ToastRecipe {
+        motion: crate::ui::motion::toast(),
+        ..base
+            .components
+            .toast
+            .unwrap_or(nana_ui_core::ToastRecipe::DEFAULT)
+    };
+    let mut def = base
         .with_palette(p)
         .with_accent(ramp)
         .with_metrics(metrics())
         .with_effects(effects(&k))
+        .with_toast(toast)
         .with_id(ThemeId::from_owned(format!(
             "nanatype.skin.{}.{}",
             skin.meta.id,
             if dark { "dark" } else { "light" }
         )))
         .with_display_name(skin.meta.id.clone());
+    def.motion.hover_color_ms = crate::ui::motion::HOVER_MS as u16;
     match def.compile() {
         Ok(theme) => Arc::new(theme),
         Err(_) => nana_ui::builtin_theme_arc(if dark {
