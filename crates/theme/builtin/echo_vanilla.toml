@@ -12,7 +12,7 @@ accent = "#606266"
 background = "#edeef0"
 surface = "#ffffff"
 text = "#000000"
-muted = "#888888"
+muted = "#6b6b6b"
 border = "#cccccc"
 
 [fonts.body]
@@ -26,8 +26,8 @@ weight = 400
 # Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
 # Its columns are 2 : 7 : 3, so the text sits left of centre.
 [dialogue]
-region = [1280, 240]
-padding = [226, 66, 333, 46]
+region = [1280, 180]
+padding = [226, 52, 333, 44]
 
 [dialogue.box]
 color = "#ffffff"

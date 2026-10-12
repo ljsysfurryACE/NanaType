@@ -20,7 +20,7 @@ warning = "#ffc85a"
 danger = "#ff7a8a"
 
 [dialogue]
-region = [1280, 240]
+region = [1280, 180]
 padding = [52, 54, 52, 22]
 overflow = "page"
 

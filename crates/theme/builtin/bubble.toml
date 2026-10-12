@@ -26,7 +26,7 @@ families = ["Segoe UI Symbol", "Microsoft YaHei UI", "PingFang SC"]
 weight = 400
 
 [dialogue]
-region = [760, 220]
+region = [760, 170]
 padding = [30, 30, 30, 18]
 
 [dialogue.box]

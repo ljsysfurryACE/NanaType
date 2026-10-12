@@ -22,7 +22,7 @@ weight = 800
 weight = 900
 
 [dialogue]
-region = [760, 230]
+region = [760, 170]
 padding = [28, 30, 28, 18]
 
 [dialogue.box]

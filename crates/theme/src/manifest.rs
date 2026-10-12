@@ -532,15 +532,33 @@ pub struct FontSpec {
     pub weight: u16,
 }
 
+impl FontSpec {
+    /// The system sans stack for a BCP-47 language tag: Japanese text needs
+    /// Japanese faces first or Han characters take Chinese glyph shapes.
+    pub fn locale_families(tag: &str) -> Vec<String> {
+        let names: &[&str] = if tag
+            .get(..2)
+            .is_some_and(|l| l.eq_ignore_ascii_case("ja"))
+        {
+            &["Yu Gothic UI", "Meiryo UI", "Hiragino Sans", "Noto Sans JP"]
+        } else {
+            &["Microsoft YaHei UI", "PingFang SC", "Noto Sans SC"]
+        };
+        names.iter().map(|n| (*n).into()).collect()
+    }
+
+    /// Whether this role still has the unmodified default stack, that is,
+    /// the skin names no fonts of its own for it.
+    pub fn is_default_stack(&self) -> bool {
+        self.file.is_none() && self.families == Self::locale_families("zh")
+    }
+}
+
 impl Default for FontSpec {
     fn default() -> Self {
         Self {
             file: None,
-            families: vec![
-                "Microsoft YaHei UI".into(),
-                "PingFang SC".into(),
-                "Noto Sans SC".into(),
-            ],
+            families: Self::locale_families("zh"),
             weight: 500,
         }
     }
@@ -947,7 +965,7 @@ impl Default for HistoryChatSpec {
 impl Default for Dialogue {
     fn default() -> Self {
         Self {
-            region: [760.0, 200.0],
+            region: [760.0, 150.0],
             overscan: 18.0,
             padding: [20.0, 22.0, 20.0, 14.0],
             box_: BoxSpec::default(),
@@ -1036,6 +1054,17 @@ pub enum HistoryLayout {
     Stack,
     /// Name, line and time side by side on one row, like a chat log.
     Inline,
+}
+
+/// Which end of the history window the rows gather at while they do not fill it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HistoryAnchor {
+    /// Newest row at the bottom edge, like a chat.
+    #[default]
+    Bottom,
+    /// Rows start at the top edge.
+    Top,
 }
 
 /// A surface behind the whole history list.
@@ -1140,6 +1169,8 @@ pub struct History {
     pub chat: HistoryChatSpec,
     /// The chat message a row answers, quoted above its bubble.
     pub reply: ReplySpec,
+    /// Where a short list sits in the window.
+    pub anchor: HistoryAnchor,
 }
 
 impl Default for History {
@@ -1181,6 +1212,7 @@ impl Default for History {
             hide_latest: false,
             chat: HistoryChatSpec::default(),
             reply: ReplySpec::default(),
+            anchor: HistoryAnchor::Bottom,
         }
     }
 }

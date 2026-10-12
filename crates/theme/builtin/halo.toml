@@ -22,11 +22,11 @@ shadows = [
     { color = "#ffffff", dy = 1, inset = true },
 ]
 
-# Accent bar on the left edge.
+# Accent bar on the left edge, level with the first line of text.
 [[dialogue.decor]]
-anchor = "left"
-offset = [12, 0]
-size = [3, "46%"]
+anchor = "top_left"
+offset = [12, 30]
+size = [3, 40]
 radius = 2
 gradient = { stops = [[0, "accent"], [1, "#8fd3ff"]] }
 

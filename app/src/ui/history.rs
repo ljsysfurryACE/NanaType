@@ -11,7 +11,9 @@ use nana_ui_core::{
     AlignSpec, BackgroundImage, BackgroundImageFit, LengthSpec, OverflowSpec, PositionSpec,
 };
 use nanatype_model::{Entrance, LineId, SourceKind};
-use nanatype_theme::{AvatarShape, DecorLayer, HistoryEntrance, HistoryLayout, HistoryTitle, Skin};
+use nanatype_theme::{
+    AvatarShape, DecorLayer, HistoryAnchor, HistoryEntrance, HistoryLayout, HistoryTitle, Skin,
+};
 
 use super::dialogue::{self, Base, Timing, document};
 use super::surface::{self, Surface};
@@ -446,6 +448,10 @@ pub fn history_window(ui: Ui) -> impl IntoView {
         };
         let (below, above) = (decor(DecorLayer::Below), decor(DecorLayer::Above));
         let title = h.title.as_ref().map(|t| title_view(&skin, t));
+        let justify = match h.anchor {
+            HistoryAnchor::Bottom => nana_ui_core::JustifySpec::End,
+            HistoryAnchor::Top => nana_ui_core::JustifySpec::Start,
+        };
         widget(Stack::fill_column(0.0).with_layout(move |l| {
             l.padding_top = Some(LengthSpec::Px(mt));
             l.padding_right = Some(LengthSpec::Px(mr));
@@ -477,7 +483,10 @@ pub fn history_window(ui: Ui) -> impl IntoView {
                         l.padding_top = Some(LengthSpec::Px(pt));
                         l.padding_right = Some(LengthSpec::Px(pr));
                         l.padding_bottom = Some(LengthSpec::Px(pb));
-                        l.justify_content = nana_ui_core::JustifySpec::End;
+                        // At least the viewport tall, so `justify_content`
+                        // has spare room to anchor the rows in.
+                        l.min_height = Some(LengthSpec::Percent(100.0));
+                        l.justify_content = justify;
                     }))
                     .children(list),
                 ),

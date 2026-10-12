@@ -26,8 +26,8 @@ weight = 400
 # Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
 # Its columns are 1 : 6 : 1.
 [dialogue]
-region = [1280, 240]
-padding = [173, 66, 173, 46]
+region = [1280, 180]
+padding = [173, 52, 173, 44]
 
 [dialogue.box]
 color = "#00000000"

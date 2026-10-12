@@ -60,7 +60,7 @@ families = ["LXGW WenKai", "Microsoft YaHei UI", "PingFang SC"]   # 按顺序取
 weight = 500
 
 [dialogue]
-region = [760, 200]               # 对话区域（逻辑像素）
+region = [760, 150]               # 对话区域（逻辑像素）
 overscan = 18                     # 四周透明边距，防止跳动 / 描边被裁切
 padding = [20, 22, 20, 14]        # 文字内边距：左 上 右 下
 background = "images/bg.png"      # 可选
@@ -190,7 +190,8 @@ name_width = 96                   # inline 时名字栏宽度
 name_weight = 700
 time_size = 12                    # 默认比名字小 2
 time_seconds = false              # true 显示 HH:MM:SS
-hide_latest = false               # true：对话框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）
+anchor = "bottom"                 # 行不足一屏时靠哪一端："bottom"（默认，新行贴底）或 "top"
+hide_latest = false               # true：展示框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）
 # 整个列表背后的面板（可选）；也支持 gradient / radii / border_widths / border_style / shadows
 panel = { color = "#edeef0", border_color = "#888888", border_width = 0, radius = 0, padding = [18, 18, 18, 18], margin = [0, 0, 0, 0] }   # padding 左上右下，margin 上右下左
 title = { text = "HISTORY", color = "#606266", size = 21, weight = 600, background = "#ffffff", height = 42, padding = 18 }   # 面板顶部标题栏（可选）
@@ -255,7 +256,7 @@ screen_shake_px = 6
 
 每个框最多 4 层阴影，旧字段 `inner_border_color`、`glow`、`shadow` 也各占一层。
 
-在设置里覆盖「对话框颜色」会关闭框的渐变，覆盖「名牌颜色」会关闭名牌的渐变，以便所选颜色可见。
+在设置里覆盖「展示框颜色」会关闭框的渐变，覆盖「名牌颜色」会关闭名牌的渐变，以便所选颜色可见。
 
 ## 字体
 
@@ -285,4 +286,4 @@ NanaUI 一次只用一个字体名，NanaType 会从 `families` 里挑第一个�
 
 ## 热重载
 
-制作皮肤时，在 设置 › 皮肤 打开「文件变化时自动重载」，修改文件夹中的文件后对话框会立即更新。
+制作皮肤时，在 设置 › 皮肤 打开「文件变化时自动重载」，修改文件夹中的文件后展示框会立即更新。

@@ -98,7 +98,7 @@ fn every_builtin_loads_without_warnings() {
         Rgba8::rgb(0x5c, 0xb8, 0xff)
     );
     // Untouched fields keep the defaults.
-    assert_eq!(night.skin.dialogue.region, [760.0, 200.0]);
+    assert_eq!(night.skin.dialogue.region, [760.0, 150.0]);
     // A partial `[history.text]` keeps the history defaults, not the dialogue's.
     assert_eq!(night.skin.history.text.size, 18.0);
     let bubble = registry.load("nanatype.bubble").unwrap();
