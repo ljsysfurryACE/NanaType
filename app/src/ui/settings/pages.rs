@@ -63,6 +63,17 @@ fn primary(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView
     .into_any()
 }
 
+/// The view's one call to action: a solid accent button.
+fn cta(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView {
+    widget(crate::skin_theme::cta(
+        Button::new(ui.now_t(key))
+            .kind(ButtonKind::Primary)
+            .size(ControlSize::Small),
+    ))
+    .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
+    .into_any()
+}
+
 fn general(ui: Ui) -> AnyView {
     let mut langs = vec![("system".to_owned(), ui.now_t("general-language-system"))];
     langs.extend(
@@ -111,7 +122,7 @@ fn general(ui: Ui) -> AnyView {
                 )
             }),
             widget(Stack::row(8.0)).children((
-                primary(ui, "onboard-done", || {
+                cta(ui, "onboard-done", || {
                     edit(|s| s.general.onboarding_done = true)
                 }),
                 button(ui, "onboard-obs", || Msg::SettingsPage(Page::Output)),
@@ -617,12 +628,11 @@ fn skins(ui: Ui) -> AnyView {
                             Stack::row(0.0)
                                 .width(LengthSpec::Px(14.0))
                                 .height(LengthSpec::Px(14.0))
+                                .outline(SemanticColorRole::BorderStrong, 1.0)
                                 .with_layout(move |l| {
                                     l.background = Some(color);
+                                    // A dot: the pill radius.
                                     l.border_radius = Some(7.0);
-                                    l.border_width = Some(1.0);
-                                    l.border_color = Some([0.5, 0.5, 0.5, 0.5]);
-                                    l.border_style = Some(nana_ui_core::BorderStyle::Solid);
                                 }),
                         )
                         .into_any()
@@ -1087,9 +1097,9 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                     l.position = PositionSpec::Relative;
                     l.overflow_x = OverflowSpec::Hidden;
                     l.overflow_y = OverflowSpec::Hidden;
-                    l.border_radius = Some(10.0);
                     l.paint.background_image = Some(backdrop);
-                }),
+                })
+                .radius(nana_ui_core::RadiusTier::Md),
         )
         .children(
             widget(
@@ -1126,11 +1136,11 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                 (!description.is_empty()).then(|| hint(description)),
             )),
             (!is_active).then(|| {
-                widget(
+                widget(crate::skin_theme::cta(
                     Button::new(I18N.t_in(locale, "common-apply"))
                         .kind(ButtonKind::Primary)
                         .size(ControlSize::Small),
-                )
+                ))
                 .on_cx(move |_, _: &Activate, cx| {
                     let id = apply_id.clone();
                     cx.dispatch_program_all(edit(move |s| s.skin.id = id));
@@ -1734,7 +1744,7 @@ fn keycap(
                     .justify(JustifySpec::Center)
                     .surface(SemanticColorRole::Surface)
                     .outline(SemanticColorRole::BorderSoft, 1.0)
-                    .radius_px(6.0)
+                    .radius(nana_ui_core::RadiusTier::Sm)
                     .with_layout(|l| {
                         l.paint.box_shadows = vec![BoxShadowSpec {
                             paint_color: None,
@@ -1806,7 +1816,7 @@ fn hotkey_control(ui: Ui, action: GlobalAction) -> AnyView {
             .padding_xy(10.0, 0.0)
             .align(AlignSpec::Center)
             .outline(SemanticColorRole::Border, 1.0)
-            .radius_px(6.0)
+            .radius(nana_ui_core::RadiusTier::Sm)
             .with_layout(|l| l.border_style = Some(nana_ui_core::BorderStyle::Dashed)),
     )
     .children(widget(
@@ -1814,11 +1824,15 @@ fn hotkey_control(ui: Ui, action: GlobalAction) -> AnyView {
             .style(text_style(12.0, 500))
             .color(SemanticColorRole::Muted),
     ));
+    // Recording is a live state: the highlight outline, not the accent.
     let listening = widget(
         Stack::row(0.0)
             .min_width(LengthSpec::Px(160.0))
+            .height(LengthSpec::Px(24.0))
             .justify(JustifySpec::Center)
-            .align(AlignSpec::Center),
+            .align(AlignSpec::Center)
+            .outline(SemanticColorRole::Highlight, 1.0)
+            .radius(nana_ui_core::RadiusTier::Sm),
     )
     .children(widget(
         Text::new(ui.now_t("hotkeys-press-keys"))

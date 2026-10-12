@@ -28,7 +28,7 @@ use nanatype_model::{
 use nanatype_settings::{InputMode, SendKey, Settings};
 
 use super::dialogue::{Base, Source, dialogue_box};
-use super::{I18N, Ui, c, restyle};
+use super::{I18N, Ui, restyle};
 use crate::msg::{FileTarget, MarkupEdit, Msg, Tool};
 use crate::windows::{STATUS_H, TOOLBAR_H, WindowKind};
 
@@ -197,10 +197,13 @@ fn swatch_button(label: String, color: [f32; 4]) -> Button {
         l.height = Some(LengthSpec::Px(26.0));
         l.min_width = Some(LengthSpec::Px(26.0));
         l.background = Some(color);
-        l.border_radius = Some(6.0);
         l.border_width = Some(1.0);
-        l.border_color = Some([0.5, 0.5, 0.5, 0.45]);
         l.border_style = Some(nana_ui_core::BorderStyle::Solid);
+    }
+    st.radius = Some(nana_ui_core::RadiusTier::Xs);
+    st.border = Some(SemanticColorRole::BorderStrong);
+    {
+        let l = Arc::make_mut(&mut st.layout);
         l.padding_left = Some(LengthSpec::Px(0.0));
         l.padding_right = Some(LengthSpec::Px(0.0));
     }
@@ -217,12 +220,12 @@ fn image_button(label: String, url: String) -> Button {
         let l = Arc::make_mut(&mut st.layout);
         l.width = Some(LengthSpec::Px(52.0));
         l.height = Some(LengthSpec::Px(52.0));
-        l.border_radius = Some(6.0);
         l.paint.background_image = Some(nana_ui_core::BackgroundImage::url_with_fit(
             url,
             nana_ui_core::BackgroundImageFit::Contain,
         ));
     }
+    st.radius = Some(nana_ui_core::RadiusTier::Sm);
     Button::new("")
         .accessible_name(label)
         .kind(ButtonKind::Text)
@@ -779,12 +782,12 @@ fn toolbar(ui: Ui) -> AnyView {
             pinned.push(keycap(key));
         }
         pinned.push(
-            widget(
+            widget(crate::skin_theme::cta(
                 Button::new(t("tb-send"))
                     .icon(ti::SEND)
                     .kind(ButtonKind::Primary)
                     .size(ControlSize::Small),
-            )
+            ))
             .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::Core(Cmd::Send)))
             .into_any(),
         );
@@ -809,13 +812,41 @@ fn toolbar(ui: Ui) -> AnyView {
     .into_any()
 }
 
-/// Nana pink, for live states (mirroring).
-const PINK: [f32; 4] = [
-    0xe8 as f32 / 255.0,
-    0x6a as f32 / 255.0,
-    0x92 as f32 / 255.0,
-    1.0,
-];
+/// A live or attention state as a pill: a highlight wash and outline, the
+/// label in body text (pink text would not reach 4.5:1 on the wash), and a
+/// leading highlight dot when `dot`.
+fn highlight_chip(text: String, dot: bool) -> AnyView {
+    let mut st = NodeStyle::default();
+    {
+        let l = Arc::make_mut(&mut st.layout);
+        l.font_size = Some(12.0);
+        l.white_space_nowrap = true;
+    }
+    let mut mark = st.clone();
+    mark.foreground = Some(SemanticColorRole::Highlight);
+    st.foreground = Some(SemanticColorRole::Text);
+    let pill = Stack::row(4.0).align(AlignSpec::Center).with_layout(|l| {
+        l.flex_shrink = Some(0.0);
+        l.padding_left = Some(LengthSpec::Px(8.0));
+        l.padding_right = Some(LengthSpec::Px(8.0));
+        l.padding_top = Some(LengthSpec::Px(1.0));
+        l.padding_bottom = Some(LengthSpec::Px(1.0));
+        l.border_radius = Some(999.0);
+        l.border_width = Some(1.0);
+        l.border_style = Some(nana_ui_core::BorderStyle::Solid);
+    });
+    let wash = |a: f32| nana_ui_core::SemanticColorMix::alpha(SemanticColorRole::Highlight, a);
+    let pill_style = pill
+        .node_style()
+        .surface_mix(wash(0.16))
+        .outline_mix(wash(0.45), 1.0);
+    widget(pill.style(pill_style))
+        .children((
+            dot.then(|| widget(Text::new("●").decorative().style(mark))),
+            widget(Text::new(text).decorative().style(st)),
+        ))
+        .into_any()
+}
 
 /// Period of a breathing status pulse (ms).
 pub const PULSE_MS: u64 = 1200;
@@ -842,12 +873,8 @@ fn keycap(key: &str) -> AnyView {
 }
 
 /// `text` in a small label: a filled pill when `fill` is given, an outlined
-/// keycap otherwise.
-fn chip(text: String, color: [f32; 4], fill: Option<[f32; 4]>, size: f32, radius: f32) -> AnyView {
-    chip_in(text, color, None, fill, size, radius)
-}
-
-/// [`chip`] whose text takes a theme role instead of `color` when given.
+/// keycap otherwise; its text takes a theme role instead of `color` when
+/// given.
 fn chip_in(
     text: String,
     color: [f32; 4],
@@ -927,24 +954,12 @@ fn status_line(ui: Ui) -> AnyView {
                 )
                 .into_any()
             }
-            Line::Queued(text) => {
-                // Accent wash with the theme's on-soft accent text, which is
-                // darkened until it reads on the wash (pale accents too).
-                let accent = c(ui.skin.get_untracked().chrome.accent);
-                chip_in(
-                    text,
-                    accent,
-                    Some(SemanticColorRole::AccentOnSoft),
-                    Some([accent[0], accent[1], accent[2], 0.16]),
-                    12.0,
-                    10.0,
-                )
-            }
+            // Live and attention states take the highlight, not the accent.
+            Line::Queued(text) => highlight_chip(text, false),
             Line::Mirror(text) => {
-                let fill = [PINK[0], PINK[1], PINK[2], 0.16];
                 let mut chip_view =
                     widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
-                        .children(chip(format!("● {text}"), PINK, Some(fill), 12.0, 10.0));
+                        .children(highlight_chip(text, true));
                 if !reduced {
                     // Opacity breathes once per PULSE_MS.
                     chip_view = chip_view.bind(move |s: &mut Stack| {
