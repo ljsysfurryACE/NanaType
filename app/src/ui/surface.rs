@@ -391,6 +391,22 @@ mod tests {
     }
 
     #[test]
+    fn overflow_overrides_set_the_mode_and_the_page_turn() {
+        let mut skin = Skin::default();
+        skin.dialogue.overflow_auto_ms = Some(900);
+        let keep = crate::skin_theme::with_overrides(&skin, &Default::default());
+        assert_eq!(keep.dialogue.overflow_auto_ms, Some(900));
+        let overrides = nanatype_settings::SkinOverrides {
+            overflow: Some(nanatype_model::Overflow::Page),
+            overflow_auto_ms: Some(2500),
+            ..Default::default()
+        };
+        let s = crate::skin_theme::with_overrides(&skin, &overrides);
+        assert_eq!(s.dialogue.overflow, nanatype_model::Overflow::Page);
+        assert_eq!(s.dialogue.overflow_auto_ms, Some(2500));
+    }
+
+    #[test]
     fn frames_draw_at_slice_times_scale() {
         let frame = NineSlice {
             image: "f.png".into(),

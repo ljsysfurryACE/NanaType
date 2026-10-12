@@ -775,6 +775,21 @@ fn skins(ui: Ui) -> AnyView {
                     ),
                     row(
                         ui,
+                        "skins-override-page-auto",
+                        Some("skins-override-page-auto-hint"),
+                        slider(
+                            ui,
+                            (0.0, 10.0, 0.5),
+                            "s",
+                            |s| f64::from(s.skin.overrides.overflow_auto_ms.unwrap_or(0)) / 1000.0,
+                            |s, v| {
+                                s.skin.overrides.overflow_auto_ms =
+                                    (v > 0.0).then_some((v * 1000.0) as u32)
+                            },
+                        ),
+                    ),
+                    row(
+                        ui,
                         "skins-override-reset",
                         None,
                         button(ui, "common-reset", || {

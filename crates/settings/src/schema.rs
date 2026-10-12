@@ -235,6 +235,8 @@ pub struct SkinOverrides {
     pub text_size: Option<f32>,
     pub region: Option<[f32; 2]>,
     pub overflow: Option<Overflow>,
+    /// In page mode, turn a full page on its own after this many ms.
+    pub overflow_auto_ms: Option<u32>,
 }
 
 impl SkinOverrides {
