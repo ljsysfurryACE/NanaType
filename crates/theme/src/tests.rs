@@ -757,3 +757,171 @@ fn echo_menu_rows_show_only_on_the_display() {
     let d: DecorSpec = toml::from_str("when = \"display\"").unwrap();
     assert_eq!(d.when, DecorWhen::Display);
 }
+
+// ---- docs consistency ------------------------------------------------------
+
+/// The manifests in `builtin/`, parsed.
+fn builtin_tables() -> Vec<toml::Table> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("builtin");
+    let mut paths: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+        .collect();
+    paths.sort();
+    paths
+        .iter()
+        .map(|p| fs::read_to_string(p).unwrap().parse().unwrap())
+        .collect()
+}
+
+/// `(id, zh-CN name)` of every built-in skin, sorted by id.
+fn builtin_names() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = builtin_tables()
+        .iter()
+        .map(|t| {
+            let meta = t["meta"].as_table().unwrap();
+            let id = meta["id"].as_str().unwrap().to_owned();
+            let name = meta["name"]["zh-CN"].as_str().unwrap().to_owned();
+            (id, name)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+fn repo_file(path: &str) -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    fs::read_to_string(root.join(path)).unwrap()
+}
+
+#[test]
+fn docs_list_exactly_the_builtin_skins() {
+    let builtins = builtin_names();
+    // The registry ships exactly the manifests in builtin/.
+    let registry = SkinRegistry::new(None, APP);
+    let mut shipped: Vec<String> = registry.entries().iter().map(|e| e.id.clone()).collect();
+    shipped.sort();
+    let ids: Vec<String> = builtins.iter().map(|(id, _)| id.clone()).collect();
+    assert_eq!(shipped, ids, "registry vs builtin/*.toml");
+
+    // docs/skins.md: one table row per skin, "| `id` | name | …".
+    let docs = repo_file("docs/skins.md");
+    let mut rows: Vec<(String, String)> = docs
+        .lines()
+        .filter_map(|l| {
+            let (id, rest) = l.strip_prefix("| `")?.split_once('`')?;
+            let name = rest.split('|').nth(1)?.trim();
+            id.starts_with("nanatype.")
+                .then(|| (id.to_owned(), name.to_owned()))
+        })
+        .collect();
+    rows.sort();
+    assert_eq!(rows, builtins, "docs/skins.md's built-in table");
+
+    // README: "内置 N 套（name、name、…；…）".
+    let readme = repo_file("README.md");
+    let line = readme
+        .lines()
+        .find(|l| l.contains("**皮肤**"))
+        .expect("README's skin bullet");
+    let count = format!("内置 {} 套", builtins.len());
+    assert!(line.contains(&count), "README should say {count}: {line}");
+    let list = line
+        .split_once('（')
+        .and_then(|(_, r)| r.split(['；', '）']).next())
+        .expect("README's skin list");
+    let mut listed: Vec<&str> = list.split('、').map(str::trim).collect();
+    listed.sort_unstable();
+    let mut names: Vec<&str> = builtins.iter().map(|(_, n)| n.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(listed, names, "README's skin list");
+}
+
+/// Every key path a skin can write: the default skin's fields and every key
+/// a built-in manifest uses. Free-form maps (localised names, palette roles,
+/// portrait variants, sound effects) contribute their own key only.
+fn manifest_keys() -> std::collections::BTreeSet<String> {
+    const OPEN_MAPS: &[&str] = &[
+        "meta.name",
+        "meta.description",
+        "chrome.palette",
+        "dialogue.portrait.variants",
+        "sounds.se",
+    ];
+    fn walk(prefix: &str, v: &toml::Value, out: &mut std::collections::BTreeSet<String>) {
+        match v {
+            toml::Value::Table(t) => {
+                for (k, v) in t {
+                    let path = if prefix.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{prefix}.{k}")
+                    };
+                    out.insert(path.clone());
+                    if !OPEN_MAPS.contains(&path.as_str()) {
+                        walk(&path, v, out);
+                    }
+                }
+            }
+            toml::Value::Array(items) => {
+                for item in items {
+                    walk(prefix, item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = std::collections::BTreeSet::new();
+    walk(
+        "",
+        &toml::Value::try_from(Skin::default()).unwrap(),
+        &mut out,
+    );
+    for table in builtin_tables() {
+        walk("", &toml::Value::Table(table), &mut out);
+    }
+    out
+}
+
+/// Whether `word` appears in `text` as a whole key, not inside a longer one.
+fn mentions_key(text: &str, word: &str) -> bool {
+    let is_key = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        !before.is_some_and(is_key) && !after.is_some_and(is_key)
+    })
+}
+
+#[test]
+fn docs_name_every_manifest_key() {
+    let docs = repo_file("docs/skins.md");
+    let missing: Vec<String> = manifest_keys()
+        .into_iter()
+        .filter(|path| !mentions_key(&docs, path.rsplit('.').next().unwrap()))
+        .collect();
+    assert!(missing.is_empty(), "docs/skins.md never names {missing:?}");
+    for section in [
+        "[chrome.dark]",
+        "[chrome.light]",
+        "[mention]",
+        "[dialogue.reply]",
+        "[history.reply]",
+        "[history.chat]",
+    ] {
+        assert!(docs.contains(section), "docs/skins.md lacks {section}");
+    }
+    for key in [
+        "when",
+        "anchor",
+        "contrast_guard",
+        "highlight",
+        "hide_latest",
+    ] {
+        assert!(
+            docs.contains(&format!("{key} =")),
+            "docs/skins.md lacks an example of `{key} =`"
+        );
+    }
+}

@@ -1738,7 +1738,7 @@ fn blivechat(ui: Ui) -> AnyView {
             ui,
             "int-blive-host",
             Some("int-blive-host-hint"),
-            text(
+            code_text(
                 ui,
                 "127.0.0.1".into(),
                 180.0,
@@ -2678,7 +2678,7 @@ fn integrations(ui: Ui) -> AnyView {
                                 ui,
                                 "int-osc-host",
                                 None,
-                                text(
+                                code_text(
                                     ui,
                                     "127.0.0.1".into(),
                                     180.0,
@@ -2700,7 +2700,7 @@ fn integrations(ui: Ui) -> AnyView {
                                 ui,
                                 "int-osc-prefix",
                                 None,
-                                text(
+                                code_text(
                                     ui,
                                     "/nanatype".into(),
                                     180.0,
@@ -2870,7 +2870,13 @@ fn assets(ui: Ui) -> AnyView {
                             },
                         ),
                     ));
-                    let content = widget(Stack::row(0.0).width(LengthSpec::Fill)).children(
+                    // Markup source, in the mono role.
+                    let content = widget(
+                        Stack::row(0.0)
+                            .width(LengthSpec::Fill)
+                            .with_layout(crate::ui::mono),
+                    )
+                    .children(
                         widget(
                             TextInput::new(p.markup.clone())
                                 .size(ControlSize::Small)

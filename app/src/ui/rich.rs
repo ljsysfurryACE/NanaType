@@ -297,6 +297,22 @@ impl ChipKind {
     }
 }
 
+/// The `@` label's fill and ink. The skin's ink stays when it reads on the
+/// fill at 4.5:1; otherwise (white on a light accent such as pixel's lime)
+/// the label takes whichever of dark ink or white reads best.
+pub fn mention_colors(skin: &nanatype_theme::Skin) -> (Rgba8, Rgba8) {
+    let m = &skin.mention;
+    let fill = skin.color(m.fill);
+    let text = skin.color(m.text_color);
+    let solid = fill.with_alpha(255);
+    let text = if crate::skin_theme::contrast(text.with_alpha(255), solid) >= 4.5 {
+        text
+    } else {
+        crate::skin_theme::on(solid)
+    };
+    (fill, text)
+}
+
 impl Default for MentionLook {
     fn default() -> Self {
         Self::from_skin(&nanatype_theme::Skin::default())
@@ -306,9 +322,10 @@ impl Default for MentionLook {
 impl MentionLook {
     pub fn from_skin(skin: &nanatype_theme::Skin) -> Self {
         let m = &skin.mention;
+        let (fill, text) = mention_colors(skin);
         Self {
-            fill: crate::skin_theme::rgba(skin.color(m.fill)),
-            text: crate::skin_theme::rgba(skin.color(m.text_color)),
+            fill: crate::skin_theme::rgba(fill),
+            text: crate::skin_theme::rgba(text),
             scale: if m.scale.is_finite() {
                 m.scale.clamp(0.3, 2.0)
             } else {
@@ -911,6 +928,17 @@ mod tests {
         round_trip(
             "你好[at=42 name=观众 avatar=blob:bili-face-42]！[wave][at name=\"无 uid\"][/wave]",
         );
+    }
+
+    #[test]
+    fn mention_labels_read_on_every_builtin_skin() {
+        let reg = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+        for e in reg.entries() {
+            let skin = reg.load(&e.id).unwrap().skin;
+            let (fill, text) = mention_colors(&skin);
+            let r = crate::skin_theme::contrast(text.with_alpha(255), fill.with_alpha(255));
+            assert!(r >= 4.5, "{}: @ label {r:.2}:1", e.id);
+        }
     }
 
     #[test]

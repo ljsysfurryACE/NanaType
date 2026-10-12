@@ -8,8 +8,8 @@ use std::sync::Arc;
 use nana_ui::runtime::view::{AnyView, IntoView, Transition, computed, dynamic, each, widget};
 use nana_ui::runtime::{NodeStyle, ScrollAxes, ScrollView, Stack, Text};
 use nana_ui_core::{
-    AlignSpec, BackgroundImage, BackgroundImageFit, CssGradient, Easing, GradientStop, LengthSpec,
-    LinearGradient, OverflowSpec, PositionSpec,
+    AlignSpec, BackgroundImage, CssGradient, Easing, GradientStop, LengthSpec, LinearGradient,
+    OverflowSpec, PositionSpec,
 };
 use nanatype_core::HistoryRow;
 use nanatype_model::{Entrance, HistoryItem, LineId, Rgba8, SourceKind};
@@ -190,7 +190,20 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         .clone()
         .filter(|_| settings.history.show_quote && h.reply.visible)
         .map(|reply| {
-            super::quote::quote_view(ui, &skin, &h.reply, &reply, h.text.size, h.text.color)
+            // The quote sits above the bubble, on the panel (if any).
+            let backdrop = h
+                .panel
+                .as_ref()
+                .and_then(|p| super::quote::backdrop(p.color, false));
+            super::quote::quote_view(
+                ui,
+                &skin,
+                &h.reply,
+                &reply,
+                h.text.size,
+                h.text.color,
+                backdrop,
+            )
         });
     let viewer = chat.then(|| viewer_color(&row.item));
     // A picture-less avatar: the viewer's colour, the skin's fill, or the
@@ -226,15 +239,17 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         )
         .into_any()
     } else if show_avatar {
-        let has_url = avatar_url.is_some();
+        // The initial on its colour, with the picture laid over it: a
+        // picture still loading (or unreadable) leaves the initial showing.
         let url = avatar_url.clone();
-        let el = widget(
+        widget(
             Stack::row(0.0)
                 .width(LengthSpec::Px(size))
                 .height(LengthSpec::Px(size))
                 .align(AlignSpec::Center)
                 .justify(nana_ui_core::JustifySpec::Center)
                 .with_layout(move |l| {
+                    l.position = PositionSpec::Relative;
                     l.border_radius = Some(radius);
                     l.flex_shrink = Some(0.0);
                     if let Some((w, col)) = ring {
@@ -244,28 +259,19 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
                     }
                     l.overflow_x = OverflowSpec::Hidden;
                     l.overflow_y = OverflowSpec::Hidden;
-                    match url {
-                        Some(u) => {
-                            l.paint.background_image =
-                                Some(BackgroundImage::url_with_fit(u, BackgroundImageFit::Cover))
-                        }
-                        None => {
-                            l.background = Some(c(fill));
-                            l.paint.background_image = fill_gradient;
-                        }
-                    }
+                    l.background = Some(c(fill));
+                    l.paint.background_image = fill_gradient;
                 }),
-        );
-        if has_url {
-            el.into_any()
-        } else {
-            el.children(widget(
+        )
+        .children((
+            widget(
                 Text::new(initial(&row.item.author))
                     .decorative()
                     .style(initial_style),
-            ))
-            .into_any()
-        }
+            ),
+            url.map(|u| super::danmaku::picture_over(u, radius)),
+        ))
+        .into_any()
     } else {
         widget(Stack::row(0.0)).into_any()
     };
@@ -298,6 +304,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         l.font_size = Some(time_size(&h));
         l.color = Some(c(h.time_color));
         l.white_space_nowrap = true;
+        super::tnum(l);
     }
     let show_name = settings.history.show_name && !row.item.author.is_empty() && !follows;
     let show_time = settings.history.show_time && !follows;
@@ -611,7 +618,19 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             .children((
                 below,
                 title,
-                widget(ScrollView::new(ScrollAxes::Vertical).follow_end(true)).children(
+                // Takes the panel's height left under the title (and no
+                // more), so the list scrolls inside it instead of running
+                // past the window's foot.
+                widget(
+                    ScrollView::new(ScrollAxes::Vertical)
+                        .follow_end(true)
+                        .with_layout(|l| {
+                            l.flex_grow = Some(1.0);
+                            l.flex_shrink = Some(1.0);
+                            l.min_height = Some(LengthSpec::Px(0.0));
+                        }),
+                )
+                .children(
                     widget(Stack::column(gap).with_layout(move |l| {
                         l.padding_left = Some(LengthSpec::Px(pl));
                         l.padding_top = Some(LengthSpec::Px(pt));

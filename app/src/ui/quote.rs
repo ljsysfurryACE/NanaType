@@ -1,6 +1,6 @@
 //! The chat message a line answers, quoted in one small line above it:
-//! avatar · name: text. The dialogue box and history both draw it from the
-//! skin's `reply` spec.
+//! a 3px accent bar, avatar · name: text. The dialogue box and history both
+//! draw it from the skin's `reply` spec.
 
 use std::sync::Arc;
 
@@ -11,9 +11,57 @@ use nanatype_model::{ChatRef, Rgba8};
 use nanatype_theme::{ReplySpec, Skin};
 
 use super::{Ui, c};
+use crate::skin_theme::{contrast, on};
+
+/// What the quote is drawn over, when that is one known colour: the
+/// dialogue box's fill on the display, the history panel's in history.
+/// Fills under half opacity, or painted by an image, are not known (the
+/// stream shows through), and leave the skin's colours as they are.
+pub fn backdrop(fill: Rgba8, framed: bool) -> Option<Rgba8> {
+    (!framed && fill.a >= 128).then_some(fill.with_alpha(255))
+}
+
+fn mix(a: Rgba8, b: Rgba8, t: f32) -> Rgba8 {
+    let m = |x: u8, y: u8| (f32::from(x) * (1.0 - t) + f32::from(y) * t).round() as u8;
+    Rgba8::rgb(m(a.r, b.r), m(a.g, b.g), m(a.b, b.b))
+}
+
+/// The smallest contrast a quote's name or text keeps on its backdrop.
+pub const QUOTE_MIN: f32 = 4.5;
+
+/// `fg` drawn at `opacity` over `bg`, moved toward the ink that reads best
+/// on `bg` just far enough to reach [`QUOTE_MIN`]:1 as painted.
+pub fn legible(fg: Rgba8, bg: Rgba8, opacity: f32) -> Rgba8 {
+    let ink = on(bg);
+    let painted = |c: Rgba8| mix(bg, c, opacity);
+    (0..=20)
+        .map(|i| mix(fg.with_alpha(255), ink, i as f32 / 20.0))
+        .find(|c| contrast(painted(*c), bg) >= QUOTE_MIN)
+        .unwrap_or(ink)
+}
+
+/// The quote's name and text colours: the accent and `text_color` (or the
+/// spec's colour), kept legible on `backdrop` when it is known. Over an
+/// unknown backdrop the name takes the text colour too, which the skin
+/// already made readable where its lines are drawn; the accent stays on the
+/// quote's bar.
+pub fn colors(
+    skin: &Skin,
+    spec: &ReplySpec,
+    text_color: Rgba8,
+    backdrop: Option<Rgba8>,
+) -> (Rgba8, Rgba8) {
+    let text = spec.color.map_or(text_color, |col| skin.color(col));
+    let name = skin.chrome.accent;
+    let opacity = spec.opacity.clamp(0.0, 1.0);
+    match backdrop {
+        Some(bg) if opacity > 0.0 => (legible(name, bg, opacity), legible(text, bg, opacity)),
+        _ => (text, text),
+    }
+}
 
 /// `reply` as a quote line, sized from `text_size` and coloured from
-/// `text_color` unless the spec says otherwise.
+/// `text_color` unless the spec says otherwise, over `backdrop`.
 pub fn quote_view(
     ui: Ui,
     skin: &Skin,
@@ -21,13 +69,13 @@ pub fn quote_view(
     reply: &ChatRef,
     text_size: f32,
     text_color: Rgba8,
+    backdrop: Option<Rgba8>,
 ) -> AnyView {
     let size = spec
         .size
         .filter(|s| s.is_finite() && *s > 0.0)
         .unwrap_or((text_size * 0.62).max(10.0));
-    let color = spec.color.map_or(text_color, |col| skin.color(col));
-    let name_color = skin.chrome.accent;
+    let (name_color, color) = colors(skin, spec, text_color, backdrop);
     let style = |color: Rgba8, weight: u16| {
         let mut st = NodeStyle::default();
         let l = Arc::make_mut(&mut st.layout);
@@ -48,6 +96,7 @@ pub fn quote_view(
         c(skin.chrome.accent),
     );
     let opacity = spec.opacity.clamp(0.0, 1.0);
+    let bar = c(skin.chrome.accent);
     widget(
         Stack::row((size * 0.4).round())
             .align(AlignSpec::Center)
@@ -57,6 +106,14 @@ pub fn quote_view(
                 l.margin_bottom = Some(LengthSpec::Px(4.0));
                 l.flex_shrink = Some(0.0);
                 l.min_width = Some(LengthSpec::Px(0.0));
+                // A 3px accent rule down the left marks the line as a quote.
+                l.border_top_width = Some(0.0);
+                l.border_right_width = Some(0.0);
+                l.border_bottom_width = Some(0.0);
+                l.border_left_width = Some(3.0);
+                l.border_color = Some(bar);
+                l.border_style = Some(nana_ui_core::BorderStyle::Solid);
+                l.padding_left = Some(LengthSpec::Px((size * 0.5).round().max(6.0)));
             }),
     )
     .children((
@@ -77,4 +134,45 @@ pub fn quote_view(
         )),
     ))
     .into_any()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quotes_read_on_every_builtin_box() {
+        let reg = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+        let mut bad = Vec::new();
+        for e in reg.entries() {
+            let skin = reg.load(&e.id).unwrap().skin;
+            let (d, h) = (&skin.dialogue, &skin.history);
+            let places = [
+                (
+                    "display",
+                    backdrop(d.box_.color, d.box_.frame.is_some()),
+                    &d.reply,
+                    d.text.color,
+                ),
+                (
+                    "history",
+                    h.panel.as_ref().and_then(|p| backdrop(p.color, false)),
+                    &h.reply,
+                    h.text.color,
+                ),
+            ];
+            for (place, bg, spec, text_color) in places {
+                let Some(bg) = bg else { continue };
+                let (name, text) = colors(&skin, spec, text_color, Some(bg));
+                let o = spec.opacity.clamp(0.0, 1.0);
+                for (what, col) in [("name", name), ("text", text)] {
+                    let r = contrast(mix(bg, col, o), bg);
+                    if r < QUOTE_MIN {
+                        bad.push(format!("{} {place} {what} {r:.2}", e.id));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:?}");
+    }
 }
