@@ -7,8 +7,8 @@
 //! and the per-character effects are glyph presentation evaluated on the GPU,
 //! so nothing reshapes while a line plays.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ use nana_ui_core::{
     AlignSpec, BackgroundImage, BackgroundImageFit, BackgroundPosition, BackgroundRepeat,
     JustifySpec, LayoutStyle, LengthSpec, OverflowSpec, PointerEventsSpec, PositionSpec,
 };
-use nanatype_core::Reveal;
+use nanatype_core::{DisplayView, Reveal};
 use nanatype_model::{Document, Entrance, EntranceKind, Inline, Overflow, Rgba8};
 use nanatype_theme::{
     Anchor, ColorRef, ColorRole, ContinueMotion, DecorLayer, DecorSpec, DecorWhen, Edge,
@@ -126,6 +126,9 @@ impl Base {
         if let Some(s) = &self.stroke {
             surface::text_stroke(l, s);
         }
+        // Look ahead when breaking, so a paragraph does not end on a lone
+        // character (`text-wrap-style: pretty`).
+        l.text_typography.wrap_style = Some(nana_ui_core::TextWrapStyleSpec::Pretty);
         st.text_horizontal_alignment = match self.align {
             TextAlign::Start => TextHorizontalAlignment::Start,
             TextAlign::Center => TextHorizontalAlignment::Center,
@@ -246,6 +249,9 @@ pub fn dialogue_box(ui: Ui, source: Source, editor: Option<AnyView>) -> AnyView 
     if let Some(editor) = editor {
         return box_view(ui, BoxCtx::active(ui, source), editor).into_any();
     }
+    if source == Source::Display {
+        *stage() = Stage::new();
+    }
     let key = move || {
         let skin = ui.skin.get();
         let settings = ui.settings.get();
@@ -260,6 +266,93 @@ pub fn dialogue_box(ui: Ui, source: Source, editor: Option<AnyView>) -> AnyView 
         box_view(ui, BoxCtx::active(ui, source), content(ui).into_any())
     })
     .into_any()
+}
+
+/// The box fades in and rises into place when a line appears on an empty
+/// box, and fades out when it clears. No overshoot: a box that bounces
+/// reads as jitter on stream.
+const ENTER_MS: u64 = 180;
+const EXIT_MS: u64 = 160;
+const ENTER_RISE: f32 = 8.0;
+
+/// The typewriter as drawn. While the box plays its exit, the line that just
+/// left stays on it, so the text, name and portrait fade out together.
+struct Stage {
+    /// The last line on the box.
+    shown: Option<Arc<DisplayView>>,
+    /// Whether the box has been looked at since it was mounted: a box that
+    /// mounts with a line on it shows it at once.
+    observed: bool,
+    leaving: bool,
+    entered_at: u64,
+    left_at: u64,
+}
+
+impl Stage {
+    const fn new() -> Self {
+        Self {
+            shown: None,
+            observed: false,
+            leaving: false,
+            entered_at: 0,
+            left_at: 0,
+        }
+    }
+
+    /// `view` as drawn, noting when the box appears or clears.
+    fn see(&mut self, view: Arc<DisplayView>, now: u64) -> Arc<DisplayView> {
+        let first = !std::mem::replace(&mut self.observed, true);
+        if !view.empty {
+            if !first && (self.shown.is_none() || self.leaving) {
+                self.entered_at = now;
+                MOVING_UNTIL.store(now + ENTER_MS, Ordering::Relaxed);
+            }
+            self.leaving = false;
+            self.shown = Some(view.clone());
+            return view;
+        }
+        match &self.shown {
+            Some(shown) => {
+                if !self.leaving {
+                    self.leaving = true;
+                    self.left_at = now;
+                    MOVING_UNTIL.store(now + EXIT_MS, Ordering::Relaxed);
+                }
+                shown.clone()
+            }
+            None => view,
+        }
+    }
+
+    /// Opacity and downward offset of the box at `now`.
+    fn presence(&self, now: u64, reduced: bool) -> (f32, f32) {
+        if self.leaving {
+            let t = (now.saturating_sub(self.left_at) as f32 / EXIT_MS as f32).clamp(0.0, 1.0);
+            return (1.0 - t * t * t, 0.0);
+        }
+        let t = (now.saturating_sub(self.entered_at) as f32 / ENTER_MS as f32).clamp(0.0, 1.0);
+        let e = 1.0 - (1.0 - t).powi(3);
+        (e, if reduced { 0.0 } else { ENTER_RISE * (1.0 - e) })
+    }
+}
+
+static STAGE: Mutex<Stage> = Mutex::new(Stage::new());
+/// Until when (ms) the box is entering or leaving, for frame requests.
+static MOVING_UNTIL: AtomicU64 = AtomicU64::new(0);
+
+fn stage() -> std::sync::MutexGuard<'static, Stage> {
+    STAGE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The typewriter's view as drawn (see [`Stage`]), tracked.
+fn drawn(ui: Ui) -> Arc<DisplayView> {
+    let view = ui.display.get();
+    stage().see(view, crate::clock::now_ms())
+}
+
+fn drawn_untracked(ui: Ui) -> Arc<DisplayView> {
+    let view = ui.display.get_untracked();
+    stage().see(view, crate::clock::now_ms())
 }
 
 /// A still box showing `doc` in `ctx.skin`, for the skin picker.
@@ -351,18 +444,20 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     );
     if source == Source::Display {
         frame = frame.bind(move |s: &mut Stack| {
-            // Whole-box fade and screen shake.
-            let view = ui.display.get();
+            // Entrance and exit, whole-box fade and screen shake.
+            let view = drawn(ui);
             let now = ui.now.get();
+            let reduced = ui.reduced_motion.get();
             let fade = view
                 .fade
                 .map(|(at, ms)| {
                     1.0 - (now.saturating_sub(at) as f32 / ms.max(1) as f32).clamp(0.0, 1.0)
                 })
                 .unwrap_or(1.0);
-            let opacity = if view.empty { 0.0 } else { fade };
+            let (shown, rise) = stage().presence(now, reduced);
+            let opacity = if view.empty { 0.0 } else { fade * shown };
             let (dx, dy) = match view.shake {
-                Some(sh) if now < sh.at_ms + u64::from(sh.ms) && !ui.reduced_motion.get() => {
+                Some(sh) if now < sh.at_ms + u64::from(sh.ms) && !reduced => {
                     let left = 1.0 - (now - sh.at_ms) as f32 / sh.ms.max(1) as f32;
                     let step = now / 16;
                     (
@@ -372,6 +467,7 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
                 }
                 _ => (0.0, 0.0),
             };
+            let dy = dy + rise;
             restyle(s, |l| {
                 l.opacity = Some(opacity);
                 l.transform = (dx != 0.0 || dy != 0.0).then_some(affine(dx, dy, 0.0, 1.0));
@@ -400,10 +496,10 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
 /// (outside the text area, so following long text leaves it in place).
 fn reply_quote(ui: Ui) -> AnyView {
     dynamic(
-        move || ui.display.get().revision,
+        move || drawn(ui).revision,
         move |_| {
             let skin = ui.skin.get_untracked();
-            let view = ui.display.get_untracked();
+            let view = drawn_untracked(ui);
             let shown = !view.empty
                 && skin.dialogue.reply.visible
                 && ui
@@ -465,11 +561,11 @@ pub fn edit_outline(l: &mut LayoutStyle, editing: bool, accent: [f32; 4]) {
 /// The typewriter's text, rebuilt when the display view changes.
 fn content(ui: Ui) -> impl IntoView {
     dynamic(
-        move || ui.display.get().revision,
+        move || drawn(ui).revision,
         move |_| {
             let skin = ui.skin.get_untracked();
             let reduced = ui.reduced_motion.get_untracked();
-            let view = ui.display.get_untracked();
+            let view = drawn_untracked(ui);
             if view.empty {
                 return widget(Stack::column(0.0)).into_any();
             }
@@ -497,7 +593,7 @@ fn speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> String + Send + 'static {
     let source = ctx.source;
     let preview = ctx.preview_name.clone();
     move || match source {
-        Source::Display => ui.display.with(|v| v.speaker.name.clone()),
+        Source::Display => drawn(ui).speaker.name.clone(),
         Source::Draft => ui.settings.with(|s| s.general.speaker_name.clone()),
         Source::Preview => preview.clone(),
     }
@@ -508,9 +604,10 @@ fn has_speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> bool + Send + 'static {
     let source = ctx.source;
     let preview = !ctx.preview_name.trim().is_empty();
     move || match source {
-        Source::Display => ui
-            .display
-            .with(|v| !v.empty && !v.speaker.name.trim().is_empty()),
+        Source::Display => {
+            let v = drawn(ui);
+            !v.empty && !v.speaker.name.trim().is_empty()
+        }
         Source::Draft => ui
             .settings
             .with(|s| !s.general.speaker_name.trim().is_empty()),
@@ -526,7 +623,7 @@ fn nameplate(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
     {
         let l = Arc::make_mut(&mut st.layout);
         l.font_size = Some(p.size);
-        l.font_weight = Some(skin.fonts.name.weight.max(600));
+        l.font_weight = Some(skin.fonts.name.weight);
         l.font_family = skin.fonts.name.families.first().cloned();
         l.color = Some(c(p.text_color));
         l.white_space_nowrap = true;
@@ -583,7 +680,7 @@ fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
     .visible(move || {
         source != Source::Preview
             && ui.skin.with(|s| s.dialogue.portrait.visible)
-            && !(source == Source::Display && ui.display.with(|v| v.empty))
+            && !(source == Source::Display && drawn(ui).empty)
     })
     .bind(move |s: &mut Stack| {
         let variant = ui.display.with(|v| v.portrait.clone());
@@ -604,6 +701,11 @@ fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
 fn decor_view(ui: Ui, ctx: &BoxCtx, dec: &DecorSpec) -> AnyView {
     let speaker = (dec.when == DecorWhen::Speaker).then(|| has_speaker(ui, ctx));
     decor(&ctx.skin, dec, speaker)
+}
+
+/// Whether a decor belongs on a box of `source` at all.
+fn decor_shown(dec: &DecorSpec, source: Source) -> bool {
+    dec.when != DecorWhen::Display || source != Source::Draft
 }
 
 /// One decoration, absolutely placed on its parent; `visible` hides it.
@@ -664,7 +766,7 @@ fn decor_views(ui: Ui, ctx: &BoxCtx, layer: DecorLayer) -> Vec<AnyView> {
         .dialogue
         .decor
         .iter()
-        .filter(|d| d.layer == layer)
+        .filter(|d| d.layer == layer && decor_shown(d, ctx.source))
         .map(|d| decor_view(ui, ctx, d))
         .collect()
 }
@@ -787,7 +889,10 @@ fn continue_indicator(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
         .visible(move || {
             !hidden
                 && match source {
-                    Source::Display => ui.display.with(|v| v.continue_indicator && !v.empty),
+                    Source::Display => {
+                        let v = drawn(ui);
+                        v.continue_indicator && !v.empty
+                    }
                     Source::Draft => false,
                     Source::Preview => true,
                 }
@@ -817,6 +922,9 @@ fn sprite(url: &str, frames: u32, i: u32) -> BackgroundImage {
 /// Whether the display needs frames for the box itself (fade, shake, the
 /// continue mark). Text reveal and effects request their own frames.
 pub fn display_animating(ui: Ui, now: u64) -> bool {
+    if now <= MOVING_UNTIL.load(Ordering::Relaxed) + 50 {
+        return true;
+    }
     let view = ui.display.get_untracked();
     if view.empty {
         return false;

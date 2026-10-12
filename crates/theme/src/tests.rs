@@ -734,3 +734,26 @@ fn skins_choose_how_long_text_overflows() {
         (Overflow::Clip, Some(1500))
     );
 }
+
+#[test]
+fn echo_menu_rows_show_only_on_the_display() {
+    let reg = SkinRegistry::new(None, APP);
+    for id in [
+        "nanatype.echo_vanilla",
+        "nanatype.echo_bubble",
+        "nanatype.echo_glass",
+        "nanatype.echo_void",
+    ] {
+        let skin = reg.load(id).unwrap().skin;
+        let menu: Vec<_> = skin
+            .dialogue
+            .decor
+            .iter()
+            .filter(|d| !d.text.is_empty())
+            .collect();
+        assert_eq!(menu.len(), 7, "{id}");
+        assert!(menu.iter().all(|d| d.when == DecorWhen::Display), "{id}");
+    }
+    let d: DecorSpec = toml::from_str("when = \"display\"").unwrap();
+    assert_eq!(d.when, DecorWhen::Display);
+}
