@@ -134,7 +134,7 @@ pub fn section_with(ui: Ui, title_key: &str, rows: Vec<(AnyView, Shown)>) -> Any
 }
 
 /// The inset hairline between two rows of a section card.
-fn divider() -> AnyView {
+pub fn divider() -> AnyView {
     widget(
         Stack::row(0.0)
             .height(LengthSpec::Px(1.0))
@@ -149,7 +149,7 @@ fn divider() -> AnyView {
 }
 
 /// Rows with a divider between each, for a group nested in one section row.
-fn divided(rows: Vec<AnyView>) -> Vec<AnyView> {
+pub fn divided(rows: Vec<AnyView>) -> Vec<AnyView> {
     rows.into_iter()
         .enumerate()
         .map(|(i, r)| {

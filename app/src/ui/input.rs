@@ -830,19 +830,42 @@ pub fn mirror_chip_pulsing(ui: Ui) -> bool {
 
 /// The send key as a keycap beside the Send button.
 fn keycap(key: &str) -> AnyView {
-    chip(key.to_owned(), [0.5, 0.5, 0.5, 1.0], None, 11.0, 4.0)
+    // Muted ink from the theme, so it reads on every skin's chrome.
+    chip_in(
+        key.to_owned(),
+        [0.5, 0.5, 0.5, 1.0],
+        Some(SemanticColorRole::Muted),
+        None,
+        11.0,
+        4.0,
+    )
 }
 
 /// `text` in a small label: a filled pill when `fill` is given, an outlined
 /// keycap otherwise.
 fn chip(text: String, color: [f32; 4], fill: Option<[f32; 4]>, size: f32, radius: f32) -> AnyView {
+    chip_in(text, color, None, fill, size, radius)
+}
+
+/// [`chip`] whose text takes a theme role instead of `color` when given.
+fn chip_in(
+    text: String,
+    color: [f32; 4],
+    role: Option<SemanticColorRole>,
+    fill: Option<[f32; 4]>,
+    size: f32,
+    radius: f32,
+) -> AnyView {
     let mut st = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut st.layout);
         l.font_size = Some(size);
-        l.color = Some(color);
+        if role.is_none() {
+            l.color = Some(color);
+        }
         l.white_space_nowrap = true;
     }
+    st.foreground = role;
     widget(Stack::row(0.0).with_layout(move |l| {
         l.flex_shrink = Some(0.0);
         l.padding_left = Some(LengthSpec::Px(7.0));
@@ -905,10 +928,13 @@ fn status_line(ui: Ui) -> AnyView {
                 .into_any()
             }
             Line::Queued(text) => {
+                // Accent wash with the theme's on-soft accent text, which is
+                // darkened until it reads on the wash (pale accents too).
                 let accent = c(ui.skin.get_untracked().chrome.accent);
-                chip(
+                chip_in(
                     text,
                     accent,
+                    Some(SemanticColorRole::AccentOnSoft),
                     Some([accent[0], accent[1], accent[2], 0.16]),
                     12.0,
                     10.0,
@@ -968,10 +994,11 @@ fn reply_bar(ui: Ui) -> AnyView {
                 let l = Arc::make_mut(&mut label.layout);
                 l.font_size = Some(12.0);
                 l.font_weight = Some(700);
-                l.color = Some(super::c(skin.chrome.accent));
                 l.white_space_nowrap = true;
                 l.flex_shrink = Some(0.0);
             }
+            // The accent, darkened where it would not read as text.
+            label.foreground = Some(SemanticColorRole::AccentOnSoft);
             let mut body = NodeStyle::default();
             Arc::make_mut(&mut body.layout).font_size = Some(12.0);
             body.foreground = Some(SemanticColorRole::Muted);

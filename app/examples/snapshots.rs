@@ -197,7 +197,8 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         .set(Arc::new(chat.iter().cloned().map(Arc::new).collect()));
     ui.reply.set(Some(chat[1].quote(locale)));
     let mut status = (*ui.status.get_untracked()).clone();
-    status.blive = "已进入房间 21452505".into();
+    status.blive =
+        nanatype::ui::I18N.tr_in(locale, "chat-status-joined", &[("room", "21452505".into())]);
     status.blive_link = danmaku::Link::Connected;
     ui.status.set(Arc::new(status));
     std::thread::sleep(std::time::Duration::from_millis(1500));
@@ -290,6 +291,8 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         ws: LinkState::Connected("Connected".into()),
         spout_display: LinkState::Connected("Sending · 1920×1080".into()),
         spout_history: LinkState::Error("Unavailable: no GPU".into()),
+        blive: "Disconnected, retrying: connection refused".into(),
+        blive_link: danmaku::Link::Error,
         ..Default::default()
     }));
     for page in [settings::Page::Integrations, settings::Page::Output] {

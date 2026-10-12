@@ -2100,7 +2100,7 @@ fn mapped(ui: Ui) -> AnyView {
             }
             let hotkeys = ui.status.with_untracked(|s| s.vts_hotkeys.clone());
             let mut rows = vec![
-                widget(Stack::column(0.0).padding_xy(16.0, 10.0))
+                widget(Stack::column(0.0).padding_xy(INSET, 10.0))
                     .children(heading(ui, "int-vts-map"))
                     .into_any(),
             ];
@@ -2126,7 +2126,9 @@ fn mapped(ui: Ui) -> AnyView {
                     .into_any(),
                 )
             }));
-            widget(Stack::column(0.0)).children(rows).into_any()
+            widget(Stack::column(0.0))
+                .children((divider(), divided(rows)))
+                .into_any()
         },
     )
     .into_any()
@@ -2230,8 +2232,11 @@ fn integrations(ui: Ui) -> AnyView {
                                     ))
                                     .into_any(),
                             ),
-                            mapping.into_any(),
-                            mapped(ui),
+                            // One row: the saved mappings add their own
+                            // divider only when there are any.
+                            widget(Stack::column(0.0))
+                                .children((mapping, mapped(ui)))
+                                .into_any(),
                             row(
                                 ui,
                                 "int-vts-lipsync",
