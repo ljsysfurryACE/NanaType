@@ -135,10 +135,14 @@ general-presence = Input window
 general-presence-resident = Always open
 general-presence-summon = Summon with hotkey
 general-presence-hint = In summon mode the input hides after sending or Esc
+general-input = Input
 general-mode = Input mode
 general-send-key = Send key
 general-send-enter = Enter sends, Shift+Enter breaks the line
 general-send-ctrl-enter = Ctrl+Enter sends, Enter breaks the line
+general-send-key-enter = Enter
+general-send-key-ctrl-enter = Ctrl+Enter
+general-send-key-hint = The other combination starts a new line
 general-autostart = Launch at login
 general-updates = Check for updates
 
@@ -151,6 +155,7 @@ playback-punct = Punctuation pauses
 playback-punct-hint = Pause briefly after commas, stops and ellipses
 playback-entrance = Character entrance
 playback-after = After the line
+playback-flow = Line flow
 playback-after-hold = Keep showing
 playback-after-fade = Fade out
 playback-after-clear = Clear
@@ -163,10 +168,14 @@ playback-queue = Sending while a line plays
 playback-queue-replace = Replace immediately
 playback-queue-finish = Finish the current line first
 playback-queue-queue = Queue until continue
+playback-queue-replace-short = Replace
+playback-queue-finish-short = Finish first
+playback-queue-queue-short = Queue
 playback-reduced = Reduce motion
 playback-reduced-hint = Turns off per-character motion and screen shake
 playback-stagger = Mirror character delay
 playback-sound = Typing sounds
+playback-audio = Sound
 playback-volume = Master volume
 playback-volume-typing = Typing volume
 playback-volume-effects = Effects volume
@@ -175,6 +184,7 @@ playback-device-default = System default
 
 ## Skins
 skins-active = Current skin
+skins-library = Skin library
 skins-import = Import skin…
 skins-export = Export…
 skins-duplicate = Duplicate to edit
@@ -201,6 +211,7 @@ skins-override-page-auto = Turn full pages after
 skins-override-page-auto-hint = In page mode; 0 waits for the continue key
 skins-override-reset = Reset to skin defaults
 skins-chrome = Appearance
+skins-interface = Interface
 skins-chrome-skin = Follow skin
 skins-chrome-system = Follow system
 skins-chrome-light = Light
@@ -263,6 +274,7 @@ history-hide-latest-always = Hide
 history-hide-latest-never = Don't hide
 history-clear = Clear history
 history-clear-confirm = Clear all history of this session?
+history-session = Session history
 history-empty = Lines you send appear here
 
 ## Hotkeys
@@ -280,6 +292,11 @@ hotkeys-ok = Registered
 hotkeys-conflict-os = Used by another program
 hotkeys-conflict-dup = Same as “{ $action }”
 hotkeys-unsafe = A single key would block normal typing; add Ctrl, Alt or Shift
+hotkeys-badge-dup = Duplicate
+hotkeys-badge-conflict = Conflict
+hotkeys-badge-unsafe = Unsafe
+hotkeys-click-to-set = Click to set
+hotkeys-press-keys = Press keys · Esc to cancel
 hotkeys-local = Input window shortcuts
 hotkeys-local-hint = Ctrl+B/I/U for style, Ctrl+↑/↓ to recall sent lines, Esc hides the input
 
@@ -350,11 +367,13 @@ assets-stickers = Sticker folders
 assets-stickers-hint = Images in these folders become stickers; the folder name is the library name
 assets-add-folder = Add folder…
 assets-remove = Remove
+assets-remove-folder-confirm = Remove this folder from the stickers?
 assets-phrases = Quick phrases
 assets-phrase-label = Label
 assets-phrase-markup = Content (markup allowed)
 assets-phrase-send = Send directly
 assets-phrase-add = Add phrase
+assets-phrase-remove-confirm = Delete this phrase?
 assets-phrase-hotkey = Hotkey
 
 ## About
@@ -395,6 +414,7 @@ common-browse = Browse…
 common-copied = Copied
 common-error = Something went wrong
 common-ms = { $ms } ms
+common-skin-default = Skin default
 
 ## Errors and notices
 err-settings-quarantined = The settings file was damaged. It was saved to { $path } and defaults are in use
