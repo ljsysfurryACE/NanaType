@@ -45,11 +45,16 @@ fn main() {
     let _ = nanatype::clock::now_ms();
     let mut args = std::env::args().skip(1);
     let out = PathBuf::from(args.next().unwrap_or_else(|| "snapshots".into()));
+    std::fs::create_dir_all(&out).unwrap();
+    // NanaUI reads local pictures only under its URL base (the working
+    // directory unless set); the drawn avatars live under `out`.
+    nana_ui::set_background_image_url_base(std::fs::canonicalize(&out).unwrap());
     let skin_id = args.next().unwrap_or_else(|| "nanatype.halo".into());
     let locale = args
         .next()
         .and_then(|l| Locale::from_tag(&l))
         .unwrap_or(Locale::ZhCn);
+    tray_strip(&out);
     let registry = SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
     if skin_id == "all" {
         let ids: Vec<String> = registry.entries().iter().map(|e| e.id.clone()).collect();
@@ -59,6 +64,59 @@ fn main() {
     } else {
         render(&registry, &out, &skin_id, locale);
     }
+}
+
+/// The tray image's states (plain, mirroring, overlays hidden, locked, all
+/// three) at 16, 24 and 32 px, one row per size, each cell enlarged 4× so
+/// the pixels can be read.
+fn tray_strip(out: &std::path::Path) {
+    use nanatype::services::tray::{Badge, badged, image_at};
+    let badges = [
+        Badge::default(),
+        Badge {
+            mirroring: true,
+            ..Badge::default()
+        },
+        Badge {
+            hidden: true,
+            ..Badge::default()
+        },
+        Badge {
+            locked: true,
+            ..Badge::default()
+        },
+        Badge {
+            mirroring: true,
+            hidden: true,
+            locked: true,
+        },
+    ];
+    let (cell, zoom) = (36u32 * 4, 4u32);
+    let sizes = [16u32, 24, 32];
+    let mut strip = image::RgbaImage::from_pixel(
+        cell * badges.len() as u32,
+        cell * sizes.len() as u32,
+        image::Rgba([32, 32, 36, 255]),
+    );
+    for (row, px) in sizes.into_iter().enumerate() {
+        let base = image_at(px).expect("icon");
+        for (col, badge) in badges.into_iter().enumerate() {
+            let img = badged(&base, badge);
+            let big = image::imageops::resize(
+                &img,
+                px * zoom,
+                px * zoom,
+                image::imageops::FilterType::Nearest,
+            );
+            image::imageops::overlay(
+                &mut strip,
+                &big,
+                i64::from(col as u32 * cell + 8),
+                i64::from(row as u32 * cell + 8),
+            );
+        }
+    }
+    strip.save(out.join("tray-badges.png")).unwrap();
 }
 
 /// A few viewers with drawn avatars, and what they said.
@@ -276,6 +334,25 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
                 .unwrap();
         },
     );
+    // The newest rows alone: the quoted chat message and the reply that
+    // quotes it and @-mentions the viewer, unclipped at the list's foot.
+    let all_rows = ui.history.get_untracked();
+    ui.history.set(Arc::new(
+        all_rows[all_rows.len().saturating_sub(3)..].to_vec(),
+    ));
+    shot(
+        "history-reply",
+        out,
+        skin.history.width as u32,
+        skin.history.height as u32,
+        theme.clone(),
+        |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || history::history_window(ui))
+                .unwrap();
+        },
+    );
+    ui.history.set(all_rows);
     shot("chat", out, 400, 640, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || danmaku::chat_window(ui))

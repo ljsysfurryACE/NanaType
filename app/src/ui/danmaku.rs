@@ -60,37 +60,53 @@ fn guard_color(guard: Guard) -> Option<[f32; 4]> {
     }
 }
 
-/// A round avatar, or the name's first letter on the accent colour.
+/// A round avatar: the name's first letter on the accent colour, with the
+/// picture (when there is one) laid over it, so a picture that is still
+/// loading, or cannot be read, leaves the initial rather than an empty
+/// circle.
 pub fn avatar(url: Option<String>, name: &str, size: f32, accent: [f32; 4]) -> AnyView {
-    let has_url = url.is_some();
-    let el = widget(
+    let mut st = text_style(size * 0.45, 700);
+    Arc::make_mut(&mut st.layout).color = Some([1.0; 4]);
+    let initial = name.chars().next().map(String::from).unwrap_or_default();
+    widget(
         Stack::row(0.0)
             .width(LengthSpec::Px(size))
             .height(LengthSpec::Px(size))
             .align(AlignSpec::Center)
             .justify(JustifySpec::Center)
             .with_layout(move |l| {
+                l.position = nana_ui_core::PositionSpec::Relative;
                 l.border_radius = Some(size / 2.0);
                 l.flex_shrink = Some(0.0);
                 l.overflow_x = OverflowSpec::Hidden;
                 l.overflow_y = OverflowSpec::Hidden;
-                match url {
-                    Some(u) => {
-                        l.paint.background_image =
-                            Some(BackgroundImage::url_with_fit(u, BackgroundImageFit::Cover))
-                    }
-                    None => l.background = Some(accent),
-                }
+                l.background = Some(accent);
             }),
-    );
-    if has_url {
-        return el.into_any();
-    }
-    let mut st = text_style(size * 0.45, 700);
-    Arc::make_mut(&mut st.layout).color = Some([1.0; 4]);
-    let initial = name.chars().next().map(String::from).unwrap_or_default();
-    el.children(widget(Text::new(initial).decorative().style(st)))
-        .into_any()
+    )
+    .children((
+        widget(Text::new(initial).decorative().style(st)),
+        url.map(|u| picture_over(u, size / 2.0)),
+    ))
+    .into_any()
+}
+
+/// A picture covering its (relatively positioned) parent, rounded by
+/// `radius` like it.
+pub fn picture_over(url: String, radius: f32) -> AnyView {
+    widget(Stack::row(0.0).with_layout(move |l| {
+        l.border_radius = Some(radius);
+        l.position = nana_ui_core::PositionSpec::Absolute;
+        l.offset_left = Some(LengthSpec::Px(0.0));
+        l.offset_top = Some(LengthSpec::Px(0.0));
+        l.offset_right = Some(LengthSpec::Px(0.0));
+        l.offset_bottom = Some(LengthSpec::Px(0.0));
+        l.pointer_events = Some(nana_ui_core::PointerEventsSpec::None);
+        l.paint.background_image = Some(BackgroundImage::url_with_fit(
+            url,
+            BackgroundImageFit::Cover,
+        ));
+    }))
+    .into_any()
 }
 
 /// A small coloured tag (guard level, medal).

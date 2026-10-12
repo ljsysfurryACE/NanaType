@@ -818,6 +818,46 @@ fn group_divider() -> AnyView {
     .into_any()
 }
 
+/// A 6×28 grip at the toolbar's left edge: two columns of dots that say the
+/// window moves by dragging when the system frame is hidden. It takes no
+/// pointer events, so a press on it falls through to the toolbar's empty
+/// area, which the host turns into a window drag. Only the input window has
+/// it; the broadcast windows stay clean for capture.
+fn drag_grip() -> AnyView {
+    let dot = || {
+        widget(
+            Stack::row(0.0)
+                .surface(SemanticColorRole::Muted)
+                .with_layout(|l| {
+                    l.width = Some(LengthSpec::Px(2.0));
+                    l.height = Some(LengthSpec::Px(2.0));
+                    l.min_width = Some(LengthSpec::Px(2.0));
+                    l.flex_shrink = Some(0.0);
+                    l.border_radius = Some(1.0);
+                }),
+        )
+        .into_any()
+    };
+    let rows: Vec<AnyView> = (0..4)
+        .map(|_| widget(Stack::row(2.0)).children((dot(), dot())).into_any())
+        .collect();
+    widget(
+        Stack::column(3.0)
+            .justify(nana_ui_core::JustifySpec::Center)
+            .with_layout(|l| {
+                l.width = Some(LengthSpec::Px(6.0));
+                l.min_width = Some(LengthSpec::Px(6.0));
+                l.height = Some(LengthSpec::Px(28.0));
+                l.flex_shrink = Some(0.0);
+                l.margin_right = Some(LengthSpec::Px(6.0));
+                l.opacity = Some(0.6);
+                l.pointer_events = Some(PointerEventsSpec::None);
+            }),
+    )
+    .children(rows)
+    .into_any()
+}
+
 /// Input windows narrower than this fold their low-frequency tools into "…".
 const COMPACT_BELOW: f32 = 900.0;
 
@@ -991,6 +1031,7 @@ fn toolbar(ui: Ui) -> AnyView {
         // Text styling, then colour and size, then the outline and ruby,
         // then what plays (effects, pacing) and what goes in.
         let mut bar: Vec<AnyView> = vec![
+            drag_grip(),
             toggle(
                 ui,
                 ti::BOLD,
@@ -1162,7 +1203,16 @@ fn toolbar(ui: Ui) -> AnyView {
                 SendKey::Enter => "Enter",
                 SendKey::CtrlEnter => "Ctrl+Enter",
             };
-            pinned.push(keycap(key));
+            // The same keycaps as the Hotkeys page and the `?` sheet.
+            pinned.push(
+                widget(Stack::row(0.0).with_layout(|l| {
+                    l.flex_shrink = Some(0.0);
+                    l.margin_left = Some(LengthSpec::Px(4.0));
+                    l.margin_right = Some(LengthSpec::Px(4.0));
+                }))
+                .children(super::keycap::chord(key))
+                .into_any(),
+            );
         }
         pinned.push(
             widget(crate::skin_theme::cta(
@@ -1204,6 +1254,8 @@ fn highlight_chip(text: String, dot: bool) -> AnyView {
         let l = Arc::make_mut(&mut st.layout);
         l.font_size = Some(12.0);
         l.white_space_nowrap = true;
+        // "Queued · 2" counts in place.
+        super::tnum(l);
     }
     let mut mark = st.clone();
     mark.foreground = Some(SemanticColorRole::Highlight);
@@ -1240,61 +1292,6 @@ pub fn mirror_chip_pulsing(ui: Ui) -> bool {
         && ui
             .settings
             .with_untracked(|s| s.general.input_mode == InputMode::Mirror)
-}
-
-/// The send key as a keycap beside the Send button.
-fn keycap(key: &str) -> AnyView {
-    // Muted ink from the theme, so it reads on every skin's chrome.
-    chip_in(
-        key.to_owned(),
-        [0.5, 0.5, 0.5, 1.0],
-        Some(SemanticColorRole::Muted),
-        None,
-        11.0,
-        4.0,
-    )
-}
-
-/// `text` in a small label: a filled pill when `fill` is given, an outlined
-/// keycap otherwise; its text takes a theme role instead of `color` when
-/// given.
-fn chip_in(
-    text: String,
-    color: [f32; 4],
-    role: Option<SemanticColorRole>,
-    fill: Option<[f32; 4]>,
-    size: f32,
-    radius: f32,
-) -> AnyView {
-    let mut st = NodeStyle::default();
-    {
-        let l = Arc::make_mut(&mut st.layout);
-        l.font_size = Some(size);
-        if role.is_none() {
-            l.color = Some(color);
-        }
-        l.white_space_nowrap = true;
-    }
-    st.foreground = role;
-    widget(Stack::row(0.0).with_layout(move |l| {
-        l.flex_shrink = Some(0.0);
-        l.padding_left = Some(LengthSpec::Px(7.0));
-        l.padding_right = Some(LengthSpec::Px(7.0));
-        l.padding_top = Some(LengthSpec::Px(1.0));
-        l.padding_bottom = Some(LengthSpec::Px(1.0));
-        l.border_radius = Some(radius);
-        l.border_width = Some(1.0);
-        l.border_style = Some(nana_ui_core::BorderStyle::Solid);
-        match fill {
-            Some(f) => {
-                l.background = Some(f);
-                l.border_color = Some(f);
-            }
-            None => l.border_color = Some([color[0], color[1], color[2], 0.55]),
-        }
-    }))
-    .children(widget(Text::new(text).decorative().style(st)))
-    .into_any()
 }
 
 fn status_line(ui: Ui) -> AnyView {
@@ -1525,6 +1522,8 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
                     let l = Arc::make_mut(&mut area.style.layout);
                     l.width = Some(LengthSpec::Fill);
                     l.height = Some(LengthSpec::Percent(100.0));
+                    // Markup source reads in the mono role.
+                    super::mono(l);
                     area
                 })
                 .entity_ref(source)

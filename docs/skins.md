@@ -29,7 +29,7 @@
 
 ![内置皮肤一览](skins-preview.png)
 
-设置 › 皮肤 顶部的预览卡会用示例台词实时画出所选皮肤（含个性化设置），点每行的眼睛图标即可预览而不切换；标签和浅色 / 深色可用来筛选列表。内置皮肤都不带图片，想改造它们时用「复制为可编辑」。
+设置 › 皮肤 顶部的预览卡会用示例台词实时画出所选皮肤（含个性化设置），点击某一行即可预览而不切换（行尾的“⋯”菜单里有复制、导出等操作）；标签和浅色 / 深色可用来筛选列表。内置皮肤都不带图片，想改造它们时用「复制为可编辑」。
 
 ## 清单
 
@@ -40,6 +40,7 @@ version = "1.0.0"
 min_app = "0.1.0"                 # 需要的 NanaType 最低版本
 base = "nanatype.halo"            # 可选：继承的皮肤
 name = { zh-CN = "樱", en-US = "Sakura", ja-JP = "さくら" }
+description = { zh-CN = "粉色樱花", en-US = "Pink blossoms" }   # 选择器里的一句话介绍（可选）
 author = "你的名字"
 license = "CC-BY-4.0"
 preview = "preview.png"
@@ -59,6 +60,10 @@ border = "#f0cfdc"
 [chrome.dark]                     # 可选：用户把界面设为暗色而皮肤是亮色时使用
 surface = "#2a1a24"               # 键与 [chrome] 相同（accent / background / surface / text /
                                   # muted / border / success / warning / danger / highlight），都可省略
+# [chrome.light] 同理：皮肤是暗色而用户把界面设为亮色时使用
+
+[chrome.palette]                  # 可选：直接覆盖 NanaUI 的界面色角色（background surface subtle
+hover = "#ffe9f1"                 #   hover active selected border text muted faint highlight）
 
 [fonts.body]                      # 台词字体；name（名牌）、accent（装饰文字）同理
 file = "fonts/LXGWWenKai.ttf"     # 随皮肤分发的字体（可选）
@@ -81,6 +86,7 @@ radius = 18
 inner_border_color = "#ffe4ee"    # 可选的内框
 inner_border_width = 2
 glow = "#e86a9260"                # 可选的外发光
+glow_blur = 12                    # 外发光的模糊半径
 shadow = { color = "#00000030", dy = 3, blur = 8 }
 frame = { image = "images/frame.png", slice = [24, 24, 24, 24], scale = 1 }   # 九宫格贴图，替代上面的绘制
 width_fraction = 1.0              # 框宽占区域的比例
@@ -125,6 +131,7 @@ when = "always"                   # always | speaker（仅在有名牌时显示�
 color = "#3a2230"
 size = 28
 line_height = 1.4
+letter_spacing = 0                # 字间距（像素）；history.text 同样可写
 stroke = { color = "#ffffff", width = 2 }
 shadow = { color = "#00000055", dx = 1, dy = 1, blur = 2 }
 align = "start"                   # start | center | end
@@ -172,6 +179,7 @@ bob_px = 3
 [dialogue.reveal]                 # 打字节奏
 base_ms = 50                      # 每个拉丁字符
 cjk_factor = 2.0                  # 中日韩字符等于几个拍子
+space_ms = 50                     # 每个空格
 punct = { comma_ms = 120, stop_ms = 260, ellipsis_ms = 300 }
 entrance = { kind = "fade", ms = 140 }   # none | fade | pop | slide_up
 
@@ -192,6 +200,7 @@ bubble_radius = 14
 bubble_radii = [4, 14, 14, 14]
 bubble_gradient = { angle = 135, stops = [[0, "#fff0f5"], [1, "#ffe1ec"]] }
 bubble_shadows = [{ color = "#00000020", dy = 2, blur = 8 }]
+bubble_padding = [12, 8]          # 气泡内边距：水平 垂直
 bubble_frame = { image = "images/bubble.png", slice = [12, 12, 12, 12] }
 gap = 10
 entrance = "slide_up"             # none | slide_up | fade | slide_left
@@ -200,6 +209,8 @@ layout = "stack"                  # stack：名字和时间在气泡上方 | inl
 name_width = 96                   # inline 时名字栏宽度
 name_weight = 700
 time_size = 11                    # 默认比名字小 3（也用于“主播/观众”角色标签）
+time_color = "#8aa0b4"            # 时间与角色标签的颜色
+show_time = false                 # 保留；是否显示时间由 设置 › 历史记录 决定
 time_seconds = false              # true 显示 HH:MM:SS
 anchor = "bottom"                 # 行不足一屏时靠哪一端："bottom"（默认，新行贴底）或 "top"
 hide_latest = false               # true：展示框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）
@@ -237,15 +248,18 @@ scale = 0.82                      # 相对周围文字的字号
 avatar = true                     # 昵称前显示头像
 
 [sounds]
-typing = { files = ["sounds/key1.ogg", "sounds/key2.ogg"], volume = 0.6, pitch_jitter = 0.05, every_n = 1, min_interval_ms = 30 }
+typing = { files = ["sounds/key1.ogg", "sounds/key2.ogg"], volume = 0.6, pitch_jitter = 0.05, every_n = 1, min_interval_ms = 30, skip_punct = true }   # skip_punct：标点不出声
 open = "sounds/open.ogg"          # 一句开始
 advance = "sounds/advance.ogg"    # 按继续
 se = { coin = "se/coin.ogg", boom = "se/boom.wav" }   # [se=coin]
 
 [effects]                         # 逐字动效的默认幅度
 shake_px = 1.6
+shake_hz = 14                     # 抖动频率
 wave_px = 3
+wave_period_s = 1.2               # 波浪一个周期的秒数
 jump_px = 6
+jump_period_s = 0.9               # 跳动一个周期的秒数
 rainbow_period_s = 2.4
 screen_shake_px = 6
 contrast_guard = 3.0              # 自带颜色的文字与框色对比低于 3:1 时加 1.5px 描边（0 = 关）

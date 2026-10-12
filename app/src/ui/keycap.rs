@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use nana_ui::runtime::view::{AnyView, IntoView, widget};
-use nana_ui::runtime::{NodeStyle, Stack, Text};
+use nana_ui::runtime::{IconGlyph, NodeStyle, Stack, Text};
 use nana_ui_core::{AlignSpec, BoxShadowSpec, JustifySpec, LengthSpec, SemanticColorRole};
 
 fn label_style(weight: u16) -> NodeStyle {
@@ -13,6 +13,7 @@ fn label_style(weight: u16) -> NodeStyle {
     l.font_size = Some(12.0);
     l.font_weight = Some(weight);
     l.white_space_nowrap = true;
+    super::tnum(l);
     st
 }
 
@@ -50,11 +51,33 @@ pub fn label(key: impl Into<String>) -> Text {
         .color(SemanticColorRole::Text)
 }
 
-/// One key as a keycap.
+/// One key as a keycap. Arrow keys show a drawn arrow: the text arrows
+/// (↑ ↓ ← →) come from a fallback font in most UI faces and sit oversized
+/// and off the baseline next to the letters.
 pub fn keycap(key: impl Into<String>) -> AnyView {
-    widget(face())
-        .children(widget(label(key).decorative()))
-        .into_any()
+    let key = key.into();
+    match arrow(&key) {
+        Some(icon) => {
+            let mut glyph = IconGlyph::new(icon).size(12.0).decorative();
+            glyph.style.foreground = Some(SemanticColorRole::Text);
+            widget(face()).children(widget(glyph)).into_any()
+        }
+        None => widget(face())
+            .children(widget(label(key).decorative()))
+            .into_any(),
+    }
+}
+
+/// The drawn arrow for an arrow key's label.
+fn arrow(key: &str) -> Option<nana_ui::runtime::Icon> {
+    use nana_ui::icons_tabler as ti;
+    Some(match key {
+        "↑" | "Up" | "ArrowUp" => ti::ARROW_UP,
+        "↓" | "Down" | "ArrowDown" => ti::ARROW_DOWN,
+        "←" | "Left" | "ArrowLeft" => ti::ARROW_LEFT,
+        "→" | "Right" | "ArrowRight" => ti::ARROW_RIGHT,
+        _ => return None,
+    })
 }
 
 /// The muted "+" between the keys of a chord.

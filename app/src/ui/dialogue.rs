@@ -524,6 +524,10 @@ fn reply_quote(ui: Ui) -> AnyView {
                     reply,
                     skin.dialogue.text.size,
                     skin.dialogue.text.color,
+                    super::quote::backdrop(
+                        skin.dialogue.box_.color,
+                        skin.dialogue.box_.frame.is_some(),
+                    ),
                 ),
                 None => widget(Stack::column(0.0)).into_any(),
             }

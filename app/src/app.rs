@@ -394,6 +394,11 @@ impl App {
                 locked,
                 continue_key: GlobalAction::Continue.get(s).map(|h| h.label(meta)),
                 tooltip,
+                badge: crate::services::tray::Badge {
+                    mirroring: s.general.input_mode == nanatype_settings::InputMode::Mirror,
+                    hidden: !s.overlays.display.visible && !s.overlays.history.visible,
+                    locked,
+                },
             },
         );
     }

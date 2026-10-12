@@ -62,13 +62,11 @@ pub fn heading(ui: Ui, key: &str) -> AnyView {
     widget(Text::new(ui.now_t(key)).style(text_style(20.0, 700))).into_any()
 }
 
-/// Monospace families for things typed literally: markers, names, ports.
-pub const MONO: &str = "Cascadia Mono, Consolas, monospace";
-
-/// [`text_style`] in [`MONO`].
+/// [`text_style`] in the mono role ([`crate::ui::MONO`]) with tabular
+/// figures.
 pub fn mono_style(size: f32, weight: u16) -> NodeStyle {
     let mut st = text_style(size, weight);
-    Arc::make_mut(&mut st.layout).font_family = Some(MONO.into());
+    crate::ui::mono(Arc::make_mut(&mut st.layout));
     st
 }
 
@@ -509,6 +507,7 @@ pub fn slider_with(
                     let l = Arc::make_mut(&mut st.layout);
                     l.width = Some(LengthSpec::Px(READOUT_W));
                     l.white_space_nowrap = true;
+                    crate::ui::tnum(l);
                     st
                 })
                 .color(SemanticColorRole::Muted),
@@ -593,39 +592,51 @@ pub fn number(
     get: fn(&Settings) -> f64,
     set: fn(&mut Settings, f64),
 ) -> AnyView {
-    widget(Stack::row(0.0).width(LengthSpec::Px(140.0)))
-        .children(
-            widget(
-                NumberInput::new(get(&ui.settings.get_untracked()))
-                    .range(range.0, range.1)
-                    .size(ControlSize::Small),
-            )
-            .on_cx(move |_, e: &NumberChanged, cx| {
-                let v = e.value;
-                cx.dispatch_program_all(edit(move |s| set(s, v)));
-            }),
-        )
-        .into_any()
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Px(140.0))
+            .with_layout(crate::ui::tnum),
+    )
+    .children(
+        widget({
+            let mut n = NumberInput::new(get(&ui.settings.get_untracked()))
+                .range(range.0, range.1)
+                .size(ControlSize::Small);
+            crate::ui::tnum(Arc::make_mut(&mut n.style.layout));
+            n
+        })
+        .on_cx(move |_, e: &NumberChanged, cx| {
+            let v = e.value;
+            cx.dispatch_program_all(edit(move |s| set(s, v)));
+        }),
+    )
+    .into_any()
 }
 
-/// A port: a short field without steppers. Text that is not a port number
-/// (yet) is left unsaved.
+/// A port: a short field without steppers, in the mono role. Text that is
+/// not a port number (yet) is left unsaved.
 pub fn port(ui: Ui, get: fn(&Settings) -> u16, set: fn(&mut Settings, u16)) -> AnyView {
-    widget(Stack::row(0.0).width(LengthSpec::Px(96.0)))
-        .children(
-            widget(
-                TextInput::new(get(&ui.settings.get_untracked()).to_string())
-                    .size(ControlSize::Small),
-            )
-            .on_cx(move |_, e: &TextChanged, cx| {
-                if let Ok(v) = e.value.trim().parse::<u16>()
-                    && v > 0
-                {
-                    cx.dispatch_program_all(edit(move |s| set(s, v)));
-                }
-            }),
-        )
-        .into_any()
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Px(96.0))
+            .with_layout(crate::ui::mono),
+    )
+    .children(
+        widget({
+            let mut input = TextInput::new(get(&ui.settings.get_untracked()).to_string())
+                .size(ControlSize::Small);
+            crate::ui::mono(Arc::make_mut(&mut input.style.layout));
+            input
+        })
+        .on_cx(move |_, e: &TextChanged, cx| {
+            if let Ok(v) = e.value.trim().parse::<u16>()
+                && v > 0
+            {
+                cx.dispatch_program_all(edit(move |s| set(s, v)));
+            }
+        }),
+    )
+    .into_any()
 }
 
 pub fn text(
@@ -635,21 +646,57 @@ pub fn text(
     get: fn(&Settings) -> String,
     set: fn(&mut Settings, String),
 ) -> AnyView {
-    widget(Stack::row(0.0).width(LengthSpec::Px(width)))
-        .children(
-            widget(
-                TextInput::new(get(&ui.settings.get_untracked()))
-                    .placeholder(placeholder)
-                    .size(ControlSize::Small),
-            )
-            .on_cx(move |_, e: &TextChanged, cx| {
-                let v = e.value.to_string();
-                cx.dispatch_program_all(edit(move |s| set(s, v)));
-            }),
-        )
-        .into_any()
+    text_field(ui, placeholder, width, false, get, set)
 }
 
+/// [`text`] for a value typed literally (a host, an OSC address), in the
+/// mono role.
+pub fn code_text(
+    ui: Ui,
+    placeholder: String,
+    width: f32,
+    get: fn(&Settings) -> String,
+    set: fn(&mut Settings, String),
+) -> AnyView {
+    text_field(ui, placeholder, width, true, get, set)
+}
+
+fn text_field(
+    ui: Ui,
+    placeholder: String,
+    width: f32,
+    code: bool,
+    get: fn(&Settings) -> String,
+    set: fn(&mut Settings, String),
+) -> AnyView {
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Px(width))
+            .with_layout(|l| {
+                if code {
+                    crate::ui::mono(l);
+                }
+            }),
+    )
+    .children(
+        widget({
+            let mut input = TextInput::new(get(&ui.settings.get_untracked()))
+                .placeholder(placeholder)
+                .size(ControlSize::Small);
+            if code {
+                crate::ui::mono(Arc::make_mut(&mut input.style.layout));
+            }
+            input
+        })
+        .on_cx(move |_, e: &TextChanged, cx| {
+            let v = e.value.to_string();
+            cx.dispatch_program_all(edit(move |s| set(s, v)));
+        }),
+    )
+    .into_any()
+}
+
+/// A colour well and its hex value; the hex is in the mono role.
 pub fn color(
     ui: Ui,
     fallback: Rgba8,
@@ -657,16 +704,20 @@ pub fn color(
     set: fn(&mut Settings, Option<Rgba8>),
 ) -> AnyView {
     let start = get(&ui.settings.get_untracked()).unwrap_or(fallback);
-    widget(Stack::row(0.0).width(LengthSpec::Px(200.0)))
-        .children(
-            widget(ColorField::new(crate::ui::c(start)).size(ControlSize::Small)).on_cx(
-                move |_, e: &ColorChanged, cx| {
-                    let [r, g, b, a] = e.value;
-                    let to = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-                    let c = Rgba8::rgba(to(r), to(g), to(b), to(a));
-                    cx.dispatch_program_all(edit(move |s| set(s, Some(c))));
-                },
-            ),
-        )
-        .into_any()
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Px(200.0))
+            .with_layout(crate::ui::mono),
+    )
+    .children(
+        widget(ColorField::new(crate::ui::c(start)).size(ControlSize::Small)).on_cx(
+            move |_, e: &ColorChanged, cx| {
+                let [r, g, b, a] = e.value;
+                let to = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+                let c = Rgba8::rgba(to(r), to(g), to(b), to(a));
+                cx.dispatch_program_all(edit(move |s| set(s, Some(c))));
+            },
+        ),
+    )
+    .into_any()
 }

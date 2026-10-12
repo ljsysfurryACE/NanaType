@@ -1,10 +1,11 @@
 //! The notification-area icon and its menu. Labels follow the UI language
 //! and say what a click does ("Show input window" / "Hide input window");
 //! the tooltip says the mode, the skin and whether overlays are locked, or
-//! the latest error. Menu clicks arrive on the UI thread's message loop and
-//! are forwarded as [`Msg`]s.
+//! the latest error. The image carries the same state at a glance (see
+//! [`Badge`]). Menu clicks arrive on the UI thread's message loop and are
+//! forwarded as [`Msg`]s.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use nanatype_i18n::{I18n, Locale};
 use nanatype_settings::{InputMode, Lock, Settings};
@@ -43,10 +44,26 @@ pub struct TrayState {
     /// The continue hotkey's label, if one is bound.
     pub continue_key: Option<String>,
     pub tooltip: String,
+    /// What the icon itself shows.
+    pub badge: Badge,
+}
+
+/// State drawn on the tray image: a pink dot while mirroring, the mark
+/// greyed while every overlay is hidden, a small padlock while overlays are
+/// locked. Composed at runtime over the app's own icon at the tray's size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Badge {
+    pub mirroring: bool,
+    pub hidden: bool,
+    pub locked: bool,
 }
 
 pub struct Tray {
     icon: TrayIcon,
+    /// The plain tray image the badges are drawn over.
+    base: image::RgbaImage,
+    /// The badges the image currently shows.
+    drawn: Cell<Badge>,
     input: MenuItem,
     display: MenuItem,
     history: MenuItem,
@@ -69,40 +86,134 @@ pub struct Tray {
 /// (16 at 100 %, 20 at 125 %, 24 at 150 %, 32 at 200 %), picked from the
 /// app's multi-size icon so the shell need not scale it; elsewhere the
 /// 32 px PNG.
-fn icon() -> Result<Icon, String> {
-    if let Some(icon) = sized_icon() {
-        return Ok(icon);
+fn base_image() -> Result<image::RgbaImage, String> {
+    if let Some(img) = sized_image() {
+        return Ok(img);
     }
-    rgba_icon(include_bytes!("../../assets/tray-32.png"))
+    decode(include_bytes!("../../assets/tray-32.png"))
 }
 
-fn rgba_icon(png: &[u8]) -> Result<Icon, String> {
-    let img = image::load_from_memory(png)
+fn decode(png: &[u8]) -> Result<image::RgbaImage, String> {
+    Ok(image::load_from_memory(png)
         .map_err(|e| e.to_string())?
-        .into_rgba8();
+        .into_rgba8())
+}
+
+fn to_icon(img: image::RgbaImage) -> Result<Icon, String> {
     let (w, h) = img.dimensions();
     Icon::from_rgba(img.into_raw(), w, h).map_err(|e| e.to_string())
 }
 
 #[cfg(windows)]
-fn sized_icon() -> Option<Icon> {
+fn sized_image() -> Option<image::RgbaImage> {
     use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
     use windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON;
     // SAFETY: plain queries without pointers.
     let px = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()) };
     let px = u32::try_from(px).ok().filter(|p| *p > 0).unwrap_or(16);
-    let png = ico_png(include_bytes!("../../assets/nanatype.ico"), px)?;
-    rgba_icon(png).ok()
+    image_at(px)
 }
 
 #[cfg(not(windows))]
-fn sized_icon() -> Option<Icon> {
+fn sized_image() -> Option<image::RgbaImage> {
     None
+}
+
+/// The app icon's image that best fits `px` (from the multi-size `.ico`).
+pub fn image_at(px: u32) -> Option<image::RgbaImage> {
+    decode(ico_png(include_bytes!("../../assets/nanatype.ico"), px)?).ok()
+}
+
+/// The Nana highlight pink of the mirroring dot.
+const DOT: [u8; 3] = [232, 106, 146];
+/// The padlock's ink: the Nana text navy.
+const LOCK: [u8; 3] = [27, 47, 75];
+
+/// `base` with `badge` drawn on it. Shapes are laid out on a 16-unit grid
+/// scaled to the image, each with a 1-unit white keyline so it reads on a
+/// light or dark taskbar, and anti-aliased by 4×4 supersampling.
+pub fn badged(base: &image::RgbaImage, badge: Badge) -> image::RgbaImage {
+    let mut img = base.clone();
+    if badge.hidden {
+        // Hidden overlays: the mark in grey at about half strength.
+        for p in img.pixels_mut() {
+            let [r, g, b, a] = p.0;
+            let y = (0.299 * f32::from(r) + 0.587 * f32::from(g) + 0.114 * f32::from(b))
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            p.0 = [y, y, y, (f32::from(a) * 0.55).round() as u8];
+        }
+    }
+    let u = img.width() as f32 / 16.0;
+    if badge.locked {
+        // A padlock in the bottom-left corner: a body and a shackle arch.
+        let (cx, cy) = (4.0 * u, 8.0 * u);
+        let (outer, inner) = (2.6 * u, 1.3 * u);
+        let leg = (outer + inner) / 2.0;
+        let lock = move |grow: f32| {
+            move |x: f32, y: f32| {
+                let body = x >= 0.5 * u - grow
+                    && x <= 7.5 * u + grow
+                    && y >= 10.0 * u - grow
+                    && y <= 15.5 * u + grow;
+                let d = ((x - cx).powi(2) + (y - cy).powi(2)).sqrt();
+                let arch = y <= cy && d <= outer + grow && d >= (inner - grow).max(0.0);
+                let legs = y > cy
+                    && y < 10.5 * u
+                    && ((x - (cx - leg)).abs() <= (outer - inner) / 2.0 + grow
+                        || (x - (cx + leg)).abs() <= (outer - inner) / 2.0 + grow);
+                body || arch || legs
+            }
+        };
+        paint(&mut img, lock(u), [255, 255, 255]);
+        paint(&mut img, lock(0.0), LOCK);
+    }
+    if badge.mirroring {
+        // A pink dot in the bottom-right corner.
+        let (c, r) = (12.0 * u, 3.0 * u);
+        let dot = move |grow: f32| {
+            move |x: f32, y: f32| (x - c).powi(2) + (y - c).powi(2) <= (r + grow).powi(2)
+        };
+        paint(&mut img, dot(u), [255, 255, 255]);
+        paint(&mut img, dot(0.0), DOT);
+    }
+    img
+}
+
+/// Draw `color` over `img` wherever `inside(x, y)` holds, the coverage of
+/// each pixel measured at 4×4 sample points.
+fn paint(img: &mut image::RgbaImage, inside: impl Fn(f32, f32) -> bool, color: [u8; 3]) {
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        let hits = (0..16u8)
+            .filter(|i| {
+                let sx = x as f32 + (f32::from(i % 4) + 0.5) / 4.0;
+                let sy = y as f32 + (f32::from(i / 4) + 0.5) / 4.0;
+                inside(sx, sy)
+            })
+            .count();
+        if hits == 0 {
+            continue;
+        }
+        let a = hits as f32 / 16.0;
+        let [r, g, b, da] = p.0;
+        let da = f32::from(da) / 255.0;
+        let out_a = a + da * (1.0 - a);
+        let blend = |s: u8, d: u8| {
+            ((f32::from(s) * a + f32::from(d) * da * (1.0 - a)) / out_a)
+                .round()
+                .clamp(0.0, 255.0) as u8
+        };
+        p.0 = [
+            blend(color[0], r),
+            blend(color[1], g),
+            blend(color[2], b),
+            (out_a * 255.0).round() as u8,
+        ];
+    }
 }
 
 /// The PNG image of an `.ico` that best fits `px`: the smallest at least
 /// that large, or else the largest. Only PNG-compressed entries count.
-#[cfg_attr(not(windows), allow(dead_code))]
 fn ico_png(ico: &[u8], px: u32) -> Option<&[u8]> {
     let u16_at = |at: usize| Some(u16::from_le_bytes(ico.get(at..at + 2)?.try_into().ok()?));
     let u32_at = |at: usize| Some(u32::from_le_bytes(ico.get(at..at + 4)?.try_into().ok()?));
@@ -176,10 +287,11 @@ impl Tray {
             &quit,
         ])
         .map_err(|e| e.to_string())?;
+        let base = base_image()?;
         let icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("NanaType")
-            .with_icon(icon()?)
+            .with_icon(to_icon(base.clone())?)
             .with_menu_on_left_click(false)
             .build()
             .map_err(|e| e.to_string())?;
@@ -235,6 +347,8 @@ impl Tray {
         }));
         Ok(Self {
             icon,
+            base,
+            drawn: Cell::new(Badge::default()),
             input,
             display,
             history,
@@ -333,6 +447,13 @@ impl Tray {
         }
         if old.is_none_or(|o| o.tooltip != state.tooltip) {
             let _ = self.icon.set_tooltip(Some(truncate(&state.tooltip)));
+        }
+        // Redraw the image only when a badge changes.
+        if self.drawn.get() != state.badge
+            && let Ok(icon) = to_icon(badged(&self.base, state.badge))
+            && self.icon.set_icon(Some(icon)).is_ok()
+        {
+            self.drawn.set(state.badge);
         }
         *shown = Some(state);
     }
@@ -444,5 +565,47 @@ mod tests {
         assert!(e.contains("VTS refused") && !e.contains("more"), "{e}");
         let long = truncate(&"x".repeat(400));
         assert!(long.encode_utf16().count() <= TOOLTIP_MAX);
+    }
+
+    #[test]
+    fn badges_draw_over_the_icon_at_every_size() {
+        for px in [16, 20, 24, 32, 48] {
+            let base = image_at(px).expect("icon");
+            assert_eq!(base.width(), px);
+            assert_eq!(badged(&base, Badge::default()), base, "{px}: plain");
+            let at = |img: &image::RgbaImage, ux: f32, uy: f32| {
+                let s = px as f32 / 16.0;
+                img.get_pixel((ux * s) as u32, (uy * s) as u32).0
+            };
+            let dot = badged(
+                &base,
+                Badge {
+                    mirroring: true,
+                    ..Badge::default()
+                },
+            );
+            assert_eq!(&at(&dot, 12.0, 12.0)[..3], &DOT, "{px}: dot");
+            let lock = badged(
+                &base,
+                Badge {
+                    locked: true,
+                    ..Badge::default()
+                },
+            );
+            assert_eq!(&at(&lock, 4.0, 13.0)[..3], &LOCK, "{px}: padlock");
+            let grey = badged(
+                &base,
+                Badge {
+                    hidden: true,
+                    ..Badge::default()
+                },
+            );
+            assert!(
+                grey.pixels()
+                    .zip(base.pixels())
+                    .all(|(g, b)| g.0[0] == g.0[1] && g.0[1] == g.0[2] && g.0[3] <= b.0[3]),
+                "{px}: greyed"
+            );
+        }
     }
 }
