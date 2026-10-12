@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use nanatype_model::{
-    Document, Entrance, EntranceKind, HistoryItem, Line, LineId, LineMeta, SourceId, SourceKind,
-    Speaker, unix_millis,
+    Document, Entrance, EntranceKind, HistoryItem, Line, LineId, LineMeta, Overflow, SourceId,
+    SourceKind, Speaker, VtsAction, unix_millis,
 };
 use nanatype_playback::{
     Cue, CueKind, LineQueue, PacingParams, Phase, Player, PlayerEffect, QueueDecision, Timeline,
@@ -25,6 +25,14 @@ pub const DEFAULT_TYPING_VARIANTS: u8 = 3;
 pub enum Cmd {
     /// The editor's content changed.
     DraftChanged(Document),
+    /// The markup source's `[@...]` header, sent along with the next draft.
+    DraftMeta(LineMeta),
+    /// The box is full at these units of `line` (page overflow): turn pages
+    /// there. Measured by the host from the laid out text.
+    PageBreaks {
+        line: LineId,
+        breaks: Vec<u32>,
+    },
     /// Send the draft.
     Send,
     /// Send markup directly (quick phrase), leaving the draft alone.
@@ -87,6 +95,7 @@ pub enum Event {
         amp: f32,
         ms: u32,
     },
+    Vts(VtsAction),
     Queued {
         position: usize,
     },
@@ -137,6 +146,10 @@ pub struct Core {
     stash: Option<Document>,
     /// Mirror mode: the committed line stays until typing starts again.
     mirror_committed: bool,
+    /// The last speaking cue fired was a start (avatars' mouths are moving).
+    speaking: bool,
+    /// Line meta typed in the markup source, for the next send.
+    draft_meta: LineMeta,
 }
 
 fn global(generation: u64, epoch: u64) -> u64 {
@@ -165,6 +178,8 @@ impl Core {
             recall: None,
             stash: None,
             mirror_committed: false,
+            speaking: false,
+            draft_meta: LineMeta::default(),
         };
         core.refresh_params();
         core.display.entrance = core.entrance();
@@ -245,6 +260,8 @@ impl Core {
         let mut fx = Effects::default();
         match cmd {
             Cmd::DraftChanged(doc) => self.draft_changed(doc, now, &mut fx),
+            Cmd::DraftMeta(meta) => self.draft_meta = meta,
+            Cmd::PageBreaks { line, breaks } => self.page_breaks(line, &breaks, now, &mut fx),
             Cmd::Send => self.send(now, &mut fx),
             Cmd::SendMarkup(markup) => {
                 let parsed = nanatype_markup::parse(&markup);
@@ -469,7 +486,8 @@ impl Core {
         if self.settings.general.input_presence == InputPresence::Summon {
             fx.hide_input = true;
         }
-        let line = Line::new(doc, self.speaker());
+        let mut line = Line::new(doc, self.speaker());
+        line.meta = std::mem::take(&mut self.draft_meta);
         if self.mode() == InputMode::Mirror {
             self.commit_mirror(line, now, fx);
         } else {
@@ -599,6 +617,31 @@ impl Core {
     fn cancel_cues(&mut self, fx: &mut Effects) {
         if let Some(epoch) = self.cue_epoch.take() {
             fx.cancel_epochs.push(epoch);
+        }
+        // A cancelled stop would leave the mouth moving.
+        self.set_speaking(false, fx);
+    }
+
+    fn page_breaks(&mut self, line: LineId, breaks: &[u32], now: Millis, fx: &mut Effects) {
+        if self.skin.dialogue.overflow != Overflow::Page || self.mode() == InputMode::Mirror {
+            return;
+        }
+        let auto_ms = self.skin.dialogue.overflow_auto_ms;
+        let Some(active) = self.active.as_mut().filter(|a| a.line.id == line) else {
+            return;
+        };
+        let (touched, effects) = active.player.paginate(breaks, auto_ms, now);
+        if touched && let Some(epoch) = self.cue_epoch.take() {
+            // Rescheduled from the same origin: talking carries on.
+            fx.cancel_epochs.push(epoch);
+        }
+        self.apply_player(effects, now, fx);
+    }
+
+    fn set_speaking(&mut self, on: bool, fx: &mut Effects) {
+        if self.speaking != on {
+            self.speaking = on;
+            fx.events.push(Event::Speaking(on));
         }
     }
 
@@ -739,6 +782,7 @@ impl Core {
                     fx.events.push(Event::LineRevealed(id));
                 }
                 PlayerEffect::LineFinished(id) => {
+                    self.set_speaking(false, fx);
                     fx.events.push(Event::LineFinished(id));
                     self.active = None;
                     self.cue_epoch = None;
@@ -784,8 +828,9 @@ impl Core {
                 self.touch_display(fx);
                 fx.events.push(Event::Shake { amp, ms });
             }
-            CueKind::SpeakingStart => fx.events.push(Event::Speaking(true)),
-            CueKind::SpeakingStop => fx.events.push(Event::Speaking(false)),
+            CueKind::SpeakingStart => self.set_speaking(true, fx),
+            CueKind::SpeakingStop => self.set_speaking(false, fx),
+            CueKind::Vts(action) => fx.events.push(Event::Vts(action)),
             CueKind::TypeSound { .. } | CueKind::Sound { .. } => {}
         }
     }

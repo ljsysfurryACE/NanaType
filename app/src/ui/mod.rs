@@ -4,6 +4,7 @@
 pub mod dialogue;
 pub mod history;
 pub mod input;
+pub mod overflow;
 pub mod rich;
 pub mod settings;
 pub mod surface;
@@ -11,7 +12,7 @@ pub mod surface;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use nana_ui::runtime::view::{Signal, signal};
+use nana_ui::runtime::view::{NodeRef, Signal, node_ref, signal};
 use nanatype_core::{DisplayView, HistoryRow};
 use nanatype_i18n::{Arg, I18n, Locale};
 use nanatype_model::{Document, Entrance, EntranceKind};
@@ -114,6 +115,12 @@ pub struct Ui {
     pub sel_attrs: Signal<nana_ui::runtime::RichSelectionAttrs>,
     /// The editor shows markup source instead of the rich text.
     pub source_mode: Signal<bool>,
+    /// The typewriter's text node and the box it is clipped to, read back by
+    /// the host to follow long text.
+    pub text_node: NodeRef,
+    pub text_port: NodeRef,
+    /// How far the typewriter's text is scrolled up (logical px).
+    pub text_scroll: Signal<f32>,
 }
 
 impl Ui {
@@ -144,6 +151,9 @@ impl Ui {
             editor_value: signal(nana_ui_core::RichText::new("")),
             sel_attrs: signal(nana_ui::runtime::RichSelectionAttrs::default()),
             source_mode: signal(false),
+            text_node: node_ref(),
+            text_port: node_ref(),
+            text_scroll: signal(0.0),
         }
     }
 

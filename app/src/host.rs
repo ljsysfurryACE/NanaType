@@ -14,11 +14,13 @@ use nana_ui::{
 use nana_ui_platform::host::WindowCommand;
 use nana_ui_platform::{InputPayload, KeyState, WindowEvent, WindowId};
 use nanatype_core::Cmd;
+use nanatype_model::Overflow;
 use nanatype_settings::{Hotkey, InputPresence};
 
 use crate::app::{App, SEND_KEY};
 use crate::clock;
 use crate::msg::{Msg, Tool};
+use crate::ui::overflow::{self, LineSpan, Measure, PageKey};
 use crate::ui::{dialogue, history, input, settings};
 use crate::windows::WindowKind;
 
@@ -29,6 +31,10 @@ pub struct Host {
     editor: Option<Entity<RichTextEditor>>,
     /// Skin and reduced-motion the editor's effect preview was built for.
     editor_fx: Option<(usize, bool)>,
+    /// The typewriter's scroll through long text.
+    follow: overflow::Follow,
+    /// The typewriter's automatic page breaks.
+    pager: overflow::Pager,
 }
 
 fn is_modifier(code: &str) -> bool {
@@ -128,6 +134,57 @@ impl Host {
         }
         self.docs.insert(id, doc);
         Ok(())
+    }
+
+    /// Read the typewriter's last layout: scroll along with the typing, or
+    /// tell the core where a full box turns the page.
+    fn follow_text(&mut self, now: u64) {
+        let ui = self.app.ui;
+        let view = ui.display.get_untracked();
+        let mut mode = self.app.skin.dialogue.overflow;
+        let mirror = self.app.settings.general.input_mode == nanatype_settings::InputMode::Mirror;
+        if mode == Overflow::Page && (mirror || view.line.is_none()) {
+            // Nothing to page while the text follows the editor.
+            mode = Overflow::Scroll;
+        }
+        let key = (!view.empty && mode != Overflow::Clip).then(|| PageKey::of(&view));
+        let page = overflow::published().filter(|p| Some(p.key) == key);
+        let measure = page.as_ref().and_then(|page| {
+            let world = self.docs.get(&WindowKind::Display.id())?.context().world();
+            let (_, layout) = world.text_layout(ui.text_node.get_untracked()?)?;
+            // A layout of an older node until the new one is laid out.
+            let end = layout.lines.last()?.source.end;
+            if end < page.text_trimmed || end > page.text_len {
+                return None;
+            }
+            Some(Measure {
+                lines: layout
+                    .lines
+                    .iter()
+                    .map(|l| LineSpan {
+                        bytes: l.source.clone(),
+                        top: l.bounds.y,
+                        bottom: l.bounds.y + l.bounds.height,
+                    })
+                    .collect(),
+                viewport: world.layout_box(ui.text_port.get_untracked()?)?.height,
+                glyphs: &page.glyphs,
+            })
+        });
+        let reduced = ui.reduced_motion.get_untracked();
+        let (follow, pager) = match mode {
+            Overflow::Page => (None, key),
+            _ => (key, None),
+        };
+        let y = self.follow.frame(follow, measure.as_ref(), now, reduced);
+        if let Some(breaks) = self.pager.frame(pager, measure.as_ref())
+            && let Some(line) = view.line
+        {
+            self.app.post(Msg::Core(Cmd::PageBreaks { line, breaks }));
+        }
+        if ui.text_scroll.get_untracked() != y {
+            ui.text_scroll.set(y);
+        }
     }
 
     fn open_overlays(&mut self) {
@@ -233,6 +290,8 @@ impl RuntimeProgram for Host {
             docs: HashMap::new(),
             editor: None,
             editor_fx: None,
+            follow: overflow::Follow::default(),
+            pager: overflow::Pager::default(),
         };
         // The primary window exists before `initialize_window` is ever
         // called, so its document is built here.
@@ -513,15 +572,21 @@ impl RuntimeProgram for Host {
         let now = clock::now_ms();
         let ui = self.app.ui;
         let animating = match WindowKind::from_id(id) {
-            Some(WindowKind::Display) => dialogue::display_animating(ui, now),
+            Some(WindowKind::Display) => {
+                dialogue::display_animating(ui, now)
+                    || self.follow.wants_frame()
+                    || self.pager.wants_frame()
+            }
             Some(WindowKind::History) => history_fading(ui, now),
             _ => false,
         };
         if animating {
             FrameDemand::Continuous(NonZeroU32::new(60).expect("non-zero"))
-        } else if WindowKind::from_id(id) == Some(WindowKind::History)
-            && let Some(at) = next_history_fade(ui, now)
-        {
+        } else if let Some(at) = match WindowKind::from_id(id) {
+            Some(WindowKind::History) => next_history_fade(ui, now),
+            Some(WindowKind::Display) => self.follow.next_line_at(),
+            _ => None,
+        } {
             FrameDemand::At(clock::instant(at))
         } else {
             FrameDemand::OnDemand
@@ -529,11 +594,19 @@ impl RuntimeProgram for Host {
     }
 
     fn prepare_window_frame(&mut self, id: WindowId, _: &RuntimeProgramContext<Msg>) {
-        if matches!(self.frame_demand(id), FrameDemand::Continuous(_)) {
-            let now = clock::now_ms();
-            if self.app.ui.now.get_untracked() != now {
-                self.app.ui.now.set(now);
-            }
+        let now = clock::now_ms();
+        if WindowKind::from_id(id) == Some(WindowKind::Display) {
+            self.follow_text(now);
+        }
+        // The animation clock only runs for what animates on it; following
+        // the text drives its own scroll.
+        let animating = match WindowKind::from_id(id) {
+            Some(WindowKind::Display) => dialogue::display_animating(self.app.ui, now),
+            Some(WindowKind::History) => history_fading(self.app.ui, now),
+            _ => false,
+        };
+        if animating && self.app.ui.now.get_untracked() != now {
+            self.app.ui.now.set(now);
         }
     }
 }

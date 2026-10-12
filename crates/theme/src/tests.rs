@@ -718,3 +718,19 @@ fn pacing_and_sound_rule_come_from_the_skin() {
     let rule = rpg.skin.sounds.typing.rule(true);
     assert_eq!(rule.variants, 1);
 }
+
+#[test]
+fn skins_choose_how_long_text_overflows() {
+    use nanatype_model::Overflow;
+    let reg = SkinRegistry::new(None, APP);
+    let skin = |id: &str| reg.load(id).unwrap().skin;
+    assert_eq!(skin("nanatype.halo").dialogue.overflow, Overflow::Scroll);
+    for id in ["nanatype.adv", "nanatype.rpg", "nanatype.pixel"] {
+        assert_eq!(skin(id).dialogue.overflow, Overflow::Page, "{id}");
+    }
+    let d: Dialogue = toml::from_str("overflow = \"clip\"\noverflow_auto_ms = 1500").unwrap();
+    assert_eq!(
+        (d.overflow, d.overflow_auto_ms),
+        (Overflow::Clip, Some(1500))
+    );
+}

@@ -23,7 +23,7 @@ use nanatype_core::Cmd;
 use nanatype_i18n::{Arg, Locale};
 use nanatype_model::{
     AssetRef, Atom, AtomKind, ContinuousKind, EntranceKind, Inline, Marker, Pace, Rgba8, Shadow,
-    Stroke,
+    Stroke, VtsAction,
 };
 use nanatype_settings::{InputMode, SendKey, Settings};
 
@@ -44,6 +44,14 @@ pub fn marker_label(m: &Marker, locale: Locale) -> String {
         Marker::Expression { name, .. } => tr("marker-expression", "name", name.as_str().into()),
         Marker::Portrait { variant } => tr("marker-portrait", "name", variant.as_str().into()),
         Marker::ScreenShake { .. } => t("marker-shake"),
+        Marker::Vts(action) => {
+            let name = match action {
+                VtsAction::Hotkey { hotkey } => hotkey,
+                VtsAction::Expression { file, .. } => file,
+                VtsAction::Param { name, .. } => name,
+            };
+            tr("marker-vts", "name", name.as_str().into())
+        }
     }
 }
 
@@ -776,6 +784,10 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
         let l = Arc::make_mut(&mut st.layout);
         l.width = Some(LengthSpec::Fill);
         l.flex_grow = Some(1.0);
+        // Held to the text area, so a long draft scrolls inside the editor
+        // (which keeps the caret in view) instead of running off the box.
+        l.flex_shrink = Some(1.0);
+        l.min_height = Some(LengthSpec::Px(0.0));
         l.cursor = Some(nana_ui_core::CursorSpec::Text);
         st
     };

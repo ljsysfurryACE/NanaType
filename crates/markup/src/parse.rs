@@ -3,7 +3,7 @@ use std::ops::Range;
 use nanatype_model::{
     AssetRef, Atom, AtomKind, Continuous, ContinuousKind, Document, Effects, Entrance,
     EntranceKind, FontSlot, Inline, LineMeta, Marker, Pace, Paragraph, Rgba8, RubyGroup, Shadow,
-    Size, Stroke, Style, TextRun,
+    Size, Stroke, Style, TextRun, VtsAction,
 };
 
 use crate::value::{self, Tag, parse_tag};
@@ -422,6 +422,7 @@ impl Builder<'_> {
                     }
                 });
             }
+            "vts" if v.is_none() => return marker(vts_action(tag).map(Marker::Vts)),
             "sticker" | "emote" | "img" => {
                 let kind = match tag.name.as_str() {
                     "sticker" => AtomKind::Sticker,
@@ -536,4 +537,37 @@ fn span_attr(tag: &Tag) -> Option<Option<Attr>> {
             Some(value::entrance(tag, entrance).map(Attr::Entrance))
         }
     }
+}
+
+/// `[vts hotkey=…]`, `[vts expr=… active= fade=]` or
+/// `[vts param=… value= ms=]`.
+fn vts_action(tag: &Tag) -> Option<VtsAction> {
+    if let Some(hotkey) = tag.arg("hotkey") {
+        return (!hotkey.is_empty()).then(|| VtsAction::Hotkey {
+            hotkey: hotkey.to_owned(),
+        });
+    }
+    if let Some(file) = tag.arg("expr") {
+        let active = value::flag(tag.arg("active"))?;
+        let fade = match tag.arg("fade") {
+            Some(f) => Some(value::num(f).filter(|f| *f >= 0.0)?),
+            None => None,
+        };
+        return (!file.is_empty()).then(|| VtsAction::Expression {
+            file: file.to_owned(),
+            active,
+            fade,
+        });
+    }
+    let name = tag.arg("param").filter(|n| !n.is_empty())?;
+    let value = value::num(tag.arg("value")?)?;
+    let ms = match tag.arg("ms") {
+        Some(ms) => value::ms(ms)?,
+        None => 0,
+    };
+    Some(VtsAction::Param {
+        name: name.to_owned(),
+        value,
+        ms,
+    })
 }

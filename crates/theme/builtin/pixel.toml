@@ -25,6 +25,7 @@ weight = 400
 
 [dialogue]
 padding = [24, 26, 24, 16]
+overflow = "page"
 
 [dialogue.box]
 color = "#9bbc0f"

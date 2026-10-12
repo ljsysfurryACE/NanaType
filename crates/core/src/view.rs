@@ -61,6 +61,28 @@ impl Reveal {
                 .map_or(0, |offset| seg.origin_ms + u64::from(*offset)),
         )
     }
+
+    /// The same reveal for the page alone ([`Document::suffix`] from
+    /// `visible_from`): unit `u` here is unit `u + visible_from` of the line.
+    pub fn rebased(&self) -> Reveal {
+        let from = self.visible_from;
+        if from == 0 {
+            return self.clone();
+        }
+        Reveal {
+            visible_from: 0,
+            shown: self.shown.saturating_sub(from),
+            segment: self.segment.as_ref().map(|seg| {
+                let cut = from.saturating_sub(seg.start) as usize;
+                SegmentReveal {
+                    origin_ms: seg.origin_ms,
+                    start: seg.start.saturating_sub(from),
+                    reveal_ms: seg.reveal_ms.get(cut..).unwrap_or_default().into(),
+                }
+            }),
+            hidden_from: self.hidden_from.saturating_sub(from),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -106,6 +128,19 @@ impl DisplayView {
             entrance,
             empty: true,
         }
+    }
+
+    /// The current page: the document from `visible_from` on and its reveal,
+    /// so text after a page break starts at the top of the box.
+    pub fn page(&self) -> (Arc<Document>, Reveal) {
+        let from = self.reveal.visible_from;
+        if from == 0 {
+            return (self.doc.clone(), self.reveal.clone());
+        }
+        (
+            Arc::new(self.doc.suffix(from as usize)),
+            self.reveal.rebased(),
+        )
     }
 }
 

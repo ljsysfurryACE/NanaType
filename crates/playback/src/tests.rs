@@ -126,7 +126,7 @@ fn auto_pause_continues_on_its_own() {
 #[test]
 fn page_clears_what_came_before() {
     let t = tl("ab[page]cd", &no_punct());
-    assert_eq!(t.segments[0].end, SegmentEnd::Page);
+    assert_eq!(t.segments[0].end, SegmentEnd::Page { auto_ms: None });
     assert_eq!(t.segments[1].visible_from, 2);
     let (mut p, _) = Player::start(LineId(1), t, AfterLine::Hold, None, 0);
     p.on_wake(p.epoch(), WakeReason::SegmentEnd, 100);
@@ -298,4 +298,186 @@ fn queue_policies() {
     ));
     let mut q = LineQueue::new(QueuePolicy::Replace);
     assert!(matches!(q.submit(line(), true), QueueDecision::StartNow(_)));
+}
+
+#[test]
+fn long_pauses_close_the_mouth_until_the_next_character() {
+    let t = tl("ab[wait=500]cd", &no_punct());
+    let speaking: Vec<_> = t.segments[0]
+        .cues
+        .iter()
+        .filter_map(|c| match c.kind {
+            CueKind::SpeakingStart => Some((c.at_ms, true)),
+            CueKind::SpeakingStop => Some((c.at_ms, false)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(speaking.len(), 4, "{speaking:?}");
+    assert!(speaking.iter().map(|s| s.1).eq([true, false, true, false]));
+    assert!(speaking[1].0 < speaking[2].0);
+    // Short gaps between characters keep talking.
+    let t = tl("abcd", &no_punct());
+    let starts = t.segments[0]
+        .cues
+        .iter()
+        .filter(|c| c.kind == CueKind::SpeakingStart)
+        .count();
+    assert_eq!(starts, 1);
+}
+
+#[test]
+fn vts_markers_cue_and_survive_a_skip() {
+    let t = tl("a[vts hotkey=Wave]b", &no_punct());
+    let cue = t.segments[0]
+        .cues
+        .iter()
+        .find(|c| matches!(c.kind, CueKind::Vts(_)))
+        .unwrap();
+    assert_eq!(cue.at_ms, 50);
+    assert!(cue.kind.survives_skip());
+}
+
+#[test]
+fn finishing_the_reveal_fires_later_segments_expressions() {
+    let t = tl("a[pause]b[expr=smile]c[page]d[se=coin]", &no_punct());
+    let (mut p, _) = Player::start(LineId(1), t, AfterLine::Hold, None, 0);
+    let out = p.finish_reveal(10);
+    let fired: Vec<_> = out
+        .iter()
+        .find_map(|e| match e {
+            PlayerEffect::FireNow { cues } => Some(cues.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(fired.len(), 2, "{fired:?}");
+    assert_eq!(p.phase(), Phase::Done);
+}
+
+fn speaking_balanced(s: &Segment) -> bool {
+    let mut on = false;
+    for c in s.cues.iter() {
+        match c.kind {
+            CueKind::SpeakingStart if on => return false,
+            CueKind::SpeakingStart => on = true,
+            CueKind::SpeakingStop if !on => return false,
+            CueKind::SpeakingStop => on = false,
+            _ => {}
+        }
+    }
+    !on
+}
+
+#[test]
+fn splitting_a_page_cuts_the_segment_and_moves_the_rest_of_the_page() {
+    let sound = TypingSoundRule::default();
+    let mut t = compile(
+        &parse("abcd[expr=smile]efgh[pause]ij[page]kl").doc,
+        &no_punct(),
+        &sound,
+    );
+    assert!(t.split_page(2, Some(900)));
+    let [a, b, c, d] = &t.segments[..] else {
+        panic!("{:?}", t.segments)
+    };
+    assert_eq!(
+        (a.units.clone(), a.end),
+        (0..2, SegmentEnd::Page { auto_ms: Some(900) })
+    );
+    assert_eq!(a.duration_ms, 100);
+    assert_eq!(&*b.reveal_ms, &[0, 50, 100, 150, 200, 250]);
+    assert_eq!(b.units, 2..8);
+    // The page the pause led on to moved too; the explicit page did not.
+    assert_eq!((b.visible_from, c.visible_from, d.visible_from), (2, 2, 10));
+    // Typing clicks go by unit, markers by time.
+    let clicks = |s: &Segment| {
+        s.cues
+            .iter()
+            .filter_map(|c| match c.kind {
+                CueKind::TypeSound { unit, .. } => Some(unit),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(clicks(a).iter().all(|u| *u < 2));
+    assert!(clicks(b).iter().all(|u| *u >= 2));
+    let smile = b
+        .cues
+        .iter()
+        .find(|c| matches!(c.kind, CueKind::Expression { .. }))
+        .unwrap();
+    assert_eq!(smile.at_ms, 100);
+    assert!(speaking_balanced(a) && speaking_balanced(b));
+    // Idempotent; a pause boundary becomes a page.
+    assert!(!t.split_page(2, None));
+    assert!(t.split_page(8, None));
+    assert_eq!(t.segments[1].end, SegmentEnd::Page { auto_ms: None });
+    assert_eq!(t.segments[2].visible_from, 8);
+    assert!(!t.split_page(0, None));
+}
+
+fn shown_until(effects: &[PlayerEffect], t: &Timeline) -> Option<u32> {
+    effects.iter().rev().find_map(|e| match e {
+        PlayerEffect::ShowSegment { seg, .. } => Some(t.segments[*seg].units.end),
+        _ => None,
+    })
+}
+
+#[test]
+fn paginating_before_the_cut_reschedules_the_segment() {
+    let t = tl("abcdefgh", &no_punct());
+    let (mut p, _) = Player::start(LineId(1), t, AfterLine::Hold, None, 0);
+    let (touched, out) = p.paginate(&[4], None, 60);
+    assert!(touched);
+    assert_eq!(shown_until(&out, p.timeline()), Some(4));
+    assert_eq!(wakes(&out), vec![(200, WakeReason::SegmentEnd)]);
+    // The old wake is stale; the new one gates at the page.
+    assert!(p.on_wake(1, WakeReason::SegmentEnd, 350).is_empty());
+    p.on_wake(p.epoch(), WakeReason::SegmentEnd, 200);
+    assert_eq!(p.phase(), Phase::Gated);
+    let (_, out) = p.advance(1000);
+    assert_eq!(p.snapshot(1000).visible_from, 4);
+    assert_eq!(wakes(&out), vec![(1000 + 200, WakeReason::SegmentEnd)]);
+    // A second measurement of the new page is not paged again.
+    assert_eq!(p.paginate(&[6], None, 1010), (false, vec![]));
+}
+
+#[test]
+fn paginating_past_the_cut_gates_at_once_and_auto_turns() {
+    let t = tl("abcdefgh", &no_punct());
+    let (mut p, _) = Player::start(LineId(1), t, AfterLine::Hold, None, 0);
+    let (touched, out) = p.paginate(&[2], Some(800), 300);
+    assert!(touched);
+    assert_eq!(p.phase(), Phase::Gated);
+    assert!(out.contains(&PlayerEffect::ContinueIndicator(true)));
+    assert_eq!(wakes(&out), vec![(1100, WakeReason::AutoContinue)]);
+}
+
+#[test]
+fn a_line_shown_at_once_goes_back_to_its_first_page() {
+    let pacing = PacingParams {
+        typing: false,
+        ..no_punct()
+    };
+    let t = tl("a[expr=smile]bcdef", &pacing);
+    let (mut p, _) = Player::start(LineId(1), t, AfterLine::Hold, None, 0);
+    let out = p.on_wake(p.epoch(), WakeReason::SegmentEnd, 0);
+    assert!(out.contains(&PlayerEffect::LineRevealed(LineId(1))));
+    let (touched, out) = p.paginate(&[3], None, 20);
+    assert!(touched);
+    assert_eq!(p.phase(), Phase::Gated);
+    assert_eq!(shown_until(&out, p.timeline()), Some(3));
+    let (_, out) = p.advance(30);
+    // The expression fired when the line started; done is not announced twice.
+    assert!(!out.iter().any(|e| matches!(e, PlayerEffect::ScheduleCues { cues, .. } if cues.iter().any(|c| matches!(c.kind, CueKind::Expression { .. })))));
+    let out = p.on_wake(p.epoch(), WakeReason::SegmentEnd, 30);
+    assert_eq!(p.phase(), Phase::Done);
+    assert!(!out.contains(&PlayerEffect::LineRevealed(LineId(1))));
+}
+
+#[test]
+fn skipping_to_the_end_keeps_the_last_page() {
+    let t = tl("abcdefgh", &no_punct());
+    let (mut p, _) = Player::start(LineId(1), t, AfterLine::Hold, None, 0);
+    p.finish_reveal(10);
+    assert_eq!(p.paginate(&[4], None, 20), (false, vec![]));
 }

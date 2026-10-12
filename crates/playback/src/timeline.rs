@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use nanatype_model::{CharClass, Document, Item, Marker};
+use nanatype_model::{CharClass, Document, Item, Marker, VtsAction};
 use serde::{Deserialize, Serialize};
 
 use crate::{PacingParams, TypingSoundRule};
@@ -32,6 +32,7 @@ pub enum CueKind {
     /// The speaker starts or stops "talking" (mouth flap for avatars).
     SpeakingStart,
     SpeakingStop,
+    Vts(VtsAction),
 }
 
 impl CueKind {
@@ -39,7 +40,7 @@ impl CueKind {
     pub fn survives_skip(&self) -> bool {
         matches!(
             self,
-            Self::Sound { .. } | Self::Expression { .. } | Self::Portrait { .. }
+            Self::Sound { .. } | Self::Expression { .. } | Self::Portrait { .. } | Self::Vts(_)
         )
     }
 }
@@ -58,9 +59,22 @@ pub enum SegmentEnd {
     Pause {
         auto_ms: Option<u32>,
     },
-    /// Wait for continue, then clear the box.
-    Page,
+    /// Wait for continue, then clear the box; continue on its own after
+    /// `auto_ms` (pages turned because the box was full).
+    Page {
+        auto_ms: Option<u32>,
+    },
     LineEnd,
+}
+
+impl SegmentEnd {
+    /// How long a gate waits before it continues on its own.
+    pub fn auto_ms(self) -> Option<u32> {
+        match self {
+            Self::Pause { auto_ms } | Self::Page { auto_ms } => auto_ms,
+            Self::LineEnd => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -77,6 +91,20 @@ pub struct Segment {
     pub end: SegmentEnd,
 }
 
+impl Segment {
+    /// Every unit shown at once.
+    pub fn instant(&self) -> Arc<[u32]> {
+        vec![0; self.reveal_ms.len()].into()
+    }
+
+    /// Cues not reached `elapsed` ms into the segment.
+    pub fn cues_after(&self, elapsed: u64) -> impl Iterator<Item = &Cue> {
+        self.cues
+            .iter()
+            .filter(move |c| u64::from(c.at_ms) > elapsed)
+    }
+}
+
 /// A compiled line.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Timeline {
@@ -88,6 +116,107 @@ impl Timeline {
     pub fn last_segment(&self) -> usize {
         self.segments.len().saturating_sub(1)
     }
+
+    /// Start a new page at `unit` (the box is full there): the segment that
+    /// holds it ends at `unit` with a page break, and the rest of the page it
+    /// was on moves to the new one. A pause right before `unit` becomes the
+    /// page break. Returns whether anything changed; a page that already
+    /// starts at `unit` is left alone.
+    pub fn split_page(&mut self, unit: u32, auto_ms: Option<u32>) -> bool {
+        let Some(si) = self
+            .segments
+            .iter()
+            .position(|s| s.units.start <= unit && unit < s.units.end)
+        else {
+            return false;
+        };
+        let page = self.segments[si].visible_from;
+        if page == unit {
+            return false;
+        }
+        if self.segments[si].units.start == unit {
+            let prev = &mut self.segments[si - 1];
+            prev.end = SegmentEnd::Page {
+                auto_ms: prev.end.auto_ms().or(auto_ms),
+            };
+            self.move_page(si, page, unit);
+            return true;
+        }
+        let s = &self.segments[si];
+        let k = (unit - s.units.start) as usize;
+        let cut = s.reveal_ms[k];
+        let mut first = Vec::new();
+        let mut rest = Vec::new();
+        for c in s.cues.iter() {
+            let in_first = match c.kind {
+                CueKind::TypeSound { unit: u, .. } => u < unit,
+                _ => c.at_ms < cut,
+            };
+            if in_first {
+                first.push(c.clone());
+            } else {
+                rest.push(Cue {
+                    at_ms: c.at_ms.saturating_sub(cut),
+                    kind: c.kind.clone(),
+                });
+            }
+        }
+        // Keep each segment's talking bracketed: stop at the cut, start
+        // again where the new page picks up.
+        let talking = first.iter().fold(false, |on, c| match c.kind {
+            CueKind::SpeakingStart => true,
+            CueKind::SpeakingStop => false,
+            _ => on,
+        });
+        if talking {
+            first.push(Cue {
+                at_ms: cut,
+                kind: CueKind::SpeakingStop,
+            });
+            rest.insert(
+                0,
+                Cue {
+                    at_ms: 0,
+                    kind: CueKind::SpeakingStart,
+                },
+            );
+        }
+        first.sort_by_key(|c| c.at_ms);
+        rest.sort_by_key(|c| c.at_ms);
+        let a = Segment {
+            units: s.units.start..unit,
+            visible_from: s.visible_from,
+            reveal_ms: s.reveal_ms[..k].into(),
+            cues: first.into(),
+            duration_ms: cut,
+            end: SegmentEnd::Page { auto_ms },
+        };
+        let b = Segment {
+            units: unit..s.units.end,
+            visible_from: unit,
+            reveal_ms: s.reveal_ms[k..]
+                .iter()
+                .map(|t| t.saturating_sub(cut))
+                .collect(),
+            cues: rest.into(),
+            duration_ms: s.duration_ms.saturating_sub(cut),
+            end: s.end,
+        };
+        self.segments[si] = a;
+        self.segments.insert(si + 1, b);
+        self.move_page(si + 2, page, unit);
+        true
+    }
+
+    /// Segments from `from` on that were still on page `old` start at `new`.
+    fn move_page(&mut self, from: usize, old: u32, new: u32) {
+        for s in self.segments[from..].iter_mut() {
+            if s.visible_from != old {
+                break;
+            }
+            s.visible_from = new;
+        }
+    }
 }
 
 struct Draft {
@@ -98,6 +227,13 @@ struct Draft {
     clock: u32,
     speaking: bool,
 }
+
+/// A pause at least this long closes the speaker's mouth until the next
+/// character.
+const SPEAKING_GAP_MS: u32 = 250;
+
+/// How long the mouth stays open into such a pause.
+const SPEAKING_TAIL_MS: u32 = 80;
 
 /// Compile `doc` into segments. Pure; call again when pacing settings change.
 pub fn compile(doc: &Document, pacing: &PacingParams, sound: &TypingSoundRule) -> Timeline {
@@ -139,6 +275,13 @@ pub fn compile(doc: &Document, pacing: &PacingParams, sound: &TypingSoundRule) -
     let mut pending_delay = 0u32;
     doc.walk(|item| match item {
         Item::Unit(unit) => {
+            if d.speaking && pending_delay >= SPEAKING_GAP_MS {
+                d.cues.push(Cue {
+                    at_ms: d.clock.saturating_add(SPEAKING_TAIL_MS),
+                    kind: CueKind::SpeakingStop,
+                });
+                d.speaking = false;
+            }
             d.clock = d.clock.saturating_add(pending_delay);
             let class = unit.class();
             if !d.speaking && !matches!(class, CharClass::Space) {
@@ -194,7 +337,12 @@ pub fn compile(doc: &Document, pacing: &PacingParams, sound: &TypingSoundRule) -
                 Marker::Page => {
                     d.clock = at;
                     pending_delay = 0;
-                    close(&mut d, SegmentEnd::Page, ordinal, &mut segments);
+                    close(
+                        &mut d,
+                        SegmentEnd::Page { auto_ms: None },
+                        ordinal,
+                        &mut segments,
+                    );
                     d.visible_from = ordinal;
                     last_click = None;
                 }
@@ -221,6 +369,10 @@ pub fn compile(doc: &Document, pacing: &PacingParams, sound: &TypingSoundRule) -
                 Marker::ScreenShake { amp, ms } => d.cues.push(Cue {
                     at_ms: at,
                     kind: CueKind::Shake { amp: *amp, ms: *ms },
+                }),
+                Marker::Vts(action) => d.cues.push(Cue {
+                    at_ms: at,
+                    kind: CueKind::Vts(action.clone()),
                 }),
             }
         }

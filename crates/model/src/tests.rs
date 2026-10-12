@@ -116,6 +116,55 @@ fn prefix_keeps_markers_before_the_cut() {
 }
 
 #[test]
+fn suffix_starts_a_page_mid_line() {
+    let doc = Document::from_inlines(vec![
+        Inline::text("ab"),
+        Inline::Marker(Marker::Page),
+        Inline::text(
+            "cd
+ef",
+        ),
+    ]);
+    assert_eq!(doc.suffix(0), doc);
+    let tail = doc.suffix(2);
+    assert_eq!(
+        tail.plain_text(),
+        "cd
+ef"
+    );
+    assert_eq!(tail.unit_count(), doc.unit_count() - 2);
+    assert_eq!(tail.markers().len(), 1, "markers at the cut stay");
+    let tail = doc.suffix(3);
+    assert_eq!(
+        tail.plain_text(),
+        "d
+ef"
+    );
+    assert!(tail.markers().is_empty());
+    // A page that begins after a hard break does not open on a blank line.
+    let tail = doc.suffix(4);
+    assert_eq!(tail.plain_text(), "ef");
+    assert_eq!(tail.paragraphs.len(), 1);
+    let tail = doc.suffix(6);
+    assert_eq!(tail.unit_count(), 0);
+    assert!(!tail.paragraphs.is_empty());
+}
+
+#[test]
+fn suffix_cuts_ruby_bases_and_skips_atoms() {
+    let doc = Document::from_inlines(vec![
+        Inline::Ruby(RubyGroup {
+            base: TextRun::plain("漢字"),
+            annotation: "かんじ".into(),
+        }),
+        Inline::text("x"),
+    ]);
+    let tail = doc.suffix(1);
+    assert_eq!(tail.plain_text(), "字x");
+    assert_eq!(tail.unit_count(), 2);
+}
+
+#[test]
 fn asset_refs_parse_and_print() {
     for text in [
         "blob:abc",
@@ -214,4 +263,24 @@ proptest! {
         let json = DocumentEnvelope::to_json(&once);
         prop_assert_eq!(DocumentEnvelope::from_json(&json).unwrap(), once);
     }
+}
+
+#[test]
+fn vts_markers_survive_json() {
+    let doc = Document::from_inlines(vec![
+        Inline::text("a"),
+        Inline::Marker(Marker::Vts(VtsAction::Expression {
+            file: "Smile.exp3.json".into(),
+            active: false,
+            fade: Some(0.5),
+        })),
+        Inline::Marker(Marker::Vts(VtsAction::Param {
+            name: "MouthOpen".into(),
+            value: 1.0,
+            ms: 200,
+        })),
+    ]);
+    let json = serde_json::to_string(&doc).unwrap();
+    assert!(json.contains(r#""marker":"vts""#), "{json}");
+    assert_eq!(serde_json::from_str::<Document>(&json).unwrap(), doc);
 }

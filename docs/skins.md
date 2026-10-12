@@ -64,6 +64,8 @@ region = [760, 200]               # 对话区域（逻辑像素）
 overscan = 18                     # 四周透明边距，防止跳动 / 描边被裁切
 padding = [20, 22, 20, 14]        # 文字内边距：左 上 右 下
 background = "images/bg.png"      # 可选
+overflow = "scroll"               # 长文本：clip 裁掉 / scroll 跟随滚动（默认）/ page 满页后等待并清空
+overflow_auto_ms = 1500           # page 模式下满页自动翻页的等待时间；省略则等继续键
 
 [dialogue.box]
 color = "#ffffffee"

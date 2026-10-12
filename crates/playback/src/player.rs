@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use nanatype_model::{AfterLine, LineId};
 
-use crate::{Cue, SegmentEnd, Timeline};
+use crate::{Cue, CueKind, SegmentEnd, Timeline};
 
 /// Length of the fade-out once a fading line's hold time is over.
 pub const FADE_OUT_MS: u32 = 450;
@@ -105,6 +105,13 @@ pub struct Player {
     auto_advance_ms: Option<u32>,
     state: State,
     epoch: u64,
+    /// `LineRevealed` went out (a line paged after it was done keeps it).
+    revealed: bool,
+    /// Skip jumped to the end: the last page stays.
+    skipped_to_end: bool,
+    /// Pages started by [`Self::paginate`]; their own layout is not paged
+    /// again, so a re-wrap cannot add a sliver of a page.
+    paged: Vec<u32>,
 }
 
 impl Player {
@@ -122,6 +129,9 @@ impl Player {
             auto_advance_ms,
             state: State::Finished,
             epoch: 0,
+            revealed: false,
+            skipped_to_end: false,
+            paged: Vec::new(),
         };
         let mut out = Vec::new();
         player.enter_segment(0, now, &mut out);
@@ -193,26 +203,23 @@ impl Player {
     }
 
     fn end_segment(&mut self, seg: usize, now: u64, out: &mut Vec<PlayerEffect>) {
-        let end = self.timeline.segments[seg].end;
-        match end {
-            SegmentEnd::Pause { auto_ms } => {
-                let epoch = self.bump();
-                self.state = State::Gated { seg };
-                out.push(PlayerEffect::ContinueIndicator(true));
-                if let Some(ms) = auto_ms {
-                    out.push(PlayerEffect::WakeAt {
-                        epoch,
-                        at_ms: now + u64::from(ms),
-                        reason: WakeReason::AutoContinue,
-                    });
-                }
-            }
-            SegmentEnd::Page => {
-                self.bump();
-                self.state = State::Gated { seg };
-                out.push(PlayerEffect::ContinueIndicator(true));
-            }
+        match self.timeline.segments[seg].end {
             SegmentEnd::LineEnd => self.enter_done(now, out),
+            _ => self.gate(seg, now, out),
+        }
+    }
+
+    /// Wait at the end of `seg` for continue, or for the gate's own time.
+    fn gate(&mut self, seg: usize, now: u64, out: &mut Vec<PlayerEffect>) {
+        let epoch = self.bump();
+        self.state = State::Gated { seg };
+        out.push(PlayerEffect::ContinueIndicator(true));
+        if let Some(ms) = self.timeline.segments[seg].end.auto_ms() {
+            out.push(PlayerEffect::WakeAt {
+                epoch,
+                at_ms: now + u64::from(ms),
+                reason: WakeReason::AutoContinue,
+            });
         }
     }
 
@@ -220,7 +227,9 @@ impl Player {
         let epoch = self.bump();
         self.state = State::Done { at: now };
         out.push(PlayerEffect::ContinueIndicator(false));
-        out.push(PlayerEffect::LineRevealed(self.line));
+        if !std::mem::replace(&mut self.revealed, true) {
+            out.push(PlayerEffect::LineRevealed(self.line));
+        }
         let units = self.timeline.unit_count;
         match self.after {
             AfterLine::Hold => {}
@@ -318,12 +327,11 @@ impl Player {
         let segment = &self.timeline.segments[seg];
         let elapsed = now.saturating_sub(origin);
         let pending: Vec<Cue> = segment
-            .cues
-            .iter()
-            .filter(|c| u64::from(c.at_ms) > elapsed && c.kind.survives_skip())
+            .cues_after(elapsed)
+            .filter(|c| c.kind.survives_skip())
             .cloned()
             .collect();
-        let zeros: Arc<[u32]> = vec![0; segment.reveal_ms.len()].into();
+        let zeros = segment.instant();
         self.state = State::Revealing {
             seg,
             origin: now,
@@ -342,18 +350,198 @@ impl Player {
     }
 
     /// Jump to the fully revealed end of the line (queue "finish then next").
+    /// Sounds and expressions not reached yet, here and in later segments,
+    /// fire now.
     pub fn finish_reveal(&mut self, now: u64) -> Vec<PlayerEffect> {
         let mut out = Vec::new();
         let last = self.timeline.last_segment();
+        let segments = &self.timeline.segments;
+        let (seg, elapsed) = match self.state {
+            State::Revealing {
+                seg,
+                origin,
+                skipped: false,
+            } => (seg, now.saturating_sub(origin)),
+            State::Revealing { seg, .. } | State::Gated { seg } => (seg, u64::MAX),
+            _ => (last, u64::MAX),
+        };
+        let pending: Vec<Cue> = segments[seg]
+            .cues_after(elapsed)
+            .chain(segments[seg + 1..].iter().flat_map(|s| s.cues.iter()))
+            .filter(|c| c.kind.survives_skip())
+            .cloned()
+            .collect();
         let epoch = self.bump();
         out.push(PlayerEffect::ShowSegment {
             epoch,
             seg: last,
             origin_ms: now,
-            reveal_ms: vec![0; self.timeline.segments[last].reveal_ms.len()].into(),
+            reveal_ms: self.timeline.segments[last].instant(),
         });
+        if !pending.is_empty() {
+            out.push(PlayerEffect::FireNow { cues: pending });
+        }
+        self.skipped_to_end = true;
         self.enter_done(now, &mut out);
         out
+    }
+
+    /// The box is full at each of `breaks` (units of the line, measured on
+    /// the page now on screen): turn a page there. Breaks outside the page
+    /// being typed are ignored. Returns whether the current segment's
+    /// schedule was replaced (its pending cues must be cancelled first).
+    pub fn paginate(
+        &mut self,
+        breaks: &[u32],
+        auto_ms: Option<u32>,
+        now: u64,
+    ) -> (bool, Vec<PlayerEffect>) {
+        let mut out = Vec::new();
+        let segments = &self.timeline.segments;
+        // Breaks may land from the start of the segment on (from the page's
+        // start for a line already done).
+        let (seg, from) = match self.state {
+            State::Revealing { seg, .. } | State::Gated { seg } => (seg, segments[seg].units.start),
+            State::Done { .. } if !self.skipped_to_end => {
+                let seg = self.timeline.last_segment();
+                (seg, segments[seg].visible_from)
+            }
+            _ => return (false, out),
+        };
+        let page = segments[seg].visible_from;
+        if self.paged.contains(&page) {
+            return (false, out);
+        }
+        let page_end = segments[seg..]
+            .iter()
+            .find(|s| s.visible_from != page)
+            .map_or(self.timeline.unit_count, |s| s.units.start);
+        let mut breaks: Vec<u32> = breaks
+            .iter()
+            .copied()
+            .filter(|b| *b > from && *b < page_end)
+            .collect();
+        breaks.sort_unstable();
+        breaks.dedup();
+        let tl = Arc::make_mut(&mut self.timeline);
+        let mut changed = false;
+        for b in &breaks {
+            changed |= tl.split_page(*b, auto_ms);
+        }
+        self.paged.extend(&breaks);
+        if !changed {
+            return (false, out);
+        }
+        match self.state {
+            State::Revealing {
+                seg,
+                origin,
+                skipped,
+            } => self.repage_current(seg, origin, skipped, now, out),
+            State::Gated { seg } => {
+                // A pause that became a page may now turn on its own.
+                self.gate(seg, now, &mut out);
+                (false, out)
+            }
+            State::Done { .. } => self.back_to_first_page(breaks[0], now, out),
+            _ => (false, out),
+        }
+    }
+
+    /// The segment being typed was cut short by a page break.
+    fn repage_current(
+        &mut self,
+        seg: usize,
+        origin: u64,
+        skipped: bool,
+        now: u64,
+        mut out: Vec<PlayerEffect>,
+    ) -> (bool, Vec<PlayerEffect>) {
+        let elapsed = now.saturating_sub(origin);
+        let epoch = self.bump();
+        let s = &self.timeline.segments[seg];
+        let cut = u64::from(s.duration_ms);
+        out.push(PlayerEffect::ShowSegment {
+            epoch,
+            seg,
+            origin_ms: origin,
+            reveal_ms: if skipped {
+                s.instant()
+            } else {
+                s.reveal_ms.clone()
+            },
+        });
+        if !skipped && elapsed < cut {
+            let cues: Vec<Cue> = s.cues_after(elapsed).cloned().collect();
+            if !cues.is_empty() {
+                out.push(PlayerEffect::ScheduleCues {
+                    epoch,
+                    origin_ms: origin,
+                    cues: cues.into(),
+                });
+            }
+            out.push(PlayerEffect::WakeAt {
+                epoch,
+                at_ms: origin + cut,
+                reason: WakeReason::SegmentEnd,
+            });
+            return (true, out);
+        }
+        // Typed (or skipped) past the cut already: the next page must not
+        // repeat what already went out.
+        let fired = elapsed.saturating_sub(cut);
+        let next = &mut Arc::make_mut(&mut self.timeline).segments[seg + 1];
+        let cues: Vec<Cue> = next
+            .cues
+            .iter()
+            .filter(|c| {
+                matches!(c.kind, CueKind::SpeakingStart | CueKind::SpeakingStop)
+                    || if skipped {
+                        !c.kind.survives_skip()
+                    } else {
+                        u64::from(c.at_ms) > fired
+                    }
+            })
+            .cloned()
+            .collect();
+        next.cues = cues.into();
+        self.end_segment(seg, now, &mut out);
+        (true, out)
+    }
+
+    /// The line was shown all at once before it was measured: go back to its
+    /// first page. Its markers all fired when the line started.
+    fn back_to_first_page(
+        &mut self,
+        first: u32,
+        now: u64,
+        mut out: Vec<PlayerEffect>,
+    ) -> (bool, Vec<PlayerEffect>) {
+        let Some(a) = self
+            .timeline
+            .segments
+            .iter()
+            .position(|s| s.units.end == first)
+        else {
+            return (false, out);
+        };
+        for s in Arc::make_mut(&mut self.timeline).segments[a + 1..].iter_mut() {
+            let typing: Vec<Cue> = s
+                .cues
+                .iter()
+                .filter(|c| !c.kind.survives_skip())
+                .cloned()
+                .collect();
+            s.cues = typing.into();
+        }
+        out.push(PlayerEffect::ShowSegment {
+            epoch: self.epoch,
+            seg: a,
+            origin_ms: now,
+            reveal_ms: self.timeline.segments[a].instant(),
+        });
+        self.gate(a, now, &mut out);
+        (true, out)
     }
 
     pub fn snapshot(&self, now: u64) -> RevealSnapshot {

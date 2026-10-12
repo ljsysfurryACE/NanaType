@@ -168,6 +168,36 @@ impl EntranceKind {
     }
 }
 
+/// What the dialogue box does with text taller than itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Overflow {
+    /// Lay the text out in full and cut it off at the box's bottom edge.
+    Clip,
+    /// Scroll up a line at a time as typing reaches the bottom edge.
+    #[default]
+    Scroll,
+    /// Stop when the box is full, then clear it and go on (an automatic
+    /// page break).
+    Page,
+}
+
+impl Overflow {
+    pub const ALL: [Self; 3] = [Self::Clip, Self::Scroll, Self::Page];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Clip => "clip",
+            Self::Scroll => "scroll",
+            Self::Page => "page",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|o| o.key() == key)
+    }
+}
+
 /// How each character arrives during the reveal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entrance {

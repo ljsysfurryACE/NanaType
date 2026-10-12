@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use nanatype_model::VtsAction;
+
 use crate::VtsHotkey;
 
 /// Something worth telling other tools.
@@ -28,6 +30,10 @@ pub enum BridgeEvent {
         amp: f32,
         ms: u32,
     },
+    /// A `[vts ...]` marker was reached.
+    Vts {
+        action: VtsAction,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,6 +52,8 @@ pub enum BridgeStatus {
     VtsNeedsToken,
     /// A new token was granted; persist it.
     VtsToken(String),
+    /// VTube Studio refused the stored token; forget it.
+    VtsTokenRejected,
     VtsHotkeys(Vec<VtsHotkey>),
     /// WebSocket clients currently connected.
     Clients(usize),

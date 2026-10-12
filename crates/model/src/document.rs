@@ -134,6 +134,60 @@ pub enum Marker {
     Portrait { variant: String },
     /// Shake the whole dialogue box.
     ScreenShake { amp: f32, ms: u32 },
+    /// A VTube Studio request.
+    Vts(VtsAction),
+}
+
+/// When VTube Studio expressions turned on by a line are turned off again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VtsReset {
+    /// Expressions stay on until something turns them off.
+    Off,
+    /// When the line leaves the box.
+    #[default]
+    LineEnd,
+    /// When the next line starts.
+    NextLine,
+}
+
+impl VtsReset {
+    pub const ALL: [Self; 3] = [Self::LineEnd, Self::NextLine, Self::Off];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::LineEnd => "line_end",
+            Self::NextLine => "next_line",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|r| r.key() == key)
+    }
+}
+
+/// What a `[vts ...]` marker asks VTube Studio to do.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VtsAction {
+    /// Press a hotkey of the current model, by name or id.
+    Hotkey { hotkey: String },
+    /// Turn an expression file (`Smile.exp3.json`) on or off.
+    Expression {
+        file: String,
+        active: bool,
+        /// Fade time in seconds; VTube Studio's default when unset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fade: Option<f32>,
+    },
+    /// Set a parameter to `value` and hold it for `ms` (`0`: set once).
+    Param {
+        name: String,
+        value: f32,
+        #[serde(default)]
+        ms: u32,
+    },
 }
 
 fn unit_gain() -> f32 {
@@ -541,6 +595,50 @@ impl Document {
                     paragraphs.push(Paragraph::new(inlines));
                     break 'outer;
                 }
+            }
+            paragraphs.push(Paragraph::new(inlines));
+        }
+        let mut doc = Document { paragraphs };
+        doc.normalize();
+        doc
+    }
+
+    /// Everything from unit `from` on: a page that starts mid-line. Leading
+    /// paragraphs left without units are dropped, so a page does not open on
+    /// a blank line; `suffix(n).unit_count() == unit_count() - n`.
+    pub fn suffix(&self, from: usize) -> Document {
+        if from == 0 {
+            return self.clone();
+        }
+        let mut skip = from;
+        let mut paragraphs: Vec<Paragraph> = Vec::new();
+        for paragraph in &self.paragraphs {
+            let mut inlines = Vec::new();
+            let mut units = 0;
+            for inline in &paragraph.inlines {
+                let mut inline = inline.clone();
+                match &mut inline {
+                    Inline::Text(run) | Inline::Ruby(RubyGroup { base: run, .. }) => {
+                        let cut = run
+                            .text
+                            .grapheme_indices(true)
+                            .nth(skip)
+                            .map_or(run.text.len(), |(i, _)| i);
+                        skip -= run.text.drain(..cut).as_str().graphemes(true).count();
+                        units += run.text.graphemes(true).count();
+                    }
+                    Inline::Atom(_) if skip > 0 => {
+                        skip -= 1;
+                        continue;
+                    }
+                    Inline::Atom(_) => units += 1,
+                    Inline::Marker(_) if skip > 0 => continue,
+                    Inline::Marker(_) => {}
+                }
+                inlines.push(inline);
+            }
+            if paragraphs.is_empty() && units == 0 {
+                continue;
             }
             paragraphs.push(Paragraph::new(inlines));
         }

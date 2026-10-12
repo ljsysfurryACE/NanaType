@@ -2854,6 +2854,7 @@ name = "nanatype-bridge"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "nanatype-model",
  "rosc",
  "serde",
  "serde_json",

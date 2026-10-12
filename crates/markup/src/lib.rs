@@ -38,6 +38,7 @@ pub const POINT_TAGS: &[&str] = &[
     "expr",
     "portrait",
     "screenshake",
+    "vts",
     "sticker",
     "emote",
     "img",

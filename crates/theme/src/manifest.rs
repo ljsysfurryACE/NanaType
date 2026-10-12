@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use nanatype_model::{EntranceKind, Rgba8};
+use nanatype_model::{EntranceKind, Overflow, Rgba8};
 use nanatype_playback::{PacingParams, PunctPauses, TypingSoundRule};
 use serde::{Deserialize, Serialize};
 
@@ -864,6 +864,11 @@ pub struct Dialogue {
     #[serde(rename = "continue")]
     pub continue_: ContinueSpec,
     pub reveal: RevealSpec,
+    /// Text taller than the box: clip, scroll along, or page.
+    pub overflow: Overflow,
+    /// In page mode, turn a full page on its own after this long; `None`
+    /// waits for the continue key like `[page]`.
+    pub overflow_auto_ms: Option<u32>,
     /// Background drawn behind the box inside the region (rarely used).
     pub background: Option<String>,
     pub tail: Option<TailSpec>,
@@ -882,6 +887,8 @@ impl Default for Dialogue {
             portrait: PortraitSpec::default(),
             continue_: ContinueSpec::default(),
             reveal: RevealSpec::default(),
+            overflow: Overflow::default(),
+            overflow_auto_ms: None,
             background: None,
             tail: None,
             decor: Vec::new(),

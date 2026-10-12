@@ -290,3 +290,61 @@ proptest! {
         let _ = serialize(&parsed.doc);
     }
 }
+
+#[test]
+fn vts_tags_parse_and_print_back() {
+    let markup = "a[vts hotkey=\"Wave Hand\"]b[vts expr=Smile.exp3.json][vts expr=Smile.exp3.json active=off fade=0.3][vts param=MouthSmile value=0.8 ms=1000][vts param=EyeOpen value=0]";
+    let parsed = parse(markup);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let markers: Vec<_> = parsed
+        .doc
+        .markers()
+        .into_iter()
+        .map(|(_, m)| m.clone())
+        .collect();
+    assert_eq!(
+        markers,
+        vec![
+            Marker::Vts(VtsAction::Hotkey {
+                hotkey: "Wave Hand".into()
+            }),
+            Marker::Vts(VtsAction::Expression {
+                file: "Smile.exp3.json".into(),
+                active: true,
+                fade: None
+            }),
+            Marker::Vts(VtsAction::Expression {
+                file: "Smile.exp3.json".into(),
+                active: false,
+                fade: Some(0.3)
+            }),
+            Marker::Vts(VtsAction::Param {
+                name: "MouthSmile".into(),
+                value: 0.8,
+                ms: 1000
+            }),
+            Marker::Vts(VtsAction::Param {
+                name: "EyeOpen".into(),
+                value: 0.0,
+                ms: 0
+            }),
+        ]
+    );
+    assert_eq!(serialize(&parsed.doc), markup);
+}
+
+#[test]
+fn malformed_vts_tags_are_reported() {
+    for bad in [
+        "[vts]",
+        "[vts=x]",
+        "[vts hotkey=]",
+        "[vts expr=a active=maybe]",
+        "[vts param=p]",
+        "[vts param=p value=x]",
+    ] {
+        let parsed = parse(bad);
+        assert!(!parsed.diagnostics.is_empty(), "{bad}");
+        assert!(parsed.doc.markers().is_empty(), "{bad}");
+    }
+}

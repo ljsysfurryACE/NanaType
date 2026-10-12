@@ -1,5 +1,6 @@
 use std::net::{ToSocketAddrs, UdpSocket};
 
+use nanatype_model::VtsAction;
 use rosc::{OscMessage, OscPacket, OscType, encoder};
 
 use crate::{BridgeEvent, BridgeStatus, Sink, StatusFn};
@@ -40,6 +41,24 @@ pub(crate) fn message(prefix: &str, event: &BridgeEvent) -> Option<OscMessage> {
             "shake",
             vec![OscType::Float(*amp), OscType::Int(*ms as i32)],
         ),
+        BridgeEvent::Vts { action } => match action {
+            VtsAction::Hotkey { hotkey } => ("vts/hotkey", vec![OscType::String(hotkey.clone())]),
+            VtsAction::Expression { file, active, .. } => (
+                "vts/expression",
+                vec![
+                    OscType::String(file.clone()),
+                    OscType::Int(i32::from(*active)),
+                ],
+            ),
+            VtsAction::Param { name, value, ms } => (
+                "vts/param",
+                vec![
+                    OscType::String(name.clone()),
+                    OscType::Float(*value),
+                    OscType::Int(*ms as i32),
+                ],
+            ),
+        },
     };
     Some(OscMessage {
         addr: format!("{prefix}/{path}"),

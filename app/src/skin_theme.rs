@@ -41,6 +41,9 @@ pub fn with_overrides(skin: &Skin, o: &SkinOverrides) -> Skin {
     if let Some(region) = o.region {
         s.dialogue.region = region;
     }
+    if let Some(overflow) = o.overflow {
+        s.dialogue.overflow = overflow;
+    }
     s
 }
 

@@ -10,7 +10,7 @@ use nana_ui_core::{
     OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, TransformOrigin,
 };
 use nanatype_i18n::Locale;
-use nanatype_model::{AfterLine, EntranceKind};
+use nanatype_model::{AfterLine, EntranceKind, Overflow, VtsReset};
 use nanatype_playback::QueuePolicy;
 use nanatype_settings::{
     CaptureBackground, ChromeMode, HideLatest, HistorySync, InputMode, InputPresence, Lock,
@@ -752,6 +752,25 @@ fn skins(ui: Ui) -> AnyView {
                             "px",
                             |s| f64::from(s.skin.overrides.text_size.unwrap_or(0.0)),
                             |s, v| s.skin.overrides.text_size = (v >= 12.0).then_some(v as f32),
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "skins-override-overflow",
+                        Some("skins-override-overflow-hint"),
+                        select(
+                            ui,
+                            select_keys(
+                                ui,
+                                &[
+                                    ("skin", "skins-override-overflow-skin"),
+                                    ("clip", "skins-override-overflow-clip"),
+                                    ("scroll", "skins-override-overflow-scroll"),
+                                    ("page", "skins-override-overflow-page"),
+                                ],
+                            ),
+                            |s| s.skin.overrides.overflow.map_or("skin", |o| o.key()).into(),
+                            |s, v| s.skin.overrides.overflow = Overflow::from_key(v),
                         ),
                     ),
                     row(
@@ -1537,6 +1556,48 @@ fn status_text(ui: Ui, get: fn(&crate::ui::Status) -> String) -> AnyView {
         .into_any()
 }
 
+/// Expression names mapped to hotkeys, each removable.
+fn mapped(ui: Ui) -> AnyView {
+    dynamic(
+        move || ui.settings.with(|s| s.integrations.vts.expressions.clone()),
+        move |map| {
+            if map.is_empty() {
+                return widget(Stack::column(0.0)).into_any();
+            }
+            let hotkeys = ui.status.with_untracked(|s| s.vts_hotkeys.clone());
+            let mut rows = vec![
+                widget(Stack::column(0.0).padding_xy(16.0, 10.0))
+                    .children(heading(ui, "int-vts-map"))
+                    .into_any(),
+            ];
+            rows.extend(map.iter().map(|(expr, id)| {
+                let expr = expr.clone();
+                let hotkey = hotkeys
+                    .iter()
+                    .find(|(h, _)| h == id)
+                    .map_or(id.clone(), |(_, name)| name.clone());
+                row_text(
+                    format!("[expr={expr}]"),
+                    Some(ui.tr("int-vts-mapped-to", &[("hotkey", hotkey.into())])),
+                    widget(
+                        IconButton::new(ti::TRASH, ui.now_t("int-vts-unmap"))
+                            .size(ControlSize::Small),
+                    )
+                    .on_cx(move |_, _: &Activate, cx| {
+                        let e = expr.clone();
+                        cx.dispatch_program_all(edit(move |s| {
+                            s.integrations.vts.expressions.remove(&e);
+                        }))
+                    })
+                    .into_any(),
+                )
+            }));
+            widget(Stack::column(0.0)).children(rows).into_any()
+        },
+    )
+    .into_any()
+}
+
 fn integrations(ui: Ui) -> AnyView {
     let mapping = dynamic(
         move || ui.status.with(|s| s.vts_hotkeys.clone()),
@@ -1551,7 +1612,7 @@ fn integrations(ui: Ui) -> AnyView {
                 .map(|(id, name)| {
                     let id = id.clone();
                     let name = name.clone();
-                    let expr = name.to_lowercase().replace(' ', "_");
+                    let expr = nanatype_bridge::mapping_key(&name);
                     let tag = format!("[expr={expr}]");
                     row_text(
                         name.clone(),
@@ -1626,6 +1687,62 @@ fn integrations(ui: Ui) -> AnyView {
                             .into_any(),
                     ),
                     mapping.into_any(),
+                    mapped(ui),
+                    row(
+                        ui,
+                        "int-vts-lipsync",
+                        Some("int-vts-lipsync-hint"),
+                        switch(
+                            ui,
+                            |s| s.integrations.vts.lip_sync,
+                            |s, v| s.integrations.vts.lip_sync = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "int-vts-mouth-param",
+                        Some("int-vts-mouth-param-hint"),
+                        text(
+                            ui,
+                            "MouthOpen".into(),
+                            180.0,
+                            |s| s.integrations.vts.mouth_param.clone(),
+                            |s, v| s.integrations.vts.mouth_param = v,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "int-vts-mouth-amp",
+                        None,
+                        slider(
+                            ui,
+                            (0.1, 1.0, 0.05),
+                            "",
+                            |s| f64::from(s.integrations.vts.mouth_amp),
+                            |s, v| s.integrations.vts.mouth_amp = v as f32,
+                        ),
+                    ),
+                    row(
+                        ui,
+                        "int-vts-reset",
+                        Some("int-vts-reset-hint"),
+                        select(
+                            ui,
+                            select_keys(
+                                ui,
+                                &[
+                                    ("line_end", "int-vts-reset-line-end"),
+                                    ("next_line", "int-vts-reset-next-line"),
+                                    ("off", "int-vts-reset-off"),
+                                ],
+                            ),
+                            |s| s.integrations.vts.reset_expressions.key().into(),
+                            |s, v| {
+                                s.integrations.vts.reset_expressions =
+                                    VtsReset::from_key(v).unwrap_or_default()
+                            },
+                        ),
+                    ),
                 ],
             ),
             section(

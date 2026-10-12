@@ -1,4 +1,4 @@
-use nanatype_model::{AfterLine, Document, Effects, Inline, LineMeta, Marker, TextRun};
+use nanatype_model::{AfterLine, Document, Effects, Inline, LineMeta, Marker, TextRun, VtsAction};
 
 use crate::value::{
     fmt_continuous, fmt_entrance, fmt_font, fmt_num, fmt_pace, fmt_shadow, fmt_size, fmt_stroke,
@@ -213,6 +213,26 @@ fn marker_tag(marker: &Marker) -> String {
         },
         Marker::Portrait { variant } => format!("portrait={}", quote(variant)),
         Marker::ScreenShake { amp, ms } => format!("screenshake={},{ms}", fmt_num(*amp)),
+        Marker::Vts(action) => match action {
+            VtsAction::Hotkey { hotkey } => format!("vts hotkey={}", quote(hotkey)),
+            VtsAction::Expression { file, active, fade } => {
+                let mut out = format!("vts expr={}", quote(file));
+                if !active {
+                    out.push_str(" active=off");
+                }
+                if let Some(f) = fade {
+                    out.push_str(&format!(" fade={}", fmt_num(*f)));
+                }
+                out
+            }
+            VtsAction::Param { name, value, ms } => {
+                let mut out = format!("vts param={} value={}", quote(name), fmt_num(*value));
+                if *ms > 0 {
+                    out.push_str(&format!(" ms={ms}"));
+                }
+                out
+            }
+        },
     }
 }
 

@@ -19,13 +19,14 @@ use nana_ui_core::{
     JustifySpec, LayoutStyle, LengthSpec, OverflowSpec, PointerEventsSpec, PositionSpec,
 };
 use nanatype_core::Reveal;
-use nanatype_model::{Document, Entrance, EntranceKind, Inline, Rgba8};
+use nanatype_model::{Document, Entrance, EntranceKind, Inline, Overflow, Rgba8};
 use nanatype_theme::{
     Anchor, ColorRef, ColorRole, ContinueMotion, DecorLayer, DecorSpec, DecorWhen, Edge,
     EffectDefaults, Side, Skin, TextAlign, TextShadowSpec as SkinShadow,
     TextStrokeSpec as SkinStroke, anchor_frac, continue_motion, place, sprite_frame, tail_geometry,
 };
 
+use super::overflow;
 use super::rich::{Env, Look, RevealPlan, effect_table, to_rich};
 use super::surface::{self, Surface, affine, calc, len};
 use super::{Ui, c, restyle};
@@ -142,6 +143,18 @@ pub enum Timing {
 
 /// `doc` as one rich text node in `window`, with its reveal and effects.
 pub fn document(ui: Ui, doc: &Document, base: &Base, timing: Timing) -> AnyView {
+    document_on(ui, doc, base, timing, None)
+}
+
+/// [`document`] for the typewriter's page `follow`: the node is recorded in
+/// `ui.text_node` and its reveal times published for the host to follow.
+fn document_on(
+    ui: Ui,
+    doc: &Document,
+    base: &Base,
+    timing: Timing,
+    follow: Option<overflow::PageKey>,
+) -> AnyView {
     let urls = ui.asset_urls.get_untracked();
     let look = base.look();
     let env = Env {
@@ -155,6 +168,14 @@ pub fn document(ui: Ui, doc: &Document, base: &Base, timing: Timing) -> AnyView 
         Timing::Static => None,
         Timing::Reveal(r) => Some(RevealPlan::new(&rich, r, base.entrance)),
     };
+    if let (Some(key), Some(plan)) = (follow, &reveal) {
+        overflow::publish(overflow::PageText {
+            key,
+            text_len: rich.text().len(),
+            text_trimmed: rich.text().trim_end().len(),
+            glyphs: overflow::glyphs(rich.text(), &plan.at_ms),
+        });
+    }
     let mut view = RichTextView::new(rich)
         .decorative()
         .style(base.node_style())
@@ -171,7 +192,10 @@ pub fn document(ui: Ui, doc: &Document, base: &Base, timing: Timing) -> AnyView 
         });
         view = view.presentation(effect_table(&base.effects, base.reduced_motion), schedule);
     }
-    widget(view).into_any()
+    match follow {
+        Some(_) => widget(view).node_ref(ui.text_node).into_any(),
+        None => widget(view).into_any(),
+    }
 }
 
 /// What a dialogue box shows.
@@ -359,16 +383,33 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         l.padding_right = Some(LengthSpec::Px(padding[2]));
         l.padding_bottom = Some(LengthSpec::Px(padding[3]));
     }))
-    .children(
-        widget(Stack::fill_column(0.0).with_layout(|l| {
-            l.overflow_y = OverflowSpec::Hidden;
-        }))
-        .children(content),
-    );
+    .children(text_port(ui, source, content));
 
     outer.children(frame.children((
         below, tail_below, the_box, tail_above, above, portrait, plate, cont,
     )))
+}
+
+/// The text area: clips at the box's padding edge. On the typewriter the
+/// text sits in a column the host scrolls up as typing passes the bottom.
+fn text_port(ui: Ui, source: Source, content: AnyView) -> AnyView {
+    let port = widget(Stack::fill_column(0.0).with_layout(|l| {
+        l.overflow_y = OverflowSpec::Hidden;
+    }));
+    if source != Source::Display {
+        return port.children(content).into_any();
+    }
+    let scroller = widget(Stack::column(0.0).width(LengthSpec::Fill).with_layout(|l| {
+        l.flex_shrink = Some(0.0);
+    }))
+    .bind(move |s: &mut Stack| {
+        let y = ui.text_scroll.get();
+        restyle(s, |l| {
+            l.transform = (y != 0.0).then(|| affine(0.0, -y, 0.0, 1.0));
+        });
+    })
+    .children(content);
+    port.node_ref(ui.text_port).children(scroller).into_any()
 }
 
 /// A dashed frame and a faint fill while a window is in layout mode, so it
@@ -398,7 +439,11 @@ fn content(ui: Ui) -> impl IntoView {
                 return widget(Stack::column(0.0)).into_any();
             }
             let base = Base::dialogue(&skin, view.entrance, reduced);
-            document(ui, &view.doc, &base, Timing::Reveal(view.reveal.clone()))
+            let (doc, reveal) = view.page();
+            // Clipped text has nothing to follow.
+            let follow =
+                (skin.dialogue.overflow != Overflow::Clip).then(|| overflow::PageKey::of(&view));
+            document_on(ui, &doc, &base, Timing::Reveal(reveal), follow)
         },
     )
 }

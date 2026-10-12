@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use nanatype_model::{AfterLine, EntranceKind, Rgba8};
+use nanatype_model::{AfterLine, EntranceKind, Overflow, Rgba8, VtsReset};
 use nanatype_playback::QueuePolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -234,6 +234,7 @@ pub struct SkinOverrides {
     pub accent: Option<Rgba8>,
     pub text_size: Option<f32>,
     pub region: Option<[f32; 2]>,
+    pub overflow: Option<Overflow>,
 }
 
 impl SkinOverrides {
@@ -464,6 +465,14 @@ pub struct VtsSettings {
     pub token: Option<String>,
     /// Expression name → VTube Studio hotkey id.
     pub expressions: BTreeMap<String, String>,
+    /// Move the model's mouth while the speaker is talking.
+    pub lip_sync: bool,
+    /// The parameter lip sync drives.
+    pub mouth_param: String,
+    /// How far the mouth opens (the parameter's peak value).
+    pub mouth_amp: f32,
+    /// When expressions turned on by a line are turned off again.
+    pub reset_expressions: VtsReset,
 }
 
 impl Default for VtsSettings {
@@ -473,6 +482,10 @@ impl Default for VtsSettings {
             port: 8001,
             token: None,
             expressions: BTreeMap::new(),
+            lip_sync: true,
+            mouth_param: "MouthOpen".into(),
+            mouth_amp: 1.0,
+            reset_expressions: VtsReset::LineEnd,
         }
     }
 }

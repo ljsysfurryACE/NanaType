@@ -242,7 +242,7 @@ pub fn marker_kind(m: &Marker) -> u16 {
         // green, expressions and portraits purple, screen shake pink.
         Marker::Wait { .. } | Marker::Pause { .. } | Marker::Page => 0,
         Marker::Sound { .. } => 3,
-        Marker::Expression { .. } | Marker::Portrait { .. } => 2,
+        Marker::Expression { .. } | Marker::Portrait { .. } | Marker::Vts(_) => 2,
         Marker::ScreenShake { .. } => 4,
     }
 }
@@ -473,6 +473,19 @@ pub fn from_rich(rich: &RichText, look: &Look) -> Document {
 
 // ---- presentation ---------------------------------------------------------
 
+/// The byte offset of each grapheme of a node's text and the unit it shows;
+/// the breaks between paragraphs are not units.
+pub fn unit_graphemes(text: &str) -> impl Iterator<Item = (usize, Option<u32>)> + '_ {
+    let mut unit = 0;
+    text.grapheme_indices(true).map(move |(byte, g)| {
+        let this = (g != "\n").then(|| {
+            unit += 1;
+            unit - 1
+        });
+        (byte, this)
+    })
+}
+
 /// Reveal times per grapheme of a node's text, on the session clock:
 /// `Some(0)` already shown, `None` hidden.
 #[derive(Debug, Clone)]
@@ -485,19 +498,13 @@ impl RevealPlan {
     /// Map a [`Reveal`] over units onto the graphemes of `rich` (which was
     /// built from the same document for a display).
     pub fn new(rich: &RichText, reveal: &Reveal, intro: Entrance) -> Self {
-        let mut unit = 0u32;
         let mut last = Some(0);
-        let at_ms = rich
-            .text()
-            .graphemes(true)
-            .map(|g| {
-                if g == "\n" {
-                    return last;
+        let at_ms = unit_graphemes(rich.text())
+            .map(|(_, unit)| {
+                if let Some(unit) = unit {
+                    last = reveal.unit_at(unit);
                 }
-                let at = reveal.unit_at(unit);
-                unit += 1;
-                last = at;
-                at
+                last
             })
             .collect();
         Self { at_ms, intro }

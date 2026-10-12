@@ -321,3 +321,159 @@ fn stale_wakes_from_an_older_line_are_ignored() {
     }
     assert_eq!(core.phase(), Some(Phase::Revealing));
 }
+
+#[test]
+fn a_page_break_starts_the_next_page_at_the_top() {
+    let mut core = core_with(|_| {});
+    type_and_send(&mut core, "abc[page]\ndef", 0);
+    core.handle(Cmd::Continue, 10);
+    assert_eq!(core.phase(), Some(Phase::Gated));
+    core.handle(Cmd::Continue, 1_000);
+    let (doc, reveal) = core.display().page();
+    assert_eq!(doc.plain_text(), "def");
+    assert_eq!(reveal.visible_from, 0);
+    assert_eq!(reveal.unit_at(0), core.display().reveal.unit_at(3));
+    assert_eq!(reveal.unit_at(2), core.display().reveal.unit_at(5));
+}
+
+#[test]
+fn rebasing_a_reveal_shifts_every_unit_by_the_page_start() {
+    let reveal = Reveal {
+        visible_from: 3,
+        shown: 4,
+        segment: Some(SegmentReveal {
+            origin_ms: 100,
+            start: 2,
+            reveal_ms: vec![0, 10, 20, 30, 40].into(),
+        }),
+        hidden_from: 7,
+    };
+    let page = reveal.rebased();
+    for u in 3..9 {
+        assert_eq!(page.unit_at(u - 3), reveal.unit_at(u), "unit {u}");
+    }
+    let full = Reveal::full(5);
+    assert_eq!(full.rebased(), full);
+}
+
+#[test]
+fn skip_fires_the_expressions_it_jumps_over() {
+    let mut core = core_with(|_| {});
+    type_and_send(&mut core, "abc[expr=smile]def[pause]gh[expr=sad]i", 0);
+    let fx = core.handle(Cmd::Skip, 5);
+    let names: Vec<_> = fx
+        .fire_now
+        .iter()
+        .filter_map(|c| match &c.kind {
+            CueKind::Expression { name, .. } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(names, ["smile", "sad"]);
+}
+
+#[test]
+fn cancelled_lines_stop_speaking() {
+    let mut core = core_with(|_| {});
+    type_and_send(&mut core, "abcdef", 0);
+    let fx = core.handle(Cmd::CueFired(CueKind::SpeakingStart), 1);
+    assert!(fx.events.contains(&Event::Speaking(true)));
+    let again = core.handle(Cmd::CueFired(CueKind::SpeakingStart), 2);
+    assert!(again.events.is_empty(), "no repeat while already speaking");
+    let fx = core.handle(Cmd::Skip, 3);
+    assert!(fx.events.contains(&Event::Speaking(false)));
+    let fx = core.handle(Cmd::ClearDisplay, 4);
+    assert!(
+        !fx.events.contains(&Event::Speaking(false)),
+        "already stopped"
+    );
+}
+
+#[test]
+fn typed_line_headers_reach_the_sent_line() {
+    let mut core = core_with(|_| {});
+    let parsed = parse("[@after=clear delay=100]hi");
+    core.handle(Cmd::DraftMeta(parsed.meta), 0);
+    core.handle(Cmd::DraftChanged(parsed.doc), 0);
+    let fx = core.handle(Cmd::Send, 1);
+    let line = fx
+        .events
+        .iter()
+        .find_map(|e| match e {
+            Event::LineStarted(l) => Some(l.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(line.meta, parsed.meta);
+    assert_ne!(line.meta, Default::default());
+    // Used once.
+    let fx = type_and_send(&mut core, "again", 2);
+    assert!(fx.events.iter().any(|e| matches!(
+        e,
+        Event::LineStarted(l) if l.meta == Default::default()
+    )));
+}
+
+fn paged_core(overflow: nanatype_model::Overflow) -> Core {
+    let mut s = Settings::default();
+    s.playback.punctuation_pauses = false;
+    let mut skin = (*skin()).clone();
+    skin.dialogue.overflow = overflow;
+    skin.dialogue.overflow_auto_ms = None;
+    Core::new(s, Arc::new(skin))
+}
+
+fn started_line(fx: &Effects) -> nanatype_model::LineId {
+    fx.events
+        .iter()
+        .find_map(|e| match e {
+            Event::LineStarted(l) => Some(l.id),
+            _ => None,
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_full_box_turns_the_page_where_the_host_measured_it() {
+    let mut core = paged_core(nanatype_model::Overflow::Page);
+    let fx = type_and_send(&mut core, "abcdefgh", 0);
+    let line = started_line(&fx);
+    let other = core.handle(
+        Cmd::PageBreaks {
+            line: nanatype_model::LineId(line.0 + 100),
+            breaks: vec![4],
+        },
+        10,
+    );
+    assert!(other.wakes.is_empty(), "another line's breaks are ignored");
+    let fx2 = core.handle(
+        Cmd::PageBreaks {
+            line,
+            breaks: vec![4],
+        },
+        10,
+    );
+    assert_eq!(fx2.cancel_epochs.len(), fx.cues.len().min(1));
+    assert_eq!(core.display().reveal.hidden_from, 4);
+    run_until(&mut core, fx2.wakes, 10_000);
+    assert_eq!(core.phase(), Some(Phase::Gated));
+    assert!(core.display().continue_indicator);
+    core.handle(Cmd::Continue, 20_000);
+    assert_eq!(core.display().reveal.visible_from, 4);
+    assert_eq!(core.display().page().0.plain_text(), "efgh");
+}
+
+#[test]
+fn page_breaks_need_the_page_overflow() {
+    let mut core = paged_core(nanatype_model::Overflow::Scroll);
+    let fx = type_and_send(&mut core, "abcdefgh", 0);
+    let line = started_line(&fx);
+    core.handle(
+        Cmd::PageBreaks {
+            line,
+            breaks: vec![4],
+        },
+        10,
+    );
+    assert_eq!(core.display().reveal.hidden_from, 8);
+}

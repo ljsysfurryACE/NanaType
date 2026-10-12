@@ -1,7 +1,8 @@
 //! Expression and speaking events for other streaming tools.
 //!
-//! * **VTube Studio**: a plugin client on the public API that triggers model
-//!   hotkeys when an `[expr=...]` marker is reached.
+//! * **VTube Studio**: a plugin client on the public API that turns on
+//!   expressions and presses hotkeys as `[expr=...]` and `[vts ...]` markers
+//!   are reached, and moves the model's mouth while the speaker talks.
 //! * **OSC**: UDP messages under a prefix (`/nanatype/expression "smile"`),
 //!   for VNyan, Warudo, VSeeFace and anything else that speaks OSC.
 //! * **WebSocket broadcast**: a localhost server that pushes JSON events to
@@ -16,7 +17,7 @@ mod ws;
 
 pub use events::{BridgeEvent, BridgeStatus, Sink};
 pub use osc::OscConfig;
-pub use vts::{VtsConfig, VtsHotkey};
+pub use vts::{LipSync, VtsConfig, VtsHotkey, mapping_key};
 pub use ws::WsConfig;
 
 use std::sync::Arc;
@@ -41,10 +42,10 @@ impl BridgeHandle {
         }
     }
 
-    /// Start, restart or stop VTube Studio. A changed config reconnects.
+    /// Start, update or stop VTube Studio. Only a new port reconnects.
     pub fn set_vts(&mut self, config: Option<VtsConfig>) {
-        match (&self.vts, config) {
-            (Some(c), Some(cfg)) if c.config() == &cfg => {}
+        match (&mut self.vts, config) {
+            (Some(c), Some(cfg)) if c.port() == cfg.port => c.update(cfg),
             (_, Some(cfg)) => self.vts = Some(vts::VtsClient::start(cfg, self.status.clone())),
             (_, None) => {
                 if self.vts.take().is_some() {

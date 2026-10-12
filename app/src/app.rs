@@ -11,7 +11,7 @@ use nana_ui_core::{FileDialogKind, FileDialogRequest, FileFilter};
 use nana_ui_platform::host::WindowCommand;
 use nanatype_audio::{AudioEngine, AudioHandle, AudioStatus, Bus, Scheduled};
 use nanatype_bridge::{
-    BridgeEvent, BridgeHandle, BridgeStatus, OscConfig, Sink, VtsConfig, WsConfig,
+    BridgeEvent, BridgeHandle, BridgeStatus, LipSync, OscConfig, Sink, VtsConfig, WsConfig,
 };
 use nanatype_core::{Cmd, Core, Effects, Event, UiSound};
 use nanatype_i18n::Locale;
@@ -497,6 +497,11 @@ impl App {
             port: i.vts.port,
             token: i.vts.token.clone(),
             expressions: i.vts.expressions.clone(),
+            lip_sync: (i.vts.lip_sync && !i.vts.mouth_param.trim().is_empty()).then(|| LipSync {
+                param: i.vts.mouth_param.trim().to_owned(),
+                amp: i.vts.mouth_amp,
+            }),
+            reset: i.vts.reset_expressions,
         }));
         self.bridge.set_osc(i.osc.enabled.then(|| OscConfig {
             host: i.osc.host.clone(),
@@ -817,6 +822,9 @@ impl App {
             Event::Portrait(v) => BridgeEvent::Portrait { variant: v.clone() },
             Event::Speaking(s) => BridgeEvent::Speaking { speaking: *s },
             Event::Shake { amp, ms } => BridgeEvent::Shake { amp: *amp, ms: *ms },
+            Event::Vts(action) => BridgeEvent::Vts {
+                action: action.clone(),
+            },
             Event::LineRevealed(_) | Event::Queued { .. } => return,
         };
         self.bridge.emit(out);
@@ -868,6 +876,7 @@ impl App {
         let doc = parsed.doc;
         self.ui.editor_value.set(self.editor_rich(&doc));
         self.ui.draft.set(Arc::new(doc.clone()));
+        self.run(Cmd::DraftMeta(parsed.meta));
         self.run(Cmd::DraftChanged(doc));
     }
 
@@ -1309,7 +1318,11 @@ impl App {
                 }
             }
             Msg::PlaySample => {
-                let line = self.ui.now_t("output-sample-line");
+                // Development aid: `NANATYPE_DEMO_MARKUP` plays that line instead.
+                let line = std::env::var("NANATYPE_DEMO_MARKUP")
+                    .ok()
+                    .filter(|_| cfg!(debug_assertions))
+                    .unwrap_or_else(|| self.ui.now_t("output-sample-line"));
                 self.run(Cmd::SendMarkup(line));
             }
             Msg::VtsAuthorize => {
@@ -1481,6 +1494,11 @@ impl App {
         let t = |k: &str| self.ui.now_t(k);
         match status {
             BridgeStatus::VtsToken(token) => self.edit(|s| s.integrations.vts.token = Some(token)),
+            BridgeStatus::VtsTokenRejected => {
+                let v = t("int-status-needs-token");
+                self.edit(|s| s.integrations.vts.token = None);
+                self.edit_status(|s| s.vts = v);
+            }
             BridgeStatus::VtsHotkeys(keys) => {
                 let list = keys.into_iter().map(|k| (k.id, k.name)).collect();
                 self.edit_status(|s| s.vts_hotkeys = list);
