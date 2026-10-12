@@ -535,3 +535,13 @@ int-vts-authorized = 已授权
 int-vts-map-empty = 连接并授权后即可列出你的 VTS 热键
 skins-more = 更多操作
 ## end wave3-settings
+## wave4-onboarding
+onboard-step = 第 { $step } 步，共 { $total } 步
+onboard-skin-hint = 为对话框挑一个外观，下方实时预览。更多调整在「皮肤」页。
+onboard-mode-body = 选择台词怎样进入展示框，之后随时可在输入框里切换。
+onboard-obs-hint = 通过 Spout2 把展示框送进直播画面
+onboard-reopen = 之后可以在「关于」页重新打开这份引导。
+about-setup-guide = 打开新手引导
+playback-reduced-system-on = 系统设置：开
+playback-reduced-system-off = 系统设置：关
+## end wave4-onboarding

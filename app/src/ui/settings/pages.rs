@@ -72,6 +72,8 @@ fn primary(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView
 }
 
 /// The view's one call to action: a solid accent button.
+// Unused since the guide's Next took a press of its own; kept for pages.
+#[allow(dead_code)]
 fn cta(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView {
     widget(crate::skin_theme::cta(
         Button::new(ui.now_t(key))
@@ -82,13 +84,39 @@ fn cta(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView {
     .into_any()
 }
 
-fn general(ui: Ui) -> AnyView {
+/// "Follow system" and every language by its own name.
+fn language_options(ui: Ui) -> Vec<(String, String)> {
     let mut langs = vec![("system".to_owned(), ui.now_t("general-language-system"))];
     langs.extend(
         Locale::ALL
             .iter()
             .map(|l| (l.tag().to_owned(), l.native_name().to_owned())),
     );
+    langs
+}
+
+/// The language select, bound to the setting.
+fn language_select(ui: Ui) -> AnyView {
+    select(
+        ui,
+        language_options(ui),
+        |s| s.general.locale.clone().unwrap_or_else(|| "system".into()),
+        |s, v| s.general.locale = (v != "system").then(|| v.to_owned()),
+    )
+}
+
+/// The speaker-name field, bound to the setting.
+fn speaker_field(ui: Ui) -> AnyView {
+    text(
+        ui,
+        String::new(),
+        220.0,
+        |s| s.general.speaker_name.clone(),
+        |s, v| s.general.speaker_name = v,
+    )
+}
+
+fn general(ui: Ui) -> AnyView {
     let avatar_row = {
         let has = ui.settings.get_untracked().general.avatar.is_some();
         widget(Stack::row(8.0))
@@ -104,36 +132,20 @@ fn general(ui: Ui) -> AnyView {
             ))
             .into_any()
     };
-    let welcome = (!ui.settings.get_untracked().general.onboarding_done).then(|| welcome(ui));
+    let guide = (!ui.settings.get_untracked().general.onboarding_done).then(|| onboarding(ui));
     widget(Stack::column(0.0))
         .children((
-            welcome,
+            guide,
             section(
                 ui,
                 "",
                 vec![
-                    row(
-                        ui,
-                        "general-language",
-                        None,
-                        select(
-                            ui,
-                            langs,
-                            |s| s.general.locale.clone().unwrap_or_else(|| "system".into()),
-                            |s, v| s.general.locale = (v != "system").then(|| v.to_owned()),
-                        ),
-                    ),
+                    row(ui, "general-language", None, language_select(ui)),
                     row(
                         ui,
                         "general-speaker",
                         Some("general-speaker-hint"),
-                        text(
-                            ui,
-                            String::new(),
-                            220.0,
-                            |s| s.general.speaker_name.clone(),
-                            |s, v| s.general.speaker_name = v,
-                        ),
+                        speaker_field(ui),
                     ),
                     row(ui, "general-avatar", None, avatar_row),
                 ],
@@ -269,41 +281,86 @@ fn general(ui: Ui) -> AnyView {
         .into_any()
 }
 
-/// The first-run card: a surface card marked by a 3px accent bar, the two
-/// hotkeys as keycaps, and a way to dismiss it.
-fn welcome(ui: Ui) -> AnyView {
-    let done = || edit(|s| s.general.onboarding_done = true);
-    // The sentence around the keycaps, in the locale's own word order.
-    let hotkeys_line = {
-        let s = ui.settings.get_untracked();
-        let chord = |h: Option<&nanatype_settings::Hotkey>| match h {
-            Some(h) => crate::ui::keycap::chord(&h.label(META_LABEL)),
-            None => crate::ui::keycap::keycap("—"),
-        };
-        let text = I18N.tr_in(
-            ui.locale.get_untracked(),
-            "onboard-hotkeys-body",
-            &[("summon", "\u{1}".into()), ("continue", "\u{2}".into())],
-        );
-        let mut parts: Vec<AnyView> = Vec::new();
-        let mut rest = text.as_str();
-        while let Some(at) = rest.find(['\u{1}', '\u{2}']) {
-            let (before, after) = rest.split_at(at);
-            if !before.trim().is_empty() {
-                parts.push(hint_13(before.trim().to_owned()));
-            }
-            parts.push(if after.starts_with('\u{1}') {
-                chord(s.hotkeys.summon.as_ref())
-            } else {
-                chord(s.hotkeys.continue_.as_ref())
-            });
-            rest = &after[1..];
-        }
-        if !rest.trim().is_empty() {
-            parts.push(hint_13(rest.trim().to_owned()));
-        }
-        widget(Stack::row(6.0).align(AlignSpec::Center).wrap(true)).children(parts)
+/// How many steps the first-run guide has.
+const ONBOARD_STEPS: u8 = 4;
+
+/// The first-run guide: one card marked by a 3px accent bar, four steps
+/// (language and name, a skin with its live preview, the input mode, the
+/// hotkeys and OBS) with Back / Next and a step indicator. Skip or the last
+/// step's "Get started" closes it for good; About opens it again.
+fn onboarding(ui: Ui) -> AnyView {
+    let step = ui.onboard_step;
+    let finish = move || {
+        step.set(0);
+        edit(|s| s.general.onboarding_done = true)
     };
+    let header = widget(
+        Stack::row(8.0)
+            .align(AlignSpec::Center)
+            .width(LengthSpec::Fill)
+            .padding_xy(INSET, 0.0)
+            .with_layout(|l| {
+                l.padding_top = Some(LengthSpec::Px(14.0));
+                l.padding_bottom = Some(LengthSpec::Px(2.0));
+            }),
+    )
+    .children((
+        widget(
+            IconGlyph::new(ti::SPARKLES)
+                .size(16.0)
+                .role(SemanticColorRole::Accent),
+        ),
+        widget(Text::new(ui.now_t("onboard-welcome")).style(text_style(15.0, 600))),
+        widget(Stack::row(0.0).grow(1.0)),
+        step_indicator(ui),
+        widget(
+            Button::new(ui.now_t("onboard-skip"))
+                .kind(ButtonKind::Text)
+                .size(ControlSize::Small),
+        )
+        .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(finish())),
+    ));
+    // Each step rises in on the `enter` token.
+    let body = dynamic(move || step.get(), move |n| onboard_step(ui, *n))
+        .transition(crate::ui::motion::enter());
+    let footer = widget(
+        Stack::row(8.0)
+            .align(AlignSpec::Center)
+            .width(LengthSpec::Fill)
+            .padding_xy(INSET, 12.0),
+    )
+    .children((
+        widget(
+            Button::new(ui.now_t("onboard-back"))
+                .icon(ti::CHEVRON_LEFT)
+                .size(ControlSize::Small),
+        )
+        .visible(move || step.get() > 0)
+        .on(move |_: &Activate| step.set(step.get_untracked().saturating_sub(1))),
+        widget(Stack::row(0.0).grow(1.0)),
+        // Next, and on the last step "Get started".
+        widget(crate::skin_theme::cta(
+            Button::new(ui.now_t("onboard-next"))
+                .kind(ButtonKind::Primary)
+                .size(ControlSize::Small),
+        ))
+        .bind(move |b: &mut Button| {
+            let last = step.get() + 1 >= ONBOARD_STEPS;
+            let label = ui.now_t(if last { "onboard-done" } else { "onboard-next" });
+            if b.label != label {
+                b.label = label;
+            }
+        })
+        .on_cx(move |_, _: &Activate, cx| {
+            crate::ui::motion::press(cx, ui.reduced_motion.get_untracked());
+            let n = step.get_untracked();
+            if n + 1 >= ONBOARD_STEPS {
+                cx.dispatch_program_all(finish());
+            } else {
+                step.set(n + 1);
+            }
+        }),
+    ));
     widget(
         Stack::row(0.0)
             .align(AlignSpec::Stretch)
@@ -325,38 +382,318 @@ fn welcome(ui: Ui) -> AnyView {
                 .surface(SemanticColorRole::Accent)
                 .with_layout(accent_bar_layout),
         ),
-        widget(
-            Stack::column(8.0)
-                .padding_xy(INSET, 14.0)
-                .grow(1.0)
-                .shrink(1.0),
-        )
-        .children((
-            widget(
-                Stack::row(8.0)
-                    .align(AlignSpec::Center)
-                    .width(LengthSpec::Fill),
-            )
-            .children((
-                widget(Text::new(ui.now_t("onboard-welcome")).style(text_style(15.0, 600))),
-                widget(Stack::row(0.0).grow(1.0)),
-                widget(
-                    IconButton::new(ti::X, ui.now_t("onboard-dismiss"))
-                        .size(ControlSize::Small)
-                        .with_tooltip(ui.now_t("onboard-dismiss")),
-                )
-                .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(done())),
-            )),
-            hint_13(ui.now_t("onboard-welcome-body")),
-            hotkeys_line,
-            widget(Stack::row(8.0).with_layout(|l| l.margin_top = Some(LengthSpec::Px(4.0))))
-                .children((
-                    cta(ui, "onboard-got-it", done),
-                    button(ui, "onboard-obs", || Msg::SettingsPage(Page::Output)),
-                )),
+        widget(Stack::column(0.0).grow(1.0).shrink(1.0)).children((
+            header,
+            body,
+            divider(),
+            footer,
         )),
     ))
     .into_any()
+}
+
+/// "Step 2 of 4" and a dot per step: the current one a wide accent pill,
+/// the ones done accent dots, the ones ahead hairline dots.
+fn step_indicator(ui: Ui) -> AnyView {
+    let step = ui.onboard_step;
+    let label = move || {
+        I18N.tr_in(
+            ui.locale.get_untracked(),
+            "onboard-step",
+            &[
+                ("step", u32::from(step.get() + 1).into()),
+                ("total", u32::from(ONBOARD_STEPS).into()),
+            ],
+        )
+    };
+    let dots: Vec<AnyView> = (0..ONBOARD_STEPS)
+        .map(|i| {
+            widget(Stack::row(0.0).height(LengthSpec::Px(6.0)).radius_px(3.0))
+                .bind(move |s: &mut Stack| {
+                    let n = step.get();
+                    let role = if i <= n {
+                        SemanticColorRole::Accent
+                    } else {
+                        SemanticColorRole::BorderStrong
+                    };
+                    let taken = std::mem::replace(s, Stack::row(0.0));
+                    *s = taken
+                        .width(LengthSpec::Px(if i == n { 16.0 } else { 6.0 }))
+                        .surface(role);
+                })
+                .into_any()
+        })
+        .collect();
+    widget(Stack::row(8.0).align(AlignSpec::Center))
+        .children((
+            widget(
+                Text::new(label())
+                    .style(text_style(12.0, 400))
+                    .color(SemanticColorRole::Muted),
+            )
+            .bind(move |t: &mut Text| {
+                let text = label();
+                if t.value != text {
+                    t.value = text;
+                }
+            }),
+            widget(Stack::row(4.0).align(AlignSpec::Center)).children(dots),
+        ))
+        .into_any()
+}
+
+/// One step's body, under the guide's header.
+fn onboard_step(ui: Ui, n: u8) -> AnyView {
+    let lead = |key: &str| {
+        widget(Stack::column(0.0).padding_xy(INSET, 4.0))
+            .children(hint_13(ui.now_t(key)))
+            .into_any()
+    };
+    let body: Vec<AnyView> = match n {
+        0 => vec![
+            lead("onboard-welcome-body"),
+            row(ui, "onboard-language", None, language_select(ui)),
+            divider(),
+            row(
+                ui,
+                "onboard-speaker",
+                Some("general-speaker-hint"),
+                speaker_field(ui),
+            ),
+        ],
+        1 => vec![
+            lead("onboard-skin-hint"),
+            row(ui, "onboard-skin", None, skin_select(ui)),
+            // The live preview of the skin just chosen.
+            skin_preview(ui, signal(None)),
+        ],
+        2 => vec![
+            lead("onboard-mode-body"),
+            widget(
+                Stack::row(12.0)
+                    .align(AlignSpec::Stretch)
+                    .width(LengthSpec::Fill)
+                    .padding_xy(INSET, 10.0),
+            )
+            .children((
+                mode_card(ui, InputMode::Compose),
+                mode_card(ui, InputMode::Mirror),
+            ))
+            .into_any(),
+        ],
+        _ => vec![
+            widget(Stack::column(10.0).padding_xy(INSET, 8.0))
+                .children((subheading(ui, "onboard-hotkeys"), hotkeys_sentence(ui)))
+                .into_any(),
+            divider(),
+            row(
+                ui,
+                "onboard-obs",
+                Some("onboard-obs-hint"),
+                button(ui, "onboard-obs", || Msg::SettingsPage(Page::Output)),
+            ),
+            widget(Stack::column(0.0).padding_xy(INSET, 4.0))
+                .children(hint(ui.now_t("onboard-reopen")))
+                .into_any(),
+        ],
+    };
+    widget(Stack::column(0.0).with_layout(|l| {
+        l.padding_top = Some(LengthSpec::Px(4.0));
+        l.padding_bottom = Some(LengthSpec::Px(8.0));
+    }))
+    .children(body)
+    .into_any()
+}
+
+/// Every skin that loads, by name, bound to the active skin: choosing one
+/// applies it, and the preview below follows.
+fn skin_select(ui: Ui) -> AnyView {
+    let options: Vec<(String, String)> = ui
+        .skins
+        .get_untracked()
+        .iter()
+        .filter(|r| r.error.is_none())
+        .map(|r| (r.id.clone(), r.name.clone()))
+        .collect();
+    select(
+        ui,
+        options,
+        |s| s.skin.id.clone(),
+        |s, v| s.skin.id = v.to_owned(),
+    )
+}
+
+/// A picture of an input mode: the input window's text on the left, the
+/// dialogue box on the right, and what carries one to the other.
+fn mode_diagram(mode: InputMode) -> AnyView {
+    let bar = |w: f32, role: SemanticColorRole| {
+        widget(
+            Stack::row(0.0)
+                .width(LengthSpec::Px(w))
+                .height(LengthSpec::Px(4.0))
+                .radius_px(2.0)
+                .surface(role),
+        )
+        .into_any()
+    };
+    let caret = || {
+        widget(
+            Stack::row(0.0)
+                .width(LengthSpec::Px(2.0))
+                .height(LengthSpec::Px(12.0))
+                .surface(SemanticColorRole::Accent),
+        )
+        .into_any()
+    };
+    // A small window: its lines, the last ending at a caret when typing.
+    let window = |w: f32, lines: Vec<f32>, typing: bool, accent_edge: bool| {
+        let last = lines.len().saturating_sub(1);
+        let rows: Vec<AnyView> = lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, lw)| {
+                widget(Stack::row(2.0).align(AlignSpec::Center))
+                    .children((
+                        bar(lw, SemanticColorRole::BorderStrong),
+                        (typing && i == last).then(caret),
+                    ))
+                    .into_any()
+            })
+            .collect();
+        let frame = Stack::column(5.0)
+            .width(LengthSpec::Px(w))
+            .padding_xy(8.0, 8.0)
+            .surface(SemanticColorRole::Surface)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .radius(nana_ui_core::RadiusTier::Sm)
+            .with_layout(|l| {
+                l.position = PositionSpec::Relative;
+                l.overflow_x = OverflowSpec::Hidden;
+                l.overflow_y = OverflowSpec::Hidden;
+            });
+        widget(frame)
+            .children((
+                accent_edge.then(|| {
+                    widget(
+                        Stack::column(0.0)
+                            .width(LengthSpec::Px(2.0))
+                            .surface(SemanticColorRole::Accent)
+                            .with_layout(accent_bar_layout),
+                    )
+                }),
+                rows,
+            ))
+            .into_any()
+    };
+    let (link, shown, typing) = match mode {
+        // Written in full, then sent: the box shows the whole line.
+        InputMode::Compose => (ti::SEND, vec![40.0, 26.0], false),
+        // Followed live: the box shows what is typed so far.
+        InputMode::Mirror => (ti::ARROW_NARROW_RIGHT, vec![40.0, 14.0], true),
+    };
+    widget(
+        Stack::row(8.0)
+            .align(AlignSpec::Center)
+            .justify(JustifySpec::Center)
+            .width(LengthSpec::Fill)
+            .padding_xy(10.0, 10.0)
+            .surface(SemanticColorRole::Subtle)
+            .radius(nana_ui_core::RadiusTier::Md),
+    )
+    .children((
+        window(60.0, vec![40.0, 14.0], true, false),
+        widget(IconGlyph::new(link).size(16.0).role(match mode {
+            InputMode::Compose => SemanticColorRole::Accent,
+            InputMode::Mirror => SemanticColorRole::Highlight,
+        })),
+        window(76.0, shown, typing, true),
+    ))
+    .into_any()
+}
+
+/// One input mode as a card to pick: its picture, its name and what it
+/// does. The chosen one takes the selected fill and an accent outline.
+fn mode_card(ui: Ui, mode: InputMode) -> AnyView {
+    let (name, about) = match mode {
+        InputMode::Compose => ("mode-compose", "mode-compose-hint"),
+        InputMode::Mirror => ("mode-mirror", "mode-mirror-hint"),
+    };
+    let chosen = move || ui.settings.with(|s| s.general.input_mode == mode);
+    let item = widget(
+        ListItem::new(ui.now_t(name))
+            .style({
+                let mut st = ListItem::new("").style;
+                let l = Arc::make_mut(&mut st.layout);
+                l.width = Some(LengthSpec::Fill);
+                l.padding_top = Some(LengthSpec::Px(10.0));
+                l.padding_bottom = Some(LengthSpec::Px(12.0));
+                st
+            })
+            .auto_height(true),
+    )
+    .bind(move |i: &mut ListItem| i.selected = chosen())
+    .on_cx(move |_, _: &Activate, cx| {
+        cx.dispatch_program_all(edit(move |s| s.general.input_mode = mode));
+    })
+    .content(
+        widget(Stack::column(8.0).width(LengthSpec::Fill)).children((
+            mode_diagram(mode),
+            widget(Text::new(ui.now_t(name)).style(text_style(13.0, 600))),
+            hint(ui.now_t(about)),
+        )),
+    );
+    widget(
+        Stack::column(0.0)
+            .width(LengthSpec::Px(0.0))
+            .grow(1.0)
+            .radius(nana_ui_core::RadiusTier::Md),
+    )
+    .bind(move |s: &mut Stack| {
+        let (role, w) = if chosen() {
+            (SemanticColorRole::Accent, 2.0)
+        } else {
+            (SemanticColorRole::BorderSoft, 1.0)
+        };
+        let taken = std::mem::replace(s, Stack::row(0.0));
+        *s = taken.outline(role, w);
+    })
+    .children(item)
+    .into_any()
+}
+
+/// "Press [F8] to summon the input and [F9] to continue": the sentence
+/// around the hotkeys as keycaps, in the locale's own word order.
+fn hotkeys_sentence(ui: Ui) -> AnyView {
+    let s = ui.settings.get_untracked();
+    let chord = |h: Option<&nanatype_settings::Hotkey>| match h {
+        Some(h) => crate::ui::keycap::chord(&h.label(META_LABEL)),
+        None => crate::ui::keycap::keycap("—"),
+    };
+    let text = I18N.tr_in(
+        ui.locale.get_untracked(),
+        "onboard-hotkeys-body",
+        &[("summon", "\u{1}".into()), ("continue", "\u{2}".into())],
+    );
+    let mut parts: Vec<AnyView> = Vec::new();
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find(['\u{1}', '\u{2}']) {
+        let (before, after) = rest.split_at(at);
+        if !before.trim().is_empty() {
+            parts.push(hint_13(before.trim().to_owned()));
+        }
+        parts.push(if after.starts_with('\u{1}') {
+            chord(s.hotkeys.summon.as_ref())
+        } else {
+            chord(s.hotkeys.continue_.as_ref())
+        });
+        rest = &after[1..];
+    }
+    if !rest.trim().is_empty() {
+        parts.push(hint_13(rest.trim().to_owned()));
+    }
+    widget(Stack::row(6.0).align(AlignSpec::Center).wrap(true))
+        .children(parts)
+        .into_any()
 }
 
 /// A 3px bar pinned down the left edge of a relatively positioned parent.
@@ -615,10 +952,24 @@ fn playback(ui: Ui) -> AnyView {
                         None,
                     ),
                     (
-                        row(
+                        // The hint says what the system asks for too: either
+                        // one reduces motion.
+                        row_live_hint(
                             ui,
                             "playback-reduced",
-                            Some("playback-reduced-hint"),
+                            move || {
+                                let locale = ui.locale.get();
+                                let system = if ui.system_reduced_motion.get() {
+                                    "playback-reduced-system-on"
+                                } else {
+                                    "playback-reduced-system-off"
+                                };
+                                Some(format!(
+                                    "{} · {}",
+                                    I18N.t_in(locale, "playback-reduced-hint"),
+                                    I18N.t_in(locale, system)
+                                ))
+                            },
                             switch(
                                 ui,
                                 |s| s.playback.reduced_motion,
@@ -3014,6 +3365,19 @@ fn about(ui: Ui) -> AnyView {
             ti::EXTERNAL_LINK,
             Box::new(|| Msg::OpenUrl(HOMEPAGE)),
         ),
+        // The first-run guide again, from its first step, on General.
+        widget(
+            Button::new(ui.now_t("about-setup-guide"))
+                .kind(ButtonKind::Ghost)
+                .size(ControlSize::Small)
+                .icon(ti::SPARKLES),
+        )
+        .on_cx(move |_, _: &Activate, cx| {
+            ui.onboard_step.set(0);
+            cx.dispatch_program_all(edit(|s| s.general.onboarding_done = false));
+            cx.dispatch_program_all(Msg::SettingsPage(Page::General));
+        })
+        .into_any(),
     ]);
     widget(Stack::column(0.0))
         .children(section(ui, "", vec![header.into_any(), links.into_any()]))

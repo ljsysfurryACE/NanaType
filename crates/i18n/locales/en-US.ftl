@@ -541,3 +541,13 @@ int-vts-authorized = Authorized
 int-vts-map-empty = Connect and authorize to list your VTS hotkeys
 skins-more = More actions
 ## end wave3-settings
+## wave4-onboarding
+onboard-step = Step { $step } of { $total }
+onboard-skin-hint = Pick a look for the dialogue box; the preview shows it live. The Skins page has the rest.
+onboard-mode-body = Choose how your lines reach the display. You can switch any time from the input window.
+onboard-obs-hint = Show the display in your stream through Spout2
+onboard-reopen = You can open this guide again from About.
+about-setup-guide = Show the setup guide
+playback-reduced-system-on = System setting: on
+playback-reduced-system-off = System setting: off
+## end wave4-onboarding

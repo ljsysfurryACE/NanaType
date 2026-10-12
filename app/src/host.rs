@@ -69,9 +69,17 @@ impl Host {
     fn finish(&mut self) -> RuntimeProgramUpdate {
         self.drive_editor();
         let language = self.app.ui.locale.get_untracked().tag();
+        // The app's reduce-motion setting wins over the system's in every
+        // window's runtime, so view transitions and toasts land at once too.
+        let forced = self.app.settings.playback.reduced_motion;
         for doc in self.docs.values_mut() {
-            doc.context_mut()
-                .set_default_language(default_language(language));
+            let cx = doc.context_mut();
+            cx.set_default_language(default_language(language));
+            if forced {
+                cx.set_reduced_motion(true);
+            } else {
+                cx.follow_system_reduced_motion();
+            }
         }
         self.show_toasts();
         if self.app.theme_changed {
@@ -556,6 +564,10 @@ impl RuntimeProgram for Host {
                     self.app.settings.skin.chrome = nanatype_settings::ChromeMode::Skin;
                     self.app.edit(|x| *x = s);
                 }
+            }
+            WindowEvent::ReducedMotionChanged { reduced, .. } => {
+                self.app.ui.system_reduced_motion.set(reduced);
+                self.app.sync_reduced_motion();
             }
             _ => {}
         }

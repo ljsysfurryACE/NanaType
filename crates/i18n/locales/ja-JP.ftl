@@ -535,3 +535,13 @@ int-vts-authorized = 許可済み
 int-vts-map-empty = 接続して許可すると VTS のホットキーが一覧に出ます
 skins-more = その他の操作
 ## end wave3-settings
+## wave4-onboarding
+onboard-step = ステップ { $step } / { $total }
+onboard-skin-hint = ダイアログの見た目を選びましょう。下のプレビューにすぐ反映されます。細かい調整は「スキン」ページで。
+onboard-mode-body = セリフを表示ウィンドウに出す方法を選びます。あとから入力ウィンドウでいつでも切り替えられます。
+onboard-obs-hint = Spout2 で表示ウィンドウを配信画面に送ります
+onboard-reopen = このガイドは「情報」ページからもう一度開けます。
+about-setup-guide = セットアップガイドを表示
+playback-reduced-system-on = システム設定：オン
+playback-reduced-system-off = システム設定：オフ
+## end wave4-onboarding

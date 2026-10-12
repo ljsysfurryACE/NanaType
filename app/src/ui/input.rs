@@ -1171,7 +1171,10 @@ fn toolbar(ui: Ui) -> AnyView {
                     .kind(ButtonKind::Primary)
                     .size(ControlSize::Small),
             ))
-            .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::Core(Cmd::Send)))
+            .on_cx(move |_, _: &Activate, cx| {
+                super::motion::press(cx, ui.reduced_motion.get_untracked());
+                cx.dispatch_program_all(Msg::Core(Cmd::Send))
+            })
             .into_any(),
         );
         bar.push(
@@ -1355,7 +1358,9 @@ fn status_line(ui: Ui) -> AnyView {
             }
             Line::Empty => widget(Stack::row(0.0)).into_any(),
         }
-    });
+    })
+    // A chip or an error arrives on the `enter` token.
+    .transition(super::motion::enter());
     widget(
         Stack::bar(6.0)
             .height(LengthSpec::Px(STATUS_H))
@@ -1591,6 +1596,15 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
                 l.overflow_y = nana_ui_core::OverflowSpec::Hidden;
             }),
     )
+    // Summoned, it rises in on the `enter` token.
+    .bind(move |s: &mut Stack| {
+        let (opacity, transform) = super::motion::rest(ui.input_shown.get());
+        restyle(s, |l| {
+            l.opacity = Some(opacity);
+            l.transform = Some(transform);
+        });
+    })
+    .animate(super::motion::enter_implicit())
     .children((
         toolbar(ui),
         widget(Stack::column(0.0).with_layout(|l| l.position = PositionSpec::Relative))

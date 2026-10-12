@@ -4,7 +4,7 @@
 use std::sync::{Arc, LazyLock};
 
 use nana_ui::runtime::view::{
-    AnyView, IntoView, Signal, segmented_option, settings_row, signal, widget,
+    AnyView, IntoView, Signal, dynamic, segmented_option, settings_row, signal, widget,
 };
 use nana_ui::runtime::{
     Activate, Button, ColorChanged, ColorField, NodeStyle, NumberChanged, NumberInput,
@@ -269,16 +269,23 @@ fn breathing_badge(
     describe: impl Fn() -> (String, StatusTone) + Send + Sync + Copy + 'static,
     connecting: impl Fn() -> bool + Send + Sync + Copy + 'static,
 ) -> AnyView {
-    let (text, tone) = describe();
-    let badge =
-        widget(StatusBadge::new(text, tone).compact(true)).bind(move |b: &mut StatusBadge| {
+    // A new state's badge fades in on the `state` token; the text follows
+    // within one state without a fade.
+    let badge = dynamic(
+        move || describe().1,
+        move |_| {
             let (text, tone) = describe();
-            let text: Arc<str> = text.into();
-            if b.label != text {
-                b.label = text;
-            }
-            b.tone = tone;
-        });
+            widget(StatusBadge::new(text, tone).compact(true)).bind(move |b: &mut StatusBadge| {
+                let (text, tone) = describe();
+                let text: Arc<str> = text.into();
+                if b.label != text {
+                    b.label = text;
+                }
+                b.tone = tone;
+            })
+        },
+    )
+    .transition(crate::ui::motion::state());
     widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
         .bind(move |s: &mut Stack| {
             let connecting = connecting();

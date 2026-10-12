@@ -7,6 +7,7 @@ pub mod feedback;
 pub mod history;
 pub mod input;
 pub mod keycap;
+pub mod motion;
 pub mod overflow;
 pub mod quote;
 pub mod rich;
@@ -128,7 +129,15 @@ pub struct Ui {
     pub asset_urls: Signal<Arc<HashMap<String, String>>>,
     /// Portrait variant → `file://` URL for the active skin.
     pub portraits: Signal<Arc<HashMap<String, String>>>,
+    /// Motion is reduced: the setting, or the system preference.
     pub reduced_motion: Signal<bool>,
+    /// The system's own reduce-motion preference, as last reported.
+    pub system_reduced_motion: Signal<bool>,
+    /// The input window is on screen (its summon plays [`motion`]'s enter).
+    pub input_shown: Signal<bool>,
+    /// The first-run guide's step, 0-based; kept while the user visits other
+    /// pages (its "Connect OBS" goes to Output).
+    pub onboard_step: Signal<u8>,
     /// Clock (ms) of the input window's mirroring chip pulse; only advanced
     /// while that chip is showing.
     pub pulse_ms: Signal<u64>,
@@ -177,6 +186,9 @@ impl Ui {
             asset_urls: signal(Arc::new(HashMap::new())),
             portraits: signal(Arc::new(HashMap::new())),
             reduced_motion: signal(false),
+            system_reduced_motion: signal(false),
+            input_shown: signal(true),
+            onboard_step: signal(0),
             pulse_ms: signal(0),
             editor_value: signal(nana_ui_core::RichText::new("")),
             sel_attrs: signal(nana_ui::runtime::RichSelectionAttrs::default()),
