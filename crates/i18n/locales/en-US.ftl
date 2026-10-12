@@ -207,7 +207,7 @@ playback-device = Output device
 playback-device-default = System default
 
 ## Skins
-skins-active = Current skin
+skins-active = Current
 skins-library = Skin library
 skins-import = Import skin…
 skins-export = Export…
@@ -247,7 +247,6 @@ skins-replaced = Updated “{ $name }” from { $previous }
 skins-import-failed = The skin could not be imported
 skins-fallback = Skin “{ $id }” could not load; using the default skin
 skins-preview = Preview
-skins-preview-show = Preview this skin
 skins-preview-name = Nana
 skins-preview-line = Hi everyone! Typing [b]live[/b] again today, with [wave]waves[/wave], [rainbow]rainbows[/rainbow] and a little [shake]shake[/shake].
 skins-filter-all = All
@@ -341,7 +340,6 @@ output-spout-unsupported = Spout2 is Windows-only; use window capture
 output-sample = Play a sample line
 output-sample-line = [b]Hello![/b] This is a NanaType [wave]sample line[/wave].[wait=300][shake]Can you see it?[/shake]
 output-obs-title = Set up OBS
-output-obs-spout = Install the Spout2 plugin for OBS, add a “Spout2 Capture” source, pick the sender name above, and set the composite mode to “Premultiplied Alpha”.
 output-obs-window = You can also use “Window Capture” (method: Windows 10 1903 and up); the display window background is transparent.
 output-obs-mac = On macOS use “macOS Screen Capture” and pick the display window.
 
@@ -352,12 +350,10 @@ int-vts-port = Port
 int-vts-authorize = Request access
 int-vts-authorize-hint = Then allow the NanaType plugin inside VTube Studio
 int-vts-map = Expression mapping
-int-vts-map-expression = Expression
+int-vts-map-expression = Marker
 int-vts-map-hotkey = VTS hotkey
-int-vts-map-auto = Match by name
+int-vts-map-auto = Auto (same name)
 int-vts-refresh = Refresh hotkeys
-int-vts-mapped-to = Hotkey: { $hotkey }
-int-vts-unmap = Remove mapping
 int-vts-lipsync = Lip sync
 int-vts-lipsync-hint = Move the model's mouth while text is typing
 int-vts-mouth-param = Mouth parameter
@@ -519,3 +515,29 @@ cheat-at = Mention a viewer
 cheat-newline = New line
 cheat-recall = Previous / next sent line
 cheat-hide = Hide the input window
+## end wave3-input
+
+## wave3-settings
+settings-group-input = Input
+settings-group-look = Look
+settings-group-stream = Stream
+settings-general-sub = Language, your name and how the input window behaves
+settings-playback-sub = How lines type out, move on and sound
+settings-skins-sub = Pick a look for the dialogue box and make it yours
+settings-windows-sub = Show, lock and reset the display, history and input windows
+settings-history-sub = What the history window keeps and shows
+settings-hotkeys-sub = System-wide shortcuts that also work in a game or OBS
+settings-output-sub = Send the display and history to OBS
+settings-integrations-sub = Live chat, VTube Studio and other apps
+settings-assets-sub = Stickers and quick phrases for the input window
+settings-about-sub = Version, folders and links
+onboard-got-it = Got it
+onboard-dismiss = Dismiss
+output-obs-step-plugin = Install the Spout2 plugin for OBS
+output-obs-step-source = Add a “Spout2 Capture” source and pick this sender:
+output-obs-step-alpha = Set Composite mode to “Premultiplied Alpha”
+output-obs-other = Other ways
+int-vts-authorized = Authorized
+int-vts-map-empty = Connect and authorize to list your VTS hotkeys
+skins-more = More actions
+## end wave3-settings

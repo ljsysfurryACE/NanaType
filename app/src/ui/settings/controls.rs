@@ -62,6 +62,21 @@ pub fn heading(ui: Ui, key: &str) -> AnyView {
     widget(Text::new(ui.now_t(key)).style(text_style(20.0, 700))).into_any()
 }
 
+/// Monospace families for things typed literally: markers, names, ports.
+pub const MONO: &str = "Cascadia Mono, Consolas, monospace";
+
+/// [`text_style`] in [`MONO`].
+pub fn mono_style(size: f32, weight: u16) -> NodeStyle {
+    let mut st = text_style(size, weight);
+    Arc::make_mut(&mut st.layout).font_family = Some(MONO.into());
+    st
+}
+
+/// A heading inside a section card (13/600), below the page title's size.
+pub fn subheading(ui: Ui, key: &str) -> AnyView {
+    widget(Text::new(ui.now_t(key)).style(text_style(13.0, 600))).into_any()
+}
+
 pub fn label(text: String) -> AnyView {
     widget(Text::new(text).style(text_style(13.0, 500))).into_any()
 }
@@ -588,6 +603,26 @@ pub fn number(
             .on_cx(move |_, e: &NumberChanged, cx| {
                 let v = e.value;
                 cx.dispatch_program_all(edit(move |s| set(s, v)));
+            }),
+        )
+        .into_any()
+}
+
+/// A port: a short field without steppers. Text that is not a port number
+/// (yet) is left unsaved.
+pub fn port(ui: Ui, get: fn(&Settings) -> u16, set: fn(&mut Settings, u16)) -> AnyView {
+    widget(Stack::row(0.0).width(LengthSpec::Px(96.0)))
+        .children(
+            widget(
+                TextInput::new(get(&ui.settings.get_untracked()).to_string())
+                    .size(ControlSize::Small),
+            )
+            .on_cx(move |_, e: &TextChanged, cx| {
+                if let Ok(v) = e.value.trim().parse::<u16>()
+                    && v > 0
+                {
+                    cx.dispatch_program_all(edit(move |s| set(s, v)));
+                }
             }),
         )
         .into_any()

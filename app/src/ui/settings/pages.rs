@@ -4,13 +4,14 @@ use std::sync::Arc;
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{AnyView, IntoView, Signal, dynamic, signal, widget};
 use nana_ui::runtime::{
-    Activate, Button, Chip, IconButton, Stack, StatusBadge, Text, TextChanged, TextInput,
-    TextSubmitted,
+    ActionMenu, ActionMenuItem, Activate, Button, Chip, IconButton, IconGlyph, ListItem,
+    PopoverClosed, PopoverToggled, Select, SelectChanged, SelectOption, Stack, StatusBadge, Switch,
+    Text, TextChanged, TextInput, TextSubmitted, ToggleChanged,
 };
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{
-    AlignSpec, BackgroundImage, CssGradient, GradientStop, JustifySpec, LengthSpec, LinearGradient,
-    OverflowSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, TransformOrigin,
+    AlignSpec, BackgroundImage, JustifySpec, LengthSpec, OverflowSpec, PointerEventsSpec,
+    PositionSpec, SemanticColorRole, TransformOrigin,
 };
 use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind, Overflow, VtsReset};
@@ -42,7 +43,15 @@ pub fn page(ui: Ui, page: Page) -> AnyView {
         Page::About => about(ui),
     };
     widget(Stack::column(4.0))
-        .children((heading(ui, page.label_key()), body))
+        .children((
+            heading(ui, page.label_key()),
+            widget(
+                Text::new(ui.now_t(page.subtitle_key()))
+                    .style(text_style(13.0, 400))
+                    .color(SemanticColorRole::Muted),
+            ),
+            body,
+        ))
         .into_any()
 }
 
@@ -95,39 +104,7 @@ fn general(ui: Ui) -> AnyView {
             ))
             .into_any()
     };
-    let welcome = (!ui.settings.get_untracked().general.onboarding_done).then(|| {
-        widget(
-            Stack::column(8.0)
-                .padding_xy(18.0, 16.0)
-                .surface(SemanticColorRole::Selected)
-                .radius(nana_ui_core::RadiusTier::Lg)
-                .with_layout(|l| l.margin_top = Some(LengthSpec::Px(12.0))),
-        )
-        .children((
-            widget(Text::new(ui.now_t("onboard-welcome")).style(text_style(18.0, 700))),
-            hint(ui.now_t("onboard-welcome-body")),
-            hint({
-                let s = ui.settings.get_untracked();
-                let label = |h: Option<&nanatype_settings::Hotkey>| {
-                    h.map(|h| h.label("Win")).unwrap_or_else(|| "—".into())
-                };
-                I18N.tr_in(
-                    ui.locale.get_untracked(),
-                    "onboard-hotkeys-body",
-                    &[
-                        ("summon", label(s.hotkeys.summon.as_ref()).into()),
-                        ("continue", label(s.hotkeys.continue_.as_ref()).into()),
-                    ],
-                )
-            }),
-            widget(Stack::row(8.0)).children((
-                cta(ui, "onboard-done", || {
-                    edit(|s| s.general.onboarding_done = true)
-                }),
-                button(ui, "onboard-obs", || Msg::SettingsPage(Page::Output)),
-            )),
-        ))
-    });
+    let welcome = (!ui.settings.get_untracked().general.onboarding_done).then(|| welcome(ui));
     widget(Stack::column(0.0))
         .children((
             welcome,
@@ -290,6 +267,114 @@ fn general(ui: Ui) -> AnyView {
             ),
         ))
         .into_any()
+}
+
+/// The first-run card: a surface card marked by a 3px accent bar, the two
+/// hotkeys as keycaps, and a way to dismiss it.
+fn welcome(ui: Ui) -> AnyView {
+    let done = || edit(|s| s.general.onboarding_done = true);
+    // The sentence around the keycaps, in the locale's own word order.
+    let hotkeys_line = {
+        let s = ui.settings.get_untracked();
+        let chord = |h: Option<&nanatype_settings::Hotkey>| match h {
+            Some(h) => crate::ui::keycap::chord(&h.label(META_LABEL)),
+            None => crate::ui::keycap::keycap("—"),
+        };
+        let text = I18N.tr_in(
+            ui.locale.get_untracked(),
+            "onboard-hotkeys-body",
+            &[("summon", "\u{1}".into()), ("continue", "\u{2}".into())],
+        );
+        let mut parts: Vec<AnyView> = Vec::new();
+        let mut rest = text.as_str();
+        while let Some(at) = rest.find(['\u{1}', '\u{2}']) {
+            let (before, after) = rest.split_at(at);
+            if !before.trim().is_empty() {
+                parts.push(hint_13(before.trim().to_owned()));
+            }
+            parts.push(if after.starts_with('\u{1}') {
+                chord(s.hotkeys.summon.as_ref())
+            } else {
+                chord(s.hotkeys.continue_.as_ref())
+            });
+            rest = &after[1..];
+        }
+        if !rest.trim().is_empty() {
+            parts.push(hint_13(rest.trim().to_owned()));
+        }
+        widget(Stack::row(6.0).align(AlignSpec::Center).wrap(true)).children(parts)
+    };
+    widget(
+        Stack::row(0.0)
+            .align(AlignSpec::Stretch)
+            .surface(SemanticColorRole::Surface)
+            .radius(nana_ui_core::RadiusTier::Lg)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .with_layout(|l| {
+                l.margin_top = Some(LengthSpec::Px(14.0));
+                l.position = PositionSpec::Relative;
+                l.overflow_x = OverflowSpec::Hidden;
+                l.overflow_y = OverflowSpec::Hidden;
+            }),
+    )
+    .visible(move || !ui.settings.with(|s| s.general.onboarding_done))
+    .children((
+        widget(
+            Stack::column(0.0)
+                .width(LengthSpec::Px(3.0))
+                .surface(SemanticColorRole::Accent)
+                .with_layout(accent_bar_layout),
+        ),
+        widget(
+            Stack::column(8.0)
+                .padding_xy(INSET, 14.0)
+                .grow(1.0)
+                .shrink(1.0),
+        )
+        .children((
+            widget(
+                Stack::row(8.0)
+                    .align(AlignSpec::Center)
+                    .width(LengthSpec::Fill),
+            )
+            .children((
+                widget(Text::new(ui.now_t("onboard-welcome")).style(text_style(15.0, 600))),
+                widget(Stack::row(0.0).grow(1.0)),
+                widget(
+                    IconButton::new(ti::X, ui.now_t("onboard-dismiss"))
+                        .size(ControlSize::Small)
+                        .with_tooltip(ui.now_t("onboard-dismiss")),
+                )
+                .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(done())),
+            )),
+            hint_13(ui.now_t("onboard-welcome-body")),
+            hotkeys_line,
+            widget(Stack::row(8.0).with_layout(|l| l.margin_top = Some(LengthSpec::Px(4.0))))
+                .children((
+                    cta(ui, "onboard-got-it", done),
+                    button(ui, "onboard-obs", || Msg::SettingsPage(Page::Output)),
+                )),
+        )),
+    ))
+    .into_any()
+}
+
+/// A 3px bar pinned down the left edge of a relatively positioned parent.
+fn accent_bar_layout(l: &mut nana_ui_core::LayoutStyle) {
+    l.position = PositionSpec::Absolute;
+    l.offset_left = Some(LengthSpec::Px(0.0));
+    l.offset_top = Some(LengthSpec::Px(0.0));
+    l.offset_bottom = Some(LengthSpec::Px(0.0));
+}
+
+/// Body-size muted text.
+fn hint_13(text: String) -> AnyView {
+    widget(
+        Text::new(text)
+            .style(text_style(13.0, 400))
+            .color(SemanticColorRole::Muted),
+    )
+    .into_any()
 }
 
 fn mirror(ui: Ui) -> bool {
@@ -657,113 +742,154 @@ fn skins(ui: Ui) -> AnyView {
                         ),
                     };
                     let usable = skin.error.is_none();
-                    let (eid, did, rid, pid) = (id.clone(), id.clone(), id.clone(), id.clone());
+                    let (eid, did, rid) = (id.clone(), id.clone(), id.clone());
                     let folder = skin.folder.clone();
                     let builtin = skin.builtin;
                     let looked = id.clone();
-                    let actions = widget(Stack::row(4.0)).children((
-                        widget(
-                            IconButton::new(ti::EYE, ui.now_t("skins-preview-show"))
-                                .size(ControlSize::Small)
-                                .disabled(!usable)
-                                .with_tooltip(ui.now_t("skins-preview-show")),
-                        )
-                        .bind(move |b: &mut IconButton| {
-                            b.selected = previewing.with(|p| match p {
-                                Some(p) => *p == looked,
-                                None => ui.settings.with(|s| s.skin.id == looked),
-                            });
+                    let previewed = move || {
+                        previewing.with(|p| match p {
+                            Some(p) => *p == looked,
+                            None => ui.settings.with(|s| s.skin.id == looked),
                         })
-                        .on_cx(move |_, _: &Activate, _| previewing.set(Some(pid.clone()))),
-                        widget(
-                            IconButton::new(ti::COPY, ui.now_t("skins-duplicate"))
-                                .size(ControlSize::Small)
-                                .with_tooltip(ui.now_t("skins-duplicate")),
-                        )
-                        .on_cx(move |_, _: &Activate, cx| {
-                            cx.dispatch_program_all(Msg::DuplicateSkin(did.clone()))
-                        }),
-                        widget(
-                            IconButton::new(ti::FILE_EXPORT, ui.now_t("skins-export"))
-                                .size(ControlSize::Small)
-                                .with_tooltip(ui.now_t("skins-export")),
-                        )
-                        .on_cx(move |_, _: &Activate, cx| {
-                            cx.dispatch_program_all(Msg::ExportSkin(eid.clone()))
-                        }),
-                        folder.map(|f| {
-                            widget(
-                                IconButton::new(ti::FOLDER_OPEN, ui.now_t("skins-open-folder"))
-                                    .size(ControlSize::Small)
-                                    .with_tooltip(ui.now_t("skins-open-folder")),
-                            )
-                            .on_cx(move |_, _: &Activate, cx| {
-                                cx.dispatch_program_all(Msg::OpenFolder(f.clone()))
-                            })
-                        }),
-                        (!builtin).then(|| {
-                            confirm(
-                                ui,
-                                I18N.tr_in(
-                                    locale,
-                                    "skins-delete-confirm",
-                                    &[("name", skin.name.as_str().into())],
-                                ),
-                                ui.now_t("skins-delete"),
-                                |armed| {
-                                    widget(
-                                        IconButton::new(ti::TRASH, ui.now_t("skins-delete"))
-                                            .size(ControlSize::Small)
-                                            .with_tooltip(ui.now_t("skins-delete")),
-                                    )
-                                    .on(move |_: &Activate| armed.set(true))
-                                    .into_any()
-                                },
-                                move || Msg::DeleteSkin(rid.clone()),
-                            )
-                        }),
-                    ));
-                    let use_id = id.clone();
-                    widget(
-                        Stack::bar(12.0)
-                            .padding_xy(16.0, 10.0)
-                            .align(AlignSpec::Center)
-                            .with_layout(move |l| {
-                                if selected {
-                                    l.background = Some([0.5, 0.5, 0.5, 0.08]);
-                                }
+                    };
+                    let menu_open = signal(false);
+                    // Duplicate, export, folder and delete share one "⋯"
+                    // menu; delete still asks before it acts.
+                    let menu = move |armed: Option<Signal<bool>>| {
+                        let mut items = vec![
+                            menu_item(ui, menu_open, "skins-duplicate", ti::COPY, {
+                                let id = did.clone();
+                                move || Msg::DuplicateSkin(id.clone())
                             }),
-                    )
-                    .children((
-                        widget(Stack::row(4.0)).children((
-                            swatch(skin.box_color),
-                            swatch(skin.text_color),
-                            swatch(skin.accent),
-                        )),
-                        widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
-                            widget(Stack::row(6.0).align(AlignSpec::Center))
-                                .children((label(skin.name.clone()), badges(locale, skin))),
-                            hint(detail),
-                        )),
-                        actions,
-                        if selected {
+                            menu_item(ui, menu_open, "skins-export", ti::FILE_EXPORT, {
+                                let id = eid.clone();
+                                move || Msg::ExportSkin(id.clone())
+                            }),
+                        ];
+                        if let Some(f) = folder.clone() {
+                            items.push(menu_item(
+                                ui,
+                                menu_open,
+                                "skins-open-folder",
+                                ti::FOLDER_OPEN,
+                                move || Msg::OpenFolder(f.clone()),
+                            ));
+                        }
+                        if let Some(armed) = armed {
+                            items.push(
+                                widget(
+                                    ActionMenuItem::new(ui.now_t("skins-delete"))
+                                        .leading(ti::TRASH)
+                                        .danger(true),
+                                )
+                                .on(move |_: &Activate| {
+                                    menu_open.set(false);
+                                    armed.set(true);
+                                })
+                                .into_any(),
+                            );
+                        }
+                        widget(
+                            ActionMenu::new()
+                                .trigger_icon(ti::DOTS, ui.now_t("skins-more"))
+                                .bare_trigger(true),
+                        )
+                        .bind(move |m: &mut ActionMenu| m.popover.open = menu_open.get())
+                        .on(move |e: &PopoverToggled| menu_open.set(e.open))
+                        .on(move |_: &PopoverClosed| menu_open.set(false))
+                        .children(items)
+                        .into_any()
+                    };
+                    let actions = if builtin {
+                        menu(None)
+                    } else {
+                        confirm(
+                            ui,
+                            I18N.tr_in(
+                                locale,
+                                "skins-delete-confirm",
+                                &[("name", skin.name.as_str().into())],
+                            ),
+                            ui.now_t("skins-delete"),
+                            move |armed| menu(Some(armed)),
+                            move || Msg::DeleteSkin(rid.clone()),
+                        )
+                    };
+                    let use_id = id.clone();
+                    let pick_id = id.clone();
+                    let trailing = widget(Stack::row(8.0).align(AlignSpec::Center)).children((
+                        selected.then(|| {
                             widget(
                                 StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success)
                                     .compact(true),
                             )
-                            .into_any()
-                        } else {
-                            widget(
+                        }),
+                        (!selected && usable).then(|| {
+                            widget(crate::skin_theme::cta(
                                 Button::new(ui.now_t("common-apply"))
-                                    .size(ControlSize::Small)
-                                    .disabled(!usable),
-                            )
+                                    .kind(ButtonKind::Primary)
+                                    .size(ControlSize::Small),
+                            ))
+                            .visible(previewed.clone())
                             .on_cx(move |_, _: &Activate, cx| {
                                 let id = use_id.clone();
                                 cx.dispatch_program_all(edit(move |s| s.skin.id = id));
                             })
-                            .into_any()
-                        },
+                        }),
+                        actions,
+                    ));
+                    // The current skin keeps a 3px accent bar; the row being
+                    // previewed takes the selected fill.
+                    widget(
+                        Stack::row(0.0)
+                            .width(LengthSpec::Fill)
+                            .with_layout(|l| l.position = PositionSpec::Relative),
+                    )
+                    .children((
+                        widget(
+                            ListItem::new(skin.name.clone())
+                                .style({
+                                    let mut st = ListItem::new("").style;
+                                    let l = Arc::make_mut(&mut st.layout);
+                                    l.flex_grow = Some(1.0);
+                                    l.flex_shrink = Some(1.0);
+                                    l.min_width = Some(LengthSpec::Px(0.0));
+                                    l.padding_top = Some(LengthSpec::Px(8.0));
+                                    l.padding_bottom = Some(LengthSpec::Px(8.0));
+                                    st
+                                })
+                                .auto_height(true),
+                        )
+                        .bind(move |i: &mut ListItem| i.selected = previewed())
+                        .on(move |_: &Activate| {
+                            // A skin that does not load has nothing to show.
+                            if usable {
+                                previewing.set(Some(pick_id.clone()));
+                            }
+                        })
+                        .leading(widget(Stack::row(4.0)).children((
+                            swatch(skin.box_color),
+                            swatch(skin.text_color),
+                            swatch(skin.accent),
+                        )))
+                        .content(
+                            widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
+                                widget(Stack::row(6.0).align(AlignSpec::Center))
+                                    .children((label(skin.name.clone()), badges(locale, skin))),
+                                hint(detail),
+                            )),
+                        )
+                        .trailing(trailing),
+                        widget({
+                            let bar = Stack::column(0.0)
+                                .width(LengthSpec::Px(3.0))
+                                .with_layout(accent_bar_layout);
+                            if selected {
+                                bar.surface(SemanticColorRole::Accent)
+                            } else {
+                                bar
+                            }
+                        }),
                     ))
                     .into_any()
                 })
@@ -945,8 +1071,44 @@ fn skins(ui: Ui) -> AnyView {
         .into_any()
 }
 
+/// A labelled menu entry that closes its menu and sends `msg()`.
+fn menu_item(
+    ui: Ui,
+    open: Signal<bool>,
+    key: &str,
+    icon: nana_ui::runtime::Icon,
+    msg: impl Fn() -> Msg + Send + 'static,
+) -> AnyView {
+    widget(ActionMenuItem::new(ui.now_t(key)).leading(icon))
+        .on_cx(move |_, _: &Activate, cx| {
+            open.set(false);
+            cx.dispatch_program_all(msg());
+        })
+        .into_any()
+}
+
 /// Width the skin preview is scaled down to fit.
 const PREVIEW_W: f32 = 600.0;
+/// Checkerboard showing around the previewed box.
+const PREVIEW_INSET: f32 = 16.0;
+
+/// A 10px transparency checkerboard tile as a data URL, in light or dark
+/// chrome tones.
+fn checker_url(dark: bool) -> String {
+    fn tile(a: [u8; 3], b: [u8; 3]) -> String {
+        let img = image::RgbImage::from_fn(20, 20, |x, y| {
+            image::Rgb(if (x / 10 + y / 10) % 2 == 0 { a } else { b })
+        });
+        let mut png = Vec::new();
+        let _ = img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png);
+        format!("data:image/png;base64,{}", base64(&png))
+    }
+    static LIGHT: std::sync::LazyLock<String> =
+        std::sync::LazyLock::new(|| tile([0xe9, 0xec, 0xf1], [0xf6, 0xf7, 0xf9]));
+    static DARK: std::sync::LazyLock<String> =
+        std::sync::LazyLock::new(|| tile([0x2a, 0x2f, 0x3a], [0x32, 0x38, 0x46]));
+    if dark { DARK.clone() } else { LIGHT.clone() }
+}
 
 /// `light`, `dark` or a tag from [`nanatype_theme::SKIN_TAGS`], localized.
 fn tag_label(locale: Locale, tag: &str) -> String {
@@ -1063,7 +1225,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             d.region[0] + d.overscan * 2.0,
             d.region[1] + d.overscan * 2.0,
         );
-        let scale = (PREVIEW_W / w).min(1.0);
+        let scale = ((PREVIEW_W - 2.0 * PREVIEW_INSET) / w).min(1.0);
         let ctx = BoxCtx {
             skin: skin.clone(),
             urls,
@@ -1072,22 +1234,14 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
         };
         let doc = nanatype_markup::parse(&I18N.t_in(locale, "skins-preview-line")).doc;
         let sample = dialogue::preview_box(ui, ctx, &doc);
-        // A dark and a light half, so boxless and translucent skins read on both.
-        let backdrop = BackgroundImage::Gradient(CssGradient::Linear(LinearGradient {
-            angle_deg: 115.0,
-            stops: [
-                (0.0, [0.18, 0.2, 0.25, 1.0]),
-                (0.5, [0.18, 0.2, 0.25, 1.0]),
-                (0.5, [0.85, 0.87, 0.91, 1.0]),
-                (1.0, [0.85, 0.87, 0.91, 1.0]),
-            ]
-            .map(|(position, color)| GradientStop {
-                paint_color: None,
-                position,
-                color,
-            })
-            .to_vec(),
-        }));
+        // A transparency checkerboard in the chrome's tone, so boxless and
+        // translucent skins read as see-through.
+        let dark = crate::skin_theme::dark_mode(
+            &ui.skin.get_untracked(),
+            ui.settings.with_untracked(|s| s.skin.chrome),
+            false,
+        );
+        let backdrop = BackgroundImage::url(checker_url(dark));
         let stage = widget(
             Stack::row(0.0)
                 .width(LengthSpec::Px(w * scale))
@@ -1096,9 +1250,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                     l.position = PositionSpec::Relative;
                     l.overflow_x = OverflowSpec::Hidden;
                     l.overflow_y = OverflowSpec::Hidden;
-                    l.paint.background_image = Some(backdrop);
-                })
-                .radius(nana_ui_core::RadiusTier::Md),
+                }),
         )
         .children(
             widget(
@@ -1119,6 +1271,17 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             )
             .children(sample),
         );
+        let stage = widget(
+            Stack::row(0.0)
+                .padding_xy(PREVIEW_INSET, PREVIEW_INSET)
+                .radius(nana_ui_core::RadiusTier::Md)
+                .with_layout(move |l| {
+                    l.overflow_x = OverflowSpec::Hidden;
+                    l.overflow_y = OverflowSpec::Hidden;
+                    l.paint.background_image = Some(backdrop);
+                }),
+        )
+        .children(stage);
         let (name, description, badges) = match &row {
             Some(r) => (r.name.clone(), r.description.clone(), badges(locale, r)),
             None => (skin.display_name(locale.tag()), String::new(), Vec::new()),
@@ -1127,7 +1290,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
         let caption = widget(
             Stack::bar(12.0)
                 .align(AlignSpec::Center)
-                .width(LengthSpec::Px(w * scale)),
+                .width(LengthSpec::Px(w * scale + 2.0 * PREVIEW_INSET)),
         )
         .children((
             widget(Stack::column(4.0).grow(1.0).shrink(1.0)).children((
@@ -1587,11 +1750,10 @@ fn blivechat(ui: Ui) -> AnyView {
             ui,
             "int-blive-port",
             None,
-            number(
+            port(
                 ui,
-                (1.0, 65535.0),
-                |s| f64::from(s.integrations.blivechat.port),
-                |s, v| s.integrations.blivechat.port = v as u16,
+                |s| s.integrations.blivechat.port,
+                |s, v| s.integrations.blivechat.port = v,
             ),
         ),
         row(
@@ -1673,16 +1835,30 @@ impl KeyIssue {
         }
     }
 
-    fn message(self, locale: Locale) -> String {
+    fn message(self, locale: Locale, s: &Settings) -> String {
         match self {
             Self::Duplicate(other) => I18N.tr_in(
                 locale,
                 "hotkeys-conflict-dup",
-                &[("action", I18N.t_in(locale, other.label_key()).into())],
+                &[("action", action_name(locale, s, other).into())],
             ),
             Self::Conflict => I18N.t_in(locale, "hotkeys-conflict-os"),
             Self::Unsafe => I18N.t_in(locale, "hotkeys-unsafe"),
         }
+    }
+}
+
+/// What an action is called: its label, or a phrase's own label.
+fn action_name(locale: Locale, s: &Settings, action: GlobalAction) -> String {
+    match action {
+        GlobalAction::Phrase(i) => s
+            .assets
+            .phrases
+            .get(i)
+            .map(|p| p.label.trim().to_owned())
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| I18N.t_in(locale, "assets-phrases")),
+        _ => I18N.t_in(locale, action.label_key()),
     }
 }
 
@@ -1692,10 +1868,7 @@ fn key_issue(
     action: GlobalAction,
 ) -> Option<KeyIssue> {
     let mine = action.get(s)?;
-    if let Some(other) = GlobalAction::ALL
-        .into_iter()
-        .find(|o| *o != action && o.get(s) == Some(mine))
-    {
+    if let Some(other) = GlobalAction::all_in(s).find(|o| *o != action && o.get(s) == Some(mine)) {
         return Some(KeyIssue::Duplicate(other));
     }
     match states.get(&action) {
@@ -1872,7 +2045,7 @@ fn hotkey_issue_line(ui: Ui, action: GlobalAction) -> AnyView {
     .children(
         widget(Text::new(String::new()).style(text_style(12.0, 400))).bind(move |t: &mut Text| {
             if let Some(i) = issue() {
-                let text = i.message(ui.locale.get());
+                let text = ui.settings.with(|s| i.message(ui.locale.get(), s));
                 if t.value != text {
                     t.value = text;
                 }
@@ -1903,6 +2076,122 @@ fn hotkeys(ui: Ui) -> AnyView {
                 "hotkeys-local",
                 vec![block(hint(ui.now_t("hotkeys-local-hint")))],
             ),
+        ))
+        .into_any()
+}
+
+/// A numbered step: a 20px numbered circle, then what to do.
+fn step(n: u8, body: impl IntoView) -> AnyView {
+    widget(Stack::row(10.0).align(AlignSpec::Center))
+        .children((
+            widget(
+                Stack::row(0.0)
+                    .width(LengthSpec::Px(20.0))
+                    .height(LengthSpec::Px(20.0))
+                    .align(AlignSpec::Center)
+                    .justify(JustifySpec::Center)
+                    .surface(SemanticColorRole::Selected)
+                    .radius_px(10.0)
+                    .with_layout(|l| l.flex_shrink = Some(0.0)),
+            )
+            .children(widget(
+                Text::new(n.to_string())
+                    .style(text_style(12.0, 700))
+                    .color(SemanticColorRole::Text),
+            )),
+            widget(
+                Stack::row(8.0)
+                    .align(AlignSpec::Center)
+                    .wrap(true)
+                    .grow(1.0)
+                    .shrink(1.0),
+            )
+            .children(body),
+        ))
+        .into_any()
+}
+
+/// Getting the display into OBS: three numbered steps with the live sender
+/// name, other capture methods folded under one line, and a sample line.
+fn obs_guide(ui: Ui) -> AnyView {
+    let body = |key: &str| {
+        widget(
+            Text::new(ui.now_t(key))
+                .style(text_style(13.0, 400))
+                .color(SemanticColorRole::Text),
+        )
+        .into_any()
+    };
+    let sender = widget(
+        Stack::row(4.0)
+            .align(AlignSpec::Center)
+            .padding_xy(8.0, 2.0)
+            .surface(SemanticColorRole::Subtle)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .radius_px(6.0),
+    )
+    .children((
+        widget(Text::new(String::new()).style(mono_style(12.0, 500))).bind(move |t: &mut Text| {
+            let name = ui.settings.with(|s| s.output.display.name.clone());
+            if t.value != name {
+                t.value = name;
+            }
+        }),
+        widget(
+            IconButton::new(ti::COPY, ui.now_t("output-spout-copy"))
+                .size(ControlSize::Small)
+                .with_tooltip(ui.now_t("output-spout-copy")),
+        )
+        .on_cx(move |_, _: &Activate, cx| {
+            let name = ui
+                .settings
+                .with_untracked(|s| s.output.display.name.clone());
+            cx.dispatch_program_all(Msg::CopyText(name))
+        }),
+    ));
+    let steps: Vec<AnyView> = if cfg!(windows) {
+        vec![
+            step(1, body("output-obs-step-plugin")),
+            step(2, (body("output-obs-step-source"), sender)),
+            step(3, body("output-obs-step-alpha")),
+        ]
+    } else {
+        vec![hint(ui.now_t("output-spout-unsupported"))]
+    };
+    let other_open = signal(!cfg!(windows));
+    let other = widget(Stack::column(6.0).align(AlignSpec::Start)).children((
+        widget(
+            Button::new(ui.now_t("output-obs-other"))
+                .kind(ButtonKind::Text)
+                .size(ControlSize::Small)
+                .icon(ti::CHEVRON_RIGHT),
+        )
+        .bind(move |b: &mut Button| {
+            let icon = if other_open.get() {
+                ti::CHEVRON_DOWN
+            } else {
+                ti::CHEVRON_RIGHT
+            };
+            if b.icon != Some(icon) {
+                b.icon = Some(icon);
+            }
+        })
+        .on(move |_: &Activate| other_open.set(!other_open.get_untracked())),
+        widget(Stack::column(0.0).with_layout(|l| {
+            l.padding_left = Some(LengthSpec::Px(8.0));
+        }))
+        .visible(move || other_open.get())
+        .children(hint(ui.now_t(if cfg!(target_os = "macos") {
+            "output-obs-mac"
+        } else {
+            "output-obs-window"
+        }))),
+    ));
+    widget(Stack::column(10.0).padding_xy(INSET, 14.0))
+        .children((
+            steps,
+            other,
+            widget(Stack::row(0.0)).children(primary(ui, "output-sample", || Msg::PlaySample)),
         ))
         .into_any()
 }
@@ -2045,126 +2334,226 @@ fn output(ui: Ui) -> AnyView {
             ],
         )
     };
-    let obs = vec![
-        widget(Stack::column(8.0).padding_xy(16.0, 12.0))
-            .children((
-                hint(ui.now_t(if cfg!(windows) {
-                    "output-obs-spout"
-                } else {
-                    "output-spout-unsupported"
-                })),
-                hint(ui.now_t(if cfg!(target_os = "macos") {
-                    "output-obs-mac"
-                } else {
-                    "output-obs-window"
-                })),
-                widget(Stack::row(0.0)).children(primary(ui, "output-sample", || Msg::PlaySample)),
-            ))
-            .into_any(),
-    ];
     widget(Stack::column(0.0))
         .children((
-            section(ui, "output-obs-title", obs),
+            section(ui, "output-obs-title", vec![obs_guide(ui)]),
             spout(WindowKind::Display, "output-display"),
             spout(WindowKind::History, "output-history"),
         ))
         .into_any()
 }
 
-/// Expression names mapped to hotkeys, each removable.
-fn mapped(ui: Ui) -> AnyView {
-    dynamic(
-        move || ui.settings.with(|s| s.integrations.vts.expressions.clone()),
-        move |map| {
-            if map.is_empty() {
-                return widget(Stack::column(0.0)).into_any();
-            }
-            let hotkeys = ui.status.with_untracked(|s| s.vts_hotkeys.clone());
-            let mut rows = vec![
-                widget(Stack::column(0.0).padding_xy(INSET, 10.0))
-                    .children(heading(ui, "int-vts-map"))
-                    .into_any(),
-            ];
-            rows.extend(map.iter().map(|(expr, id)| {
-                let expr = expr.clone();
-                let hotkey = hotkeys
-                    .iter()
-                    .find(|(h, _)| h == id)
-                    .map_or(id.clone(), |(_, name)| name.clone());
-                row_text(
-                    format!("[expr={expr}]"),
-                    Some(ui.tr("int-vts-mapped-to", &[("hotkey", hotkey.into())])),
-                    widget(
-                        IconButton::new(ti::TRASH, ui.now_t("int-vts-unmap"))
-                            .size(ControlSize::Small),
-                    )
-                    .on_cx(move |_, _: &Activate, cx| {
-                        let e = expr.clone();
-                        cx.dispatch_program_all(edit(move |s| {
-                            s.integrations.vts.expressions.remove(&e);
-                        }))
-                    })
-                    .into_any(),
-                )
-            }));
-            widget(Stack::column(0.0))
-                .children((divider(), divided(rows)))
-                .into_any()
-        },
+/// Width of the hotkey column of the VTS mapping table.
+const VTS_SELECT_W: f32 = 240.0;
+
+/// A marker as typed in a line: monospace on a quiet chip.
+fn marker_chip(text: String) -> AnyView {
+    widget(
+        Stack::row(0.0)
+            .padding_xy(8.0, 2.0)
+            .align(AlignSpec::Center)
+            .surface(SemanticColorRole::Subtle)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .radius_px(6.0)
+            .with_layout(|l| l.flex_shrink = Some(1.0)),
     )
+    .children(widget(
+        Text::new(text)
+            .style(mono_style(12.0, 500))
+            .color(SemanticColorRole::Text),
+    ))
     .into_any()
 }
 
-fn integrations(ui: Ui) -> AnyView {
-    let mapping = dynamic(
-        move || ui.status.with(|s| s.vts_hotkeys.clone()),
-        move |hotkeys| {
-            if hotkeys.is_empty() {
-                return crate::ui::feedback::empty_state(
-                    ui.now_t("empty-vts-hotkeys"),
-                    Some((ui.now_t("int-vts-refresh"), Box::new(|| Msg::VtsRefresh))),
-                );
-            }
-            let rows: Vec<AnyView> = hotkeys
-                .iter()
-                .map(|(id, name)| {
-                    let id = id.clone();
-                    let name = name.clone();
-                    let expr = nanatype_bridge::mapping_key(&name);
-                    let tag = format!("[expr={expr}]");
-                    row_text(
-                        name.clone(),
-                        Some(tag.clone()),
-                        widget(Stack::row(6.0))
-                            .children((
-                                widget(
-                                    IconButton::new(ti::COPY, ui.now_t("output-spout-copy"))
-                                        .size(ControlSize::Small),
-                                )
-                                .on_cx(
-                                    move |_, _: &Activate, cx| {
-                                        cx.dispatch_program_all(Msg::CopyText(tag.clone()))
-                                    },
-                                ),
-                                widget(
-                                    Button::new(ui.now_t("common-apply")).size(ControlSize::Small),
-                                )
-                                .on_cx(
-                                    move |_, _: &Activate, cx| {
-                                        let (e, i) = (expr.clone(), id.clone());
-                                        cx.dispatch_program_all(edit(move |s| {
-                                            s.integrations.vts.expressions.insert(e, i);
-                                        }))
-                                    },
-                                ),
-                            ))
-                            .into_any(),
-                    )
+/// One marker's row: its chip, then the VTS hotkey it presses ("Auto" lets
+/// the bridge match the hotkey of the same name).
+fn vts_map_row(ui: Ui, key: String, options: Vec<SelectOption>) -> AnyView {
+    let current = {
+        let key = key.clone();
+        move || {
+            ui.settings
+                .with(|s| s.integrations.vts.expressions.get(&key).cloned())
+                .unwrap_or_default()
+        }
+    };
+    let start = current();
+    let set_key = key.clone();
+    widget(
+        Stack::bar(12.0)
+            .padding_xy(INSET, 6.0)
+            .align(AlignSpec::Center)
+            .min_height(LengthSpec::Px(40.0)),
+    )
+    .children((
+        widget(
+            Stack::row(6.0)
+                .align(AlignSpec::Center)
+                .grow(1.0)
+                .shrink(1.0),
+        )
+        .children((
+            marker_chip(format!("[expr={key}]")),
+            widget(IconGlyph::new(ti::ARROW_RIGHT).size(14.0).decorative()),
+        )),
+        widget(Stack::row(0.0).width(LengthSpec::Px(VTS_SELECT_W))).children(
+            widget(
+                Select::new(Some(start))
+                    .options(options)
+                    .size(ControlSize::Small),
+            )
+            .bind(move |s: &mut Select| {
+                let v: Arc<str> = current().into();
+                if s.value.as_ref() != Some(&v) {
+                    s.value = Some(v);
+                }
+            })
+            .on_cx(move |_, e: &SelectChanged, cx| {
+                let (k, id) = (set_key.clone(), e.value.to_string());
+                cx.dispatch_program_all(edit(move |s| {
+                    let map = &mut s.integrations.vts.expressions;
+                    if id.is_empty() {
+                        map.remove(&k);
+                    } else {
+                        map.insert(k, id);
+                    }
+                }))
+            }),
+        ),
+    ))
+    .into_any()
+}
+
+/// Expression markers mapped to VTube Studio hotkeys: access first, then a
+/// two-column table of every marker the model's hotkeys (or a saved
+/// mapping) give.
+fn vts_mapping(ui: Ui) -> AnyView {
+    let authorized = move || {
+        ui.settings.with(|s| s.integrations.vts.token.is_some())
+            && ui.status.with(|s| s.vts != LinkState::NeedsAuth)
+    };
+    let header = widget(
+        Stack::bar(12.0)
+            .padding_xy(INSET, 12.0)
+            .align(AlignSpec::Center),
+    )
+    .children((
+        widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
+            subheading(ui, "int-vts-map"),
+            widget(Stack::column(0.0))
+                .visible(move || !authorized())
+                .children(hint(ui.now_t("int-vts-authorize-hint"))),
+        )),
+        widget(Stack::row(6.0).align(AlignSpec::Center)).children((
+            widget(
+                StatusBadge::new(ui.now_t("int-vts-authorized"), StatusTone::Success).compact(true),
+            )
+            .visible(authorized),
+            // With nothing listed, the empty state below carries the button.
+            widget(Stack::row(0.0))
+                .visible(move || {
+                    !authorized()
+                        && (ui.status.with(|s| !s.vts_hotkeys.is_empty())
+                            || ui
+                                .settings
+                                .with(|s| !s.integrations.vts.expressions.is_empty()))
                 })
+                .children(button(ui, "int-vts-authorize", || Msg::VtsAuthorize)),
+            widget(
+                IconButton::new(ti::REFRESH, ui.now_t("int-vts-refresh"))
+                    .size(ControlSize::Small)
+                    .with_tooltip(ui.now_t("int-vts-refresh")),
+            )
+            .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::VtsRefresh)),
+        )),
+    ));
+    let table = dynamic(
+        move || {
+            let (hotkeys, connected) = ui.status.with(|s| {
+                (
+                    s.vts_hotkeys.clone(),
+                    matches!(s.vts, LinkState::Connected(_)),
+                )
+            });
+            let mapped = ui.settings.with(|s| {
+                s.integrations
+                    .vts
+                    .expressions
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<Vec<_>>()
+            });
+            (hotkeys, connected, mapped)
+        },
+        move |(hotkeys, connected, mapped)| {
+            let mut markers: Vec<String> = Vec::new();
+            let names = hotkeys.iter().map(|(_, n)| nanatype_bridge::mapping_key(n));
+            for key in names.chain(mapped.iter().map(|(k, _)| k.clone())) {
+                if !key.is_empty() && !markers.contains(&key) {
+                    markers.push(key);
+                }
+            }
+            if markers.is_empty() {
+                return if *connected {
+                    crate::ui::feedback::empty_state(
+                        ui.now_t("empty-vts-hotkeys"),
+                        Some((ui.now_t("int-vts-refresh"), Box::new(|| Msg::VtsRefresh))),
+                    )
+                } else {
+                    crate::ui::feedback::empty_state(
+                        ui.now_t("int-vts-map-empty"),
+                        Some((
+                            ui.now_t("int-vts-authorize"),
+                            Box::new(|| Msg::VtsAuthorize),
+                        )),
+                    )
+                };
+            }
+            let mut options = vec![SelectOption::new("", ui.now_t("int-vts-map-auto"))];
+            options.extend(
+                hotkeys
+                    .iter()
+                    .map(|(id, name)| SelectOption::new(id.clone(), name.clone())),
+            );
+            for (_, id) in mapped {
+                if !hotkeys.iter().any(|(h, _)| h == id) {
+                    options.push(SelectOption::new(id.clone(), id.clone()));
+                }
+            }
+            let caption = |key: &str| {
+                widget(
+                    Text::new(ui.now_t(key))
+                        .style(text_style(12.0, 600))
+                        .color(SemanticColorRole::Muted),
+                )
+            };
+            let head = widget(
+                Stack::bar(12.0)
+                    .padding_xy(INSET, 0.0)
+                    .align(AlignSpec::Center)
+                    .with_layout(|l| l.padding_bottom = Some(LengthSpec::Px(4.0))),
+            )
+            .children((
+                widget(Stack::row(0.0).grow(1.0)).children(caption("int-vts-map-expression")),
+                widget(Stack::row(0.0).width(LengthSpec::Px(VTS_SELECT_W)))
+                    .children(caption("int-vts-map-hotkey")),
+            ));
+            let rows: Vec<AnyView> = markers
+                .into_iter()
+                .map(|key| vts_map_row(ui, key, options.clone()))
                 .collect();
-            widget(Stack::column(0.0)).children(rows).into_any()
+            widget(Stack::column(0.0).with_layout(|l| {
+                l.padding_bottom = Some(LengthSpec::Px(6.0));
+            }))
+            .children((head, divided(rows)))
+            .into_any()
         },
     );
+    widget(Stack::column(0.0))
+        .children((header, table))
+        .into_any()
+}
+
+fn integrations(ui: Ui) -> AnyView {
     widget(Stack::column(0.0))
         .children((
             blivechat(ui),
@@ -2195,29 +2584,13 @@ fn integrations(ui: Ui) -> AnyView {
                                 ui,
                                 "int-vts-port",
                                 None,
-                                number(
+                                port(
                                     ui,
-                                    (1.0, 65535.0),
-                                    |s| f64::from(s.integrations.vts.port),
-                                    |s, v| s.integrations.vts.port = v as u16,
+                                    |s| s.integrations.vts.port,
+                                    |s, v| s.integrations.vts.port = v,
                                 ),
                             ),
-                            row(
-                                ui,
-                                "int-vts-authorize",
-                                Some("int-vts-authorize-hint"),
-                                widget(Stack::row(8.0))
-                                    .children((
-                                        button(ui, "int-vts-authorize", || Msg::VtsAuthorize),
-                                        button(ui, "int-vts-refresh", || Msg::VtsRefresh),
-                                    ))
-                                    .into_any(),
-                            ),
-                            // One row: the saved mappings add their own
-                            // divider only when there are any.
-                            widget(Stack::column(0.0))
-                                .children((mapping, mapped(ui)))
-                                .into_any(),
+                            vts_mapping(ui),
                             row(
                                 ui,
                                 "int-vts-lipsync",
@@ -2317,11 +2690,10 @@ fn integrations(ui: Ui) -> AnyView {
                                 ui,
                                 "int-osc-port",
                                 None,
-                                number(
+                                port(
                                     ui,
-                                    (1.0, 65535.0),
-                                    |s| f64::from(s.integrations.osc.port),
-                                    |s, v| s.integrations.osc.port = v as u16,
+                                    |s| s.integrations.osc.port,
+                                    |s, v| s.integrations.osc.port = v,
                                 ),
                             ),
                             row(
@@ -2367,11 +2739,15 @@ fn integrations(ui: Ui) -> AnyView {
                             ui,
                             "int-ws-port",
                             None,
-                            number(
+                            port(
                                 ui,
-                                (1024.0, 65535.0),
-                                |s| f64::from(s.integrations.websocket.port),
-                                |s, v| s.integrations.websocket.port = v as u16,
+                                |s| s.integrations.websocket.port,
+                                |s, v| {
+                                    // Below 1024 needs admin rights; keep the last good port.
+                                    if v >= 1024 {
+                                        s.integrations.websocket.port = v;
+                                    }
+                                },
                             ),
                         )],
                         "int-off-hint",
@@ -2435,60 +2811,51 @@ fn assets(ui: Ui) -> AnyView {
             let rows: Vec<AnyView> = (0..*n)
                 .map(|i| {
                     let p = ui.settings.with_untracked(|s| s.assets.phrases[i].clone());
-                    widget(
-                        Stack::bar(8.0)
-                            .padding_xy(16.0, 8.0)
-                            .align(AlignSpec::Center),
+                    let action = GlobalAction::Phrase(i);
+                    // Two lines: name, hotkey, send and remove; then the
+                    // content across the full width.
+                    let first = widget(
+                        Stack::row(10.0)
+                            .align(AlignSpec::Center)
+                            .width(LengthSpec::Fill),
                     )
                     .children((
-                        widget(Stack::row(0.0).width(LengthSpec::Px(140.0))).children(
+                        widget(Stack::row(0.0).width(LengthSpec::Px(200.0))).children(
                             widget(
-                                nana_ui::runtime::TextInput::new(p.label.clone())
+                                TextInput::new(p.label.clone())
                                     .size(ControlSize::Small)
                                     .placeholder(ui.now_t("assets-phrase-label")),
                             )
-                            .on_cx(
-                                move |_, e: &nana_ui::runtime::TextChanged, cx| {
-                                    let v = e.value.to_string();
-                                    cx.dispatch_program_all(edit(move |s| {
-                                        if let Some(p) = s.assets.phrases.get_mut(i) {
-                                            p.label = v;
-                                        }
-                                    }))
-                                },
-                            ),
+                            .on_cx(move |_, e: &TextChanged, cx| {
+                                let v = e.value.to_string();
+                                cx.dispatch_program_all(edit(move |s| {
+                                    if let Some(p) = s.assets.phrases.get_mut(i) {
+                                        p.label = v;
+                                    }
+                                }))
+                            }),
                         ),
-                        widget(Stack::row(0.0).width(LengthSpec::Fill)).children(
-                            widget(
-                                nana_ui::runtime::TextInput::new(p.markup.clone())
-                                    .size(ControlSize::Small)
-                                    .placeholder(ui.now_t("assets-phrase-markup")),
-                            )
-                            .on_cx(
-                                move |_, e: &nana_ui::runtime::TextChanged, cx| {
-                                    let v = e.value.to_string();
-                                    cx.dispatch_program_all(edit(move |s| {
-                                        if let Some(p) = s.assets.phrases.get_mut(i) {
-                                            p.markup = v;
-                                        }
-                                    }))
-                                },
-                            ),
+                        hotkey_control(ui, action),
+                        widget(Stack::row(0.0).grow(1.0)),
+                        widget(
+                            Text::new(ui.now_t("assets-phrase-send"))
+                                .style(text_style(12.0, 500))
+                                .color(SemanticColorRole::Muted),
                         ),
-                        widget(nana_ui::runtime::Switch::new(
-                            ui.now_t("assets-phrase-send"),
-                            p.send,
-                        ))
-                        .on_cx(
-                            move |_, e: &nana_ui::runtime::ToggleChanged, cx| {
+                        widget(Switch::new("", p.send))
+                            .bind(move |w: &mut Switch| {
+                                w.checked = ui
+                                    .settings
+                                    .with(|s| s.assets.phrases.get(i).is_some_and(|p| p.send))
+                            })
+                            .on_cx(move |_, e: &ToggleChanged, cx| {
                                 let v = e.checked;
                                 cx.dispatch_program_all(edit(move |s| {
                                     if let Some(p) = s.assets.phrases.get_mut(i) {
                                         p.send = v;
                                     }
                                 }))
-                            },
-                        ),
+                            }),
                         confirm(
                             ui,
                             ui.now_t("assets-phrase-remove-confirm"),
@@ -2502,11 +2869,34 @@ fn assets(ui: Ui) -> AnyView {
                                 })
                             },
                         ),
-                    ))
-                    .into_any()
+                    ));
+                    let content = widget(Stack::row(0.0).width(LengthSpec::Fill)).children(
+                        widget(
+                            TextInput::new(p.markup.clone())
+                                .size(ControlSize::Small)
+                                .placeholder(ui.now_t("assets-phrase-markup")),
+                        )
+                        .on_cx(move |_, e: &TextChanged, cx| {
+                            let v = e.value.to_string();
+                            cx.dispatch_program_all(edit(move |s| {
+                                if let Some(p) = s.assets.phrases.get_mut(i) {
+                                    p.markup = v;
+                                }
+                            }))
+                        }),
+                    );
+                    widget(Stack::column(0.0))
+                        .children((
+                            widget(Stack::column(8.0).padding_xy(INSET, 12.0))
+                                .children((first, content)),
+                            hotkey_issue_line(ui, action),
+                        ))
+                        .into_any()
                 })
                 .collect();
-            widget(Stack::column(0.0)).children(rows).into_any()
+            widget(Stack::column(0.0))
+                .children(divided(rows))
+                .into_any()
         },
     );
     widget(Stack::column(0.0))
@@ -2551,11 +2941,6 @@ fn assets(ui: Ui) -> AnyView {
 
 fn about(ui: Ui) -> AnyView {
     let locale = ui.locale.get_untracked();
-    let version = I18N.tr_in(
-        locale,
-        "about-version",
-        &[("version", env!("CARGO_PKG_VERSION").into())],
-    );
     let build = I18N.tr_in(
         locale,
         "about-build",
@@ -2563,32 +2948,77 @@ fn about(ui: Ui) -> AnyView {
     );
     let paths = crate::paths::Paths::resolve();
     let (logs, data) = (paths.logs.clone(), paths.data.clone());
+    let icon = widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Px(48.0))
+            .height(LengthSpec::Px(48.0))
+            .with_layout(|l| {
+                l.flex_shrink = Some(0.0);
+                l.paint.background_image = Some(BackgroundImage::url_with_fit(
+                    format!("data:image/png;base64,{}", ICON_PNG_B64.as_str()),
+                    nana_ui_core::BackgroundImageFit::Contain,
+                ));
+            }),
+    );
+    let version_chip = widget(
+        Stack::row(0.0)
+            .padding_xy(8.0, 1.0)
+            .surface(SemanticColorRole::Subtle)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .radius_px(999.0),
+    )
+    .children(widget(
+        Text::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+            .style(mono_style(12.0, 500))
+            .color(SemanticColorRole::Muted),
+    ));
+    let header = widget(
+        Stack::row(14.0)
+            .padding_xy(INSET, 16.0)
+            .align(AlignSpec::Center),
+    )
+    .children((
+        icon,
+        widget(Stack::column(4.0).grow(1.0).shrink(1.0)).children((
+            widget(Stack::row(8.0).align(AlignSpec::Center)).children((
+                widget(Text::new("NanaType").style(text_style(18.0, 700))),
+                version_chip,
+            )),
+            hint_13(ui.now_t("app-tagline")),
+            hint(build),
+        )),
+    ));
+    let link = |key: &str, icon: nana_ui::runtime::Icon, msg: Box<dyn Fn() -> Msg + Send>| {
+        widget(
+            Button::new(ui.now_t(key))
+                .kind(ButtonKind::Ghost)
+                .size(ControlSize::Small)
+                .icon(icon),
+        )
+        .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
+        .into_any()
+    };
+    let links = widget(Stack::row(6.0).padding_xy(INSET - 6.0, 10.0).wrap(true)).children(vec![
+        link(
+            "about-logs",
+            ti::FILE_TEXT,
+            Box::new(move || Msg::OpenFolder(logs.clone())),
+        ),
+        link(
+            "about-data",
+            ti::FOLDER_OPEN,
+            Box::new(move || Msg::OpenFolder(data.clone())),
+        ),
+        link(
+            "about-homepage",
+            ti::EXTERNAL_LINK,
+            Box::new(|| Msg::OpenUrl(HOMEPAGE)),
+        ),
+    ]);
     widget(Stack::column(0.0))
-        .children(section(
-            ui,
-            "",
-            vec![
-                widget(Stack::column(4.0).padding_xy(16.0, 14.0))
-                    .children((
-                        widget(Text::new("NanaType").style(text_style(20.0, 700))),
-                        hint(ui.now_t("app-tagline")),
-                        hint(version),
-                        hint(build),
-                    ))
-                    .into_any(),
-                row(
-                    ui,
-                    "about-logs",
-                    None,
-                    button(ui, "about-logs", move || Msg::OpenFolder(logs.clone())),
-                ),
-                row(
-                    ui,
-                    "about-data",
-                    None,
-                    button(ui, "about-data", move || Msg::OpenFolder(data.clone())),
-                ),
-            ],
-        ))
+        .children(section(ui, "", vec![header.into_any(), links.into_any()]))
         .into_any()
 }
+
+/// Where the project lives.
+const HOMEPAGE: &str = "https://github.com/sena-nana/NanaType";

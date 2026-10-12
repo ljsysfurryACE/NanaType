@@ -60,6 +60,22 @@ impl Page {
         }
     }
 
+    /// The one-line description under the page title.
+    pub fn subtitle_key(self) -> &'static str {
+        match self {
+            Self::General => "settings-general-sub",
+            Self::Playback => "settings-playback-sub",
+            Self::Skins => "settings-skins-sub",
+            Self::Windows => "settings-windows-sub",
+            Self::History => "settings-history-sub",
+            Self::Hotkeys => "settings-hotkeys-sub",
+            Self::Output => "settings-output-sub",
+            Self::Integrations => "settings-integrations-sub",
+            Self::Assets => "settings-assets-sub",
+            Self::About => "settings-about-sub",
+        }
+    }
+
     fn icon(self) -> nana_ui::runtime::Icon {
         match self {
             Self::General => ti::ADJUSTMENTS,
@@ -76,23 +92,79 @@ impl Page {
     }
 }
 
-fn sidebar(ui: Ui) -> AnyView {
-    let items: Vec<AnyView> = Page::ALL
-        .into_iter()
-        .map(|page| {
-            widget(ListItem::new(""))
-                .bind(move |item: &mut ListItem| {
-                    let label = super::I18N.t_in(ui.locale.get(), page.label_key());
-                    if item.label != label {
-                        item.label = label;
-                    }
-                    item.selected = ui.page.get() == page;
-                })
-                .leading(widget(nana_ui::runtime::IconGlyph::new(page.icon())))
-                .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(Msg::SettingsPage(page)))
-                .into_any()
+/// The sidebar's groups: a caption key and its pages. About sits apart, at
+/// the foot.
+const GROUPS: [(&str, [Page; 3]); 3] = [
+    (
+        "settings-group-input",
+        [Page::General, Page::Playback, Page::Hotkeys],
+    ),
+    (
+        "settings-group-look",
+        [Page::Skins, Page::Windows, Page::History],
+    ),
+    (
+        "settings-group-stream",
+        [Page::Output, Page::Integrations, Page::Assets],
+    ),
+];
+
+/// One page's row: a 16px icon (muted, text-coloured when selected) and
+/// its name.
+fn nav_row(ui: Ui, page: Page) -> AnyView {
+    let selected = move || ui.page.get() == page;
+    widget(ListItem::new("").size(nana_ui::ControlSize::Medium))
+        .bind(move |item: &mut ListItem| {
+            let label = super::I18N.t_in(ui.locale.get(), page.label_key());
+            if item.label != label {
+                item.label = label;
+            }
+            item.selected = selected();
         })
-        .collect();
+        .leading(
+            widget(nana_ui::runtime::IconGlyph::new(page.icon()).size(16.0)).bind(
+                move |g: &mut nana_ui::runtime::IconGlyph| {
+                    g.style.foreground = Some(if selected() {
+                        SemanticColorRole::Text
+                    } else {
+                        SemanticColorRole::Muted
+                    });
+                },
+            ),
+        )
+        .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(Msg::SettingsPage(page)))
+        .into_any()
+}
+
+/// A group's 11px caption.
+fn nav_caption(ui: Ui, key: &'static str, first: bool) -> AnyView {
+    let mut st = controls::text_style(11.0, 600);
+    {
+        let l = Arc::make_mut(&mut st.layout);
+        l.margin_top = Some(LengthSpec::Px(if first { 6.0 } else { 14.0 }));
+        l.margin_bottom = Some(LengthSpec::Px(4.0));
+        l.padding_left = Some(LengthSpec::Px(10.0));
+    }
+    widget(
+        Text::new(super::I18N.t_in(ui.locale.get_untracked(), key))
+            .style(st)
+            .color(SemanticColorRole::Muted),
+    )
+    .bind(move |t: &mut Text| {
+        let text = super::I18N.t_in(ui.locale.get(), key);
+        if t.value != text {
+            t.value = text;
+        }
+    })
+    .into_any()
+}
+
+fn sidebar(ui: Ui) -> AnyView {
+    let mut items: Vec<AnyView> = Vec::new();
+    for (i, (caption, pages)) in GROUPS.into_iter().enumerate() {
+        items.push(nav_caption(ui, caption, i == 0));
+        items.extend(pages.into_iter().map(|page| nav_row(ui, page)));
+    }
     let mut title = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut title.layout);
@@ -101,7 +173,7 @@ fn sidebar(ui: Ui) -> AnyView {
     }
     widget(
         Stack::column(2.0)
-            .width(LengthSpec::Px(220.0))
+            .width(LengthSpec::Px(196.0))
             .padding_xy(10.0, 14.0)
             .surface(SemanticColorRole::Subtle)
             .with_layout(|l| {
@@ -128,6 +200,9 @@ fn sidebar(ui: Ui) -> AnyView {
             widget(Text::new("NanaType").style(title)),
         )),
         items,
+        // About stays at the foot, under whatever the groups leave.
+        widget(Stack::column(0.0).grow(1.0)),
+        nav_row(ui, Page::About),
     ))
     .into_any()
 }
