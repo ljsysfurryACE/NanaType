@@ -85,6 +85,8 @@ pub struct App {
     pub rich_commands: Vec<nana_ui::runtime::RichEditCommand>,
     /// Fonts packaged with the active skin, registered while it is active.
     fonts: nana_ui::HostFontScope,
+    /// Built-in (embedded) fonts the active skin names, each registered once.
+    builtin_fonts: crate::skin_fonts::BuiltinFontSet<nana_ui::HostFontScope>,
     /// Family registered for each skin font role (body, name, accent).
     skin_families: [Option<String>; 3],
     skin_watch: Option<crate::services::watch::Watch>,
@@ -225,6 +227,7 @@ impl App {
             spout: crate::output::Spout::default(),
             rich_commands: Vec::new(),
             fonts: nana_ui::HostFontScope::new(),
+            builtin_fonts: Default::default(),
             skin_families: [None, None, None],
             skin_watch: None,
             sticker_watch: None,
@@ -578,23 +581,51 @@ impl App {
     }
 
     /// Register the skin's packaged fonts, replacing the previous skin's.
+    /// Built-in fonts (`builtin:`) are kept registered across skins that
+    /// share them; a file named by several roles is registered once.
     fn register_fonts(&mut self) {
         self.fonts.clear();
         let f = self.loaded.skin.fonts.clone();
         let files = self.loaded.files.clone();
+        let roles = [&f.body, &f.name, &f.accent];
+        let mut errors = self.builtin_fonts.sync(
+            roles
+                .iter()
+                .filter_map(|s| s.file.as_deref())
+                .filter(|p| nanatype_theme::is_builtin_font(p)),
+            nanatype_theme::builtin_font,
+            crate::skin_fonts::register_with_nana_ui,
+        );
         let mut families = [None, None, None];
-        let mut errors = Vec::new();
-        for (i, spec) in [&f.body, &f.name, &f.accent].into_iter().enumerate() {
+        let mut packaged: HashMap<String, Option<String>> = HashMap::new();
+        for (i, spec) in roles.into_iter().enumerate() {
             let Some(file) = &spec.file else {
                 continue;
             };
-            match files.read(file) {
-                Ok(bytes) => match self.fonts.add_bytes(bytes) {
-                    Ok(registration) => families[i] = registration.families().first().cloned(),
-                    Err(e) => errors.push(format!("{file}: {e}")),
-                },
-                Err(e) => errors.push(e.to_string()),
+            if nanatype_theme::is_builtin_font(file) {
+                // Not in this build: None, and the role keeps its families.
+                families[i] = self.builtin_fonts.family(file);
+                continue;
             }
+            if let Some(family) = packaged.get(file) {
+                families[i] = family.clone();
+                continue;
+            }
+            let family = match files.read(file) {
+                Ok(bytes) => match self.fonts.add_bytes(bytes) {
+                    Ok(registration) => registration.families().first().cloned(),
+                    Err(e) => {
+                        errors.push(format!("{file}: {e}"));
+                        None
+                    }
+                },
+                Err(e) => {
+                    errors.push(e.to_string());
+                    None
+                }
+            };
+            packaged.insert(file.clone(), family.clone());
+            families[i] = family;
         }
         self.skin_families = families;
         for e in errors {

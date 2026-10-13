@@ -14,6 +14,13 @@ path = "src/lib.rs"
 name = "nanatype"
 path = "src/main.rs"
 
+[features]
+default = ["builtin-fonts"]
+# Embed crates/theme/fonts/ for the built-in skins (docs/fonts.md). Build
+# with `--no-default-features` to leave them out: those skins then fall
+# back to installed fonts.
+builtin-fonts = ["nanatype-theme/builtin-fonts"]
+
 [dependencies]
 nanatype-model.workspace = true
 nanatype-markup.workspace = true

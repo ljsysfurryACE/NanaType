@@ -1415,6 +1415,10 @@ fn skin_list_row(
             )
         ),
     };
+    let detail = match fallback_font_note(locale, skin) {
+        Some(note) => format!("{detail} · {note}"),
+        None => detail,
+    };
     let usable = skin.error.is_none();
     let previewed = previewed(ui, previewing, skin.id.clone());
     let pick_id = skin.id.clone();
@@ -1493,6 +1497,20 @@ fn one_line(size: f32, weight: u16) -> nana_ui::runtime::NodeStyle {
     st
 }
 
+/// "Fusion Pixel 12px is not installed; showing a fallback font", for a
+/// skin whose own body font cannot be used here.
+fn fallback_font_note(locale: Locale, row: &SkinRow) -> Option<String> {
+    if !row.fallback_font || row.error.is_some() {
+        return None;
+    }
+    let family = row.skin.as_ref()?.fonts.body.families.first()?;
+    Some(I18N.tr_in(
+        locale,
+        "skins-fallback-font-detail",
+        &[("family", family.as_str().into())],
+    ))
+}
+
 /// "Light · Classic": the skin's tone and tags on one line.
 fn tag_line(locale: Locale, row: &SkinRow) -> String {
     let tone = if row.dark { "dark" } else { "light" };
@@ -1558,6 +1576,14 @@ fn skin_card(
     ));
     let (tags, tone) = match &skin.error {
         Some(_) => (I18N.t_in(locale, "skins-broken"), SemanticColorRole::Danger),
+        None if skin.fallback_font => (
+            format!(
+                "{} · {}",
+                tag_line(locale, skin),
+                I18N.t_in(locale, "skins-fallback-font")
+            ),
+            SemanticColorRole::Muted,
+        ),
         None => (tag_line(locale, skin), SemanticColorRole::Muted),
     };
     let name_row = widget(
@@ -1866,6 +1892,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             Some(r) => (r.name.clone(), r.description.clone(), badges(locale, r)),
             None => (skin.display_name(locale.tag()), String::new(), Vec::new()),
         };
+        let font_note = row.as_ref().and_then(|r| fallback_font_note(locale, r));
         let apply_id = id.clone();
         let caption = widget(
             Stack::bar(12.0)
@@ -1876,6 +1903,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             widget(Stack::column(4.0).grow(1.0).shrink(1.0)).children((
                 widget(Stack::row(6.0).align(AlignSpec::Center)).children((label(name), badges)),
                 (!description.is_empty()).then(|| hint(description)),
+                font_note.map(hint),
             )),
             (!is_active).then(|| {
                 widget(crate::skin_theme::cta(

@@ -19,6 +19,7 @@ pub mod output;
 pub mod paths;
 pub mod scheduler;
 pub mod services;
+pub mod skin_fonts;
 pub mod skin_theme;
 pub mod ui;
 pub mod windows;

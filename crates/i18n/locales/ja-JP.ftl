@@ -558,3 +558,8 @@ about-setup-guide = セットアップガイドを表示
 playback-reduced-system-on = システム設定：オン
 playback-reduced-system-off = システム設定：オフ
 ## end wave4-onboarding
+
+## wave5-fonts
+skins-fallback-font = 代替フォント
+skins-fallback-font-detail = { $family } がインストールされていないため、代替フォントで表示しています
+## end wave5-fonts

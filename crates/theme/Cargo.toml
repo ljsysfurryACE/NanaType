@@ -6,6 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 description = "NanaType skin packages: manifest, inheritance, validation, install and export"
 
+[features]
+# Embed the fonts in `fonts/` for `builtin:` font references (docs/fonts.md).
+# Off: nothing is embedded and those roles fall back to their `families`.
+# With no font files in `fonts/` it adds nothing either way.
+default = ["builtin-fonts"]
+builtin-fonts = []
+
 [dependencies]
 nanatype-model.workspace = true
 nanatype-playback.workspace = true
@@ -17,3 +24,6 @@ ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile = "3"
+# Noto Sans SC (OFL-1.1), already in every build through NanaUI: the test
+# font for the `builtin:` font table.
+nana-ui-core = { workspace = true, features = ["bundled-font-regular"] }
