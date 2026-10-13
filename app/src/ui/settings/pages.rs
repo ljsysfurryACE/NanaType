@@ -1543,16 +1543,40 @@ fn skin_card(
     .children(super::skin_grid::miniature(&super::skin_grid::thumb(skin)));
     let (tags, tone) = match &skin.error {
         Some(_) => (I18N.t_in(locale, "skins-broken"), SemanticColorRole::Danger),
-        None if skin.fallback_font => (
-            format!(
-                "{} · {}",
-                tag_line(locale, skin),
-                I18N.t_in(locale, "skins-fallback-font")
-            ),
-            SemanticColorRole::Muted,
-        ),
         None => (tag_line(locale, skin), SemanticColorRole::Muted),
     };
+    // "· Fallback font" never shrinks: when the line is too long for the
+    // card (English, Japanese), the tags are cut, not the hint.
+    let font_note = (skin.error.is_none() && skin.fallback_font).then(|| {
+        let mut st = text_style(12.0, 400);
+        let l = Arc::make_mut(&mut st.layout);
+        l.white_space_nowrap = true;
+        l.flex_shrink = Some(0.0);
+        widget(
+            Text::new(format!(" · {}", I18N.t_in(locale, "skins-fallback-font")))
+                .style(st)
+                .color(SemanticColorRole::Muted),
+        )
+    });
+    let tags_row = widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Fill)
+            .with_layout(|l| l.min_width = Some(LengthSpec::Px(0.0))),
+    )
+    .children((
+        widget(
+            Text::new(tags)
+                .style({
+                    // Shrinks with an ellipsis but does not grow, so the
+                    // hint follows the tags rather than the card's edge.
+                    let mut st = one_line(12.0, 400);
+                    Arc::make_mut(&mut st.layout).flex_grow = Some(0.0);
+                    st
+                })
+                .color(tone),
+        ),
+        font_note,
+    ));
     let name_row = widget(
         Stack::row(6.0)
             .align(AlignSpec::Center)
@@ -1604,10 +1628,7 @@ fn skin_card(
         )
         .children((
             well,
-            widget(Stack::column(2.0).padding_xy(2.0, 0.0)).children((
-                name_row,
-                widget(Text::new(tags).style(one_line(12.0, 400)).color(tone)),
-            )),
+            widget(Stack::column(2.0).padding_xy(2.0, 0.0)).children((name_row, tags_row)),
         )),
     );
     widget(Stack::column(0.0).with_layout(|l| {
