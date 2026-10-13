@@ -429,7 +429,9 @@ fn step_indicator(ui: Ui) -> AnyView {
         .into_any()
 }
 
-/// One step's body, under the guide's header.
+/// One step's body, under the guide's header. Its rows carry no dividers of
+/// their own: the footer's line is the step's only one, so none stacks on
+/// it.
 fn onboard_step(ui: Ui, n: u8) -> AnyView {
     let lead = |key: &str| {
         widget(Stack::column(0.0).padding_xy(INSET, 4.0))
@@ -440,7 +442,6 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
         0 => vec![
             lead("onboard-welcome-body"),
             row(ui, "onboard-language", None, language_select(ui)),
-            divider(),
             row(
                 ui,
                 "onboard-speaker",
@@ -472,7 +473,6 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
             widget(Stack::column(10.0).padding_xy(INSET, 8.0))
                 .children((subheading(ui, "onboard-hotkeys"), hotkeys_sentence(ui)))
                 .into_any(),
-            divider(),
             row(
                 ui,
                 "onboard-obs",
