@@ -179,6 +179,9 @@ pub struct Ui {
     pub reply: Signal<Option<ChatRef>>,
     /// The chat panel's width, so its rows can lay text out to it.
     pub chat_width: Signal<f32>,
+    /// The skin library shows cards (`true`) or the list; kept while the
+    /// user visits other pages.
+    pub skins_grid: Signal<bool>,
 }
 
 impl Ui {
@@ -219,6 +222,7 @@ impl Ui {
             chat: signal(Arc::new(Vec::new())),
             reply: signal(None),
             chat_width: signal(400.0),
+            skins_grid: signal(true),
         }
     }
 

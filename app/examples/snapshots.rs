@@ -60,6 +60,7 @@ fn main() {
     // Installed skins live in the data folder, like the app's.
     let skins = out.join("data").join("skins");
     framed_skin(&skins.join(FRAMED));
+    fallback_skin(&skins.join(FALLBACK));
     let registry = SkinRegistry::new(Some(skins), env!("CARGO_PKG_VERSION"));
     if skin_id == "all" {
         let ids: Vec<String> = registry.entries().iter().map(|e| e.id.clone()).collect();
@@ -73,6 +74,32 @@ fn main() {
 
 /// A user skin with pictures: render it with `snapshots <out> snap.framed`.
 const FRAMED: &str = "snap.framed";
+
+/// A user skin whose fonts are nowhere: the library flags it "Fallback
+/// font". Its long name and tags show how a crowded row is cut.
+const FALLBACK: &str = "snap.fallback";
+
+fn fallback_skin(dir: &std::path::Path) {
+    std::fs::create_dir_all(dir).unwrap();
+    std::fs::write(
+        dir.join("skin.toml"),
+        format!(
+            r#"[meta]
+id = "{FALLBACK}"
+version = "1.2.0"
+min_app = "0.1.0"
+base = "nanatype.parchment"
+name = {{ zh-CN = "缺字体的超长名字手写信纸皮肤", en-US = "Handwritten Letter Paper With A Very Long Name", ja-JP = "フォントが無いとても長い名前の手紙スキン" }}
+author = "snapshots"
+tags = ["classic", "cute", "game"]
+
+[fonts.body]
+families = ["No Such Handwriting 7f3a", "Nor This One 7f3b"]
+"#
+        ),
+    )
+    .unwrap();
+}
 
 /// Writes the [`FRAMED`] skin: Halo with a nine-slice box frame, a framed
 /// nameplate, a portrait and a two-frame continue sprite, all PNG files.
@@ -609,7 +636,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     // Pages taller than the window, whole: the skin grid and the history
     // page's last row.
     for (page, h) in [
-        (settings::Page::Skins, 1500),
+        (settings::Page::Skins, 1700),
         (settings::Page::History, 1100),
     ] {
         ui.page.set(page);
@@ -626,6 +653,21 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             },
         );
     }
+    // The skin library as a list (the view switch's other state), in the
+    // window and whole.
+    ui.page.set(settings::Page::Skins);
+    ui.skins_grid.set(false);
+    for (name, h) in [
+        ("settings-Skins-list", 660),
+        ("settings-Skins-list-full", 1900),
+    ] {
+        shot(name, out, 920, h, theme.clone(), |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || settings::settings_window(ui))
+                .unwrap();
+        });
+    }
+    ui.skins_grid.set(true);
 
     // An empty draft shows the editor's placeholder.
     ui.draft.set(Arc::new(Document::new()));

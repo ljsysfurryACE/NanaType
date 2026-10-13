@@ -527,3 +527,6 @@ about-fonts-author = By { $author }
 about-fonts-version = Version: { $version }
 about-fonts-license-other = Licence below
 ## end wave5-fonts-licences
+## round2-skins
+skins-fallback-font-missing = { $family } not installed
+## end round2-skins

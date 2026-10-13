@@ -521,3 +521,6 @@ about-fonts-author = 作者：{ $author }
 about-fonts-version = 版本：{ $version }
 about-fonts-license-other = 许可见下文
 ## end wave5-fonts-licences
+## round2-skins
+skins-fallback-font-missing = 未安装 { $family }
+## end round2-skins

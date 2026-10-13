@@ -1029,7 +1029,7 @@ fn skins(ui: Ui) -> AnyView {
     let previewing: Signal<Option<String>> = signal(None);
     // Cards with thumbnails by default; the list stays for skins whose card
     // cannot say enough (an author's broken skin, a long description).
-    let grid: Signal<bool> = signal(true);
+    let grid = ui.skins_grid;
     let list = dynamic(
         move || {
             (
@@ -1402,8 +1402,26 @@ fn skin_list_row(
             )
         ),
     };
-    let detail = match fallback_font_note(locale, skin) {
-        Some(note) => format!("{detail} · {note}"),
+    // The "Fallback font" badge sits with the tags; the detail line only
+    // names the missing family, so it stays one line in every language.
+    let fallback = (skin.error.is_none() && skin.fallback_font).then(|| {
+        widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0))).children(widget(
+            StatusBadge::new(
+                I18N.t_in(locale, "skins-fallback-font"),
+                StatusTone::Warning,
+            )
+            .compact(true),
+        ))
+    });
+    let detail = match missing_family(skin).filter(|_| fallback.is_some()) {
+        Some(family) => format!(
+            "{detail} · {}",
+            I18N.tr_in(
+                locale,
+                "skins-fallback-font-missing",
+                &[("family", family.into())]
+            )
+        ),
         None => detail,
     };
     let usable = skin.error.is_none();
@@ -1451,9 +1469,36 @@ fn skin_list_row(
             swatch(skin.accent),
         )))
         .content(
-            widget(Stack::column(2.0).grow(1.0).shrink(1.0)).children((
-                widget(Stack::row(6.0).align(AlignSpec::Center))
-                    .children((label(skin.name.clone()), badges(locale, skin))),
+            widget(
+                Stack::column(2.0)
+                    .grow(1.0)
+                    .shrink(1.0)
+                    .with_layout(|l| l.min_width = Some(LengthSpec::Px(0.0))),
+            )
+            .children((
+                // A long name is cut before the tags and the badge are.
+                widget(
+                    Stack::row(6.0)
+                        .align(AlignSpec::Center)
+                        .width(LengthSpec::Fill)
+                        .with_layout(|l| l.min_width = Some(LengthSpec::Px(0.0))),
+                )
+                .children((
+                    widget(Text::new(skin.name.clone()).style({
+                        let mut st = one_line(13.0, 500);
+                        Arc::make_mut(&mut st.layout).flex_grow = Some(0.0);
+                        st
+                    })),
+                    badges(locale, skin)
+                        .into_iter()
+                        .map(|b| {
+                            widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
+                                .children(b)
+                                .into_any()
+                        })
+                        .collect::<Vec<_>>(),
+                    fallback,
+                )),
                 hint(detail),
             )),
         )
@@ -1484,17 +1529,28 @@ fn one_line(size: f32, weight: u16) -> nana_ui::runtime::NodeStyle {
     st
 }
 
+/// The body family a skin asks for first, which this system lacks.
+fn missing_family(row: &SkinRow) -> Option<&str> {
+    row.skin
+        .as_ref()?
+        .fonts
+        .body
+        .families
+        .first()
+        .map(String::as_str)
+}
+
 /// "Fusion Pixel 12px is not installed; showing a fallback font", for a
 /// skin whose own body font cannot be used here.
 fn fallback_font_note(locale: Locale, row: &SkinRow) -> Option<String> {
     if !row.fallback_font || row.error.is_some() {
         return None;
     }
-    let family = row.skin.as_ref()?.fonts.body.families.first()?;
+    let family = missing_family(row)?;
     Some(I18N.tr_in(
         locale,
         "skins-fallback-font-detail",
-        &[("family", family.as_str().into())],
+        &[("family", family.into())],
     ))
 }
 
