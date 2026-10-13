@@ -7,6 +7,7 @@ mod pages;
 mod skin_grid;
 
 pub use controls::links_pulsing;
+pub use pages::font_licence_panel;
 
 use std::sync::Arc;
 

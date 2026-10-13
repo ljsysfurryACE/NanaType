@@ -563,3 +563,13 @@ playback-reduced-system-off = 系统设置：关
 skins-fallback-font = 替代字体
 skins-fallback-font-detail = 未安装 { $family }，正以替代字体显示
 ## end wave5-fonts
+
+## wave5-fonts-licences
+about-fonts = 开源字体
+about-fonts-hint = 内置皮肤随附的字体，以及它们的许可全文
+about-fonts-show = 查看许可
+about-fonts-hide = 收起
+about-fonts-author = 作者：{ $author }
+about-fonts-version = 版本：{ $version }
+about-fonts-license-other = 许可见下文
+## end wave5-fonts-licences

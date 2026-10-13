@@ -1,15 +1,15 @@
 # 内置皮肤的字体
 
-内置皮肤只写系统字体名时，没装那些字体的电脑会用普通界面字体代替：像素、水墨这几套就失去了味道。这里说明怎样把开源字体编进程序，以及建议带哪些。
+内置皮肤只写系统字体名时，没装那些字体的电脑会用普通界面字体代替：像素、水墨这几套就失去了味道。这里说明程序带了哪些开源字体、怎样编进程序，以及以后加字体的规矩。
 
-> **状态**：机制已就绪，仓库里还没有任何字体文件。下表的来源与许可是按维护者的已有知识整理的，**未联网核实**；标 ⚠ 的项目在下载前必须到官方仓库确认。
+> **状态**：已随附两款字体（2026-10-13，从官方 GitHub Release 下载并核实许可）：Fusion Pixel（`pixel`、`rpg`）与霞鹜文楷（`ink`）。来源、版本、SHA-256 与子集命令的逐项记录见 [crates/theme/fonts/README.md](../crates/theme/fonts/README.md)。
 
 ## 机制
 
 - 字体放在 `crates/theme/fonts/<名字>.ttf`（或 `.otf`），旁边必须有同名许可 `<名字>.LICENSE.txt`（上游的 `OFL.txt` 原样复制，含版权行）。缺许可时编译失败。
 - 皮肤写 `file = "builtin:fonts/<名字>.ttf"`。用户皮肤也能引用。路径不能离开 `crates/theme/`。
-- `build.rs` 扫描该目录，打开 Cargo 特性 `builtin-fonts`（应用默认打开）时用 `include_bytes!` 嵌入字体与许可，否则什么都不嵌入。没有字体文件时两种情况都与以前完全一样。
-- 选中皮肤时才向 NanaUI 注册（`app/src/skin_fonts.rs`）；正文、名牌、装饰三个角色或几套皮肤共用同一个字体时只注册一次，切到不用它的皮肤时注销。
+- `build.rs` 扫描该目录，打开 Cargo 特性 `builtin-fonts`（应用默认打开）时用 `include_bytes!` 嵌入字体与许可，否则什么都不嵌入。
+- 选中皮肤时才向 NanaUI 注册（`app/src/skin_fonts.rs`）；正文、名牌、装饰三个角色或几套皮肤共用同一个字体时只注册一次，切到不用它的皮肤时注销。注册时用的是字体文件自己的家族名（见下表），排在 `families` 最前。
 - 本次构建没带的字体不报错，直接回落到 `families`；`fonts/` 里根本没有的名字给一条警告（多半是拼错）。
 - 皮肤库会给 `families` 第一个字体既没安装、也没随附的皮肤标上「替代字体」。
 
@@ -20,78 +20,64 @@
 | `cargo build --no-default-features -p nanatype` | 不嵌入任何内置字体 |
 | `NANATYPE_BUILTIN_FONTS_BUDGET_KB=<KiB>` | 体积上限，默认 12288（12 MiB）。超出时编译失败 |
 
-嵌入是逐字节的，程序增大的体积就是 `fonts/` 里字体文件的总大小（不压缩；安装包的压缩会省一部分）。
+嵌入是逐字节的，程序增大的体积就是 `fonts/` 里字体文件的总大小（不压缩；安装包的压缩会省一部分）。现在两款字体合计 3,595,708 字节（约 3.4 MiB）；调试版 `snapshots` 示例开、关 `builtin-fonts` 相差 3,621,376 字节（字体加许可全文与少量代码）。
 
-## 逐套建议
+## 随附的字体
 
-| 皮肤 | 首选字体 | 官方来源 | 许可（SPDX） | 原始大小（约） | 需要的字重 / 子集 | 建议 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `pixel`、`rpg` | Fusion Pixel Font 12px Proportional SC | <https://github.com/TakWolf/fusion-pixel-font>（Releases） | OFL-1.1 ⚠ | 单个 zh_hans `.ttf` 约 3–6 MB ⚠ | 只要 400；子集到 GB2312 约 0.8–1.5 MB ⚠ | **带**：没有可用的系统替代 |
-| `ink` | LXGW WenKai（霞鹜文楷）Regular | <https://github.com/lxgw/LxgwWenKai>（Releases） | OFL-1.1 ⚠ | 约 20–25 MB ⚠ | 只带 Regular，名牌 700 用合成粗体（文楷没有 Bold，只有 Light / Regular / Medium ⚠）；子集到 3500 常用字约 3–4 MB ⚠ | **带**（子集） |
-| `parchment` | Noto Serif SC | <https://github.com/notofonts/noto-cjk>（`Serif/`），或 google/fonts `ofl/notoserifsc` | OFL-1.1 | 每个字重的 SubsetOTF 约 10–15 MB ⚠ | 需要 600 与 700：两个静态字重或一个可变字体；子集后每个约 1.5–3 MB ⚠ | 暂不带：SimSun / 宋体是可以接受的回落 |
-| `terminal` | Cascadia Mono | <https://github.com/microsoft/cascadia-code>（Releases） | OFL-1.1，含保留字体名 “Cascadia Code” ⚠ | 静态 Regular 约 0.3–0.6 MB ⚠ | 只要 400；**不要子集**（保留字体名的修改版须改名） | 不带：Windows 11 自带 ⚠，Consolas / Menlo 回落已足够 |
-| `echo_*` | Source Han Sans SC | <https://github.com/adobe-fonts/source-han-sans> | OFL-1.1 | — | — | 不下载：NanaUI 已内置同一设计的 **Noto Sans SC**（400/500/600/700），把它放进 `families` 即可，零字节 |
+| 皮肤 | 字体（注册的家族名） | 版本 | 作者 | 许可 | 上游文件 | 子集 | 文件 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `pixel`、`rpg`（正文、名牌） | Fusion Pixel 12px Proportional 简体（`Fusion Pixel 12px Prop zh-Hans`） | 2026.09.25 | TakWolf | OFL-1.1，无保留字体名 | `fusion-pixel-12px-proportional-zh_hans.ttf`，7,053,672 字节，36,436 字形 | GB2312 一二级 + 界面用字 + 假名与标点：7,983 字形，1,453,472 字节 | `FusionPixel12pxProportionalSC.ttf` |
+| `ink`（正文、名牌、装饰） | 霞鹜文楷 Regular（`LXGW WenKai`） | 1.522 | LXGW（基于 Fontworks 的 Klee One） | OFL-1.1，无保留字体名 | `LXGWWenKai-Regular.ttf`，25,575,676 字节，46,867 字形 | GB2312 一级（3,755 常用字）+ 界面用字 + 假名与标点：5,479 字形，2,142,236 字节 | `LXGWWenKai-Regular.ttf` |
+| `echo_*` | Noto Sans SC（NanaUI 自带） | — | — | OFL-1.1 | — | — | 不需要文件：`families` 末尾加了 `"Noto Sans SC"`，前面的字体都没装时用它 |
 
-### 候选但不建议
+下载的原始文件与 SHA-256：
 
-| 字体 | 来源 | 许可 | 结论 |
+| 文件 | 来源 | 大小 | SHA-256 |
 | --- | --- | --- | --- |
-| Zpix（最像素） | <https://github.com/SolidZORO/zpix-pixel-font> | **非 OFL**：自定义许可，按记忆个人免费、商业使用（含随软件分发）需授权 ⚠ | **排除**。即使核实后可免费分发，也有 Fusion Pixel 可替代 |
-| DotGothic16 | <https://github.com/fontworks-fonts/DotGothic16>，或 google/fonts `ofl/dotgothic16` | OFL-1.1 | 日文字形（汉字按日本写法），不适合简中台词；可作为日语界面的像素备选，约 2 MB ⚠ |
-| Sarasa Mono SC（更纱黑体） | <https://github.com/be5invis/Sarasa-Gothic> | OFL-1.1 | 单个字重约 20 MB 以上 ⚠，太大；终端皮肤的中文回落交给系统字体 |
+| `fusion-pixel-font-12px-proportional-ttf-v2026.09.25.zip` | <https://github.com/TakWolf/fusion-pixel-font/releases/tag/2026.09.25> | 49,414,580 | `47585b9c4b6d8d57380e9dec75bc7e8043fdbfa77d1843c3aaa19a1e7bd15d50` |
+| └ `fusion-pixel-12px-proportional-zh_hans.ttf` | 上面压缩包内 | 7,053,672 | `b2ee68647dc257fa697e4d0c78f9b59461bc504a023b9a3b5ad66f358bbb1613` |
+| `LXGWWenKai-Regular.ttf` | <https://github.com/lxgw/LxgwWenKai/releases/tag/v1.522> | 25,575,676 | `39ad71264b588165b469e35e6afb162a378dacd1f95348160240ba9038ac3009` |
+| `OFL.txt`（文楷，tag v1.522） | <https://github.com/lxgw/LxgwWenKai/blob/v1.522/OFL.txt> | 4,448 | `c38b1994a5e48ac30ac7d1da7d0409fd8fd8127dfe28a13d6e787d5b1ef34a5e` |
+| `LICENSE-OFL`（Fusion Pixel，tag 2026.09.25） | <https://github.com/TakWolf/fusion-pixel-font/blob/2026.09.25/LICENSE-OFL> | 4,418 | `bc518cf64b8032c07690f33cc270c35c179255a6ac8efa7c165ebae7e8f76a63`（与压缩包里的 `OFL.txt` 相同） |
 
-### 最小集合
+Fusion Pixel 的字形部分来自 Ark Pixel（OFL-1.1，TakWolf）、Cubic 11（OFL-1.1，含 JF Dot M+H 12 与 M+ BITMAP FONTS 的自由许可声明）和 Galmuri（OFL-1.1，Lee Minseo）。压缩包里这三份许可与 Fusion Pixel 自己的 `OFL.txt` 一起原样放进了 `FusionPixel12pxProportionalSC.LICENSE.txt`。
 
-1. **Fusion Pixel 12px Proportional SC**（GB2312 子集）→ `pixel`、`rpg` 共用一份
-2. **LXGW WenKai Regular**（3500 常用字子集）→ `ink`
-3. `echo_*`：`families` 加上 `"Noto Sans SC"`（不需要下载）
+皮肤的 `families` 没改，仍是回落链：不带字体的构建（`--no-default-features`）与以前完全一样。像素字体按 12 px 的整数倍显示最清楚；皮肤的字号不是 12 的倍数时笔画边缘会有些发虚。
 
-合计约 4–5.5 MB ⚠，在 12 MiB 预算内。`parchment`、`terminal` 先靠系统字体回落，以后有需要再加。
+### 暂不随附
+
+| 皮肤 | 字体 | 原因 |
+| --- | --- | --- |
+| `parchment` | Noto Serif SC | 需要 600 与 700 两个字重，子集后每个约 1.5–3 MB；SimSun / 宋体是可以接受的回落 |
+| `terminal` | Cascadia Mono | Windows 11 自带，Consolas / Menlo 回落已足够；其许可保留 “Cascadia Code” 名，子集须改名 |
+| — | Zpix（最像素） | 非 OFL 的自定义许可，随软件分发需另行授权；已由 Fusion Pixel 替代 |
 
 ## 子集
 
-用 fontTools（`pip install fonttools`）。保留全部 name 记录：OFL 要求版权与许可声明随字体保留，家族名也要原样留着，皮肤才对得上。
+用 fontTools（`pip install fonttools`）的 `pyftsubset`，命令与字表的生成方法见 [crates/theme/fonts/README.md](../crates/theme/fonts/README.md)。要点：
 
-GB2312 一二级汉字（6763 字）加 ASCII 与常用标点，离线就能生成字表：
+- 保留全部 name 记录：OFL 要求版权与许可声明随字体保留，家族名也要原样留着，皮肤才对得上。
+- 字表：GB2312（像素字体用一二级，文楷用一级 3,755 字代替《通用规范汉字表》的 3,500 字）+ 扫描 `*.ftl`、内置皮肤、`app/` 源码得到的全部非 ASCII 字符 + 假名、CJK 标点、全角字符等几个区段。
+- 去掉 hinting 与竖排度量（`vhea`/`vmtx`），保留全部 OpenType 特性（两款字体的 GSUB/GPOS 都不到 10 KB）。
+- 超出子集的字会逐字回落到系统字体，台词里偶尔夹一个宋体/黑体字，这是体积换来的代价。
 
-```sh
-python -c "import sys; sys.stdout.reconfigure(encoding='utf-8'); print(''.join(bytes([h, l]).decode('gb2312', 'ignore') for h in range(0xB0, 0xF8) for l in range(0xA1, 0xFF)))" > gb2312.txt
-```
+**保留字体名（RFN）**：OFL 第 3 条规定，字体声明了保留字体名时，修改版（子集也算）不能再用这个名字。子集前先看上游 `OFL.txt` 版权行有没有 “with Reserved Font Name …”，再看字体 name 表的版权（ID 0）与许可（ID 13）记录：
 
-```sh
-pyftsubset fusion-pixel-12px-proportional-zh_hans.ttf \
-  --text-file=gb2312.txt \
-  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-206F,U+2190-21FF,U+25A0-25FF,U+3000-303F,U+FF00-FFEF" \
-  --layout-features='*' --name-IDs='*' --name-languages='*' --name-legacy \
-  --notdef-outline --no-hinting \
-  --output-file=crates/theme/fonts/FusionPixel12pxProportionalSC.ttf
-```
-
-文楷换成 3500 字的《通用规范汉字表》一级字表（需自备字表文件 `common3500.txt`）可以再小一半；超出子集的字会逐字回落到系统字体，台词里偶尔夹一个宋体/黑体字，这是体积换来的代价。
-
-**保留字体名（RFN）**：OFL 第 3 条规定，字体声明了保留字体名时，修改版（子集也算）不能再用这个名字。子集前先看上游 `OFL.txt` 第一段的版权行有没有 “with Reserved Font Name …”：
-
-- 没有：子集后可沿用原名（Fusion Pixel、文楷需要核实 ⚠）。
-- 有：要么不子集，要么确认保留名不在家族名里，否则改家族名并同步修改皮肤的 `families`。例：NanaUI 带的 Noto Sans SC 2.004 在 name 表里写着 “with Reserved Font Name 'Source'”（已在本机字体文件里核实），保留的是 “Source”，“Noto Sans SC” 不受影响；Cascadia 保留 “Cascadia Code” ⚠。
+- Fusion Pixel 2026.09.25、Ark Pixel、Cubic 11、Galmuri、霞鹜文楷 1.522：都**没有**声明保留字体名（已核实许可文件与 name 表），子集沿用原名。
+- 有保留名时：要么不子集，要么确认保留名不在家族名里，否则改家族名并同步修改皮肤的 `families`。例：NanaUI 带的 Noto Sans SC 2.004 保留的是 “Source”，“Noto Sans SC” 不受影响；Cascadia 保留 “Cascadia Code”。
 
 ## 随附的署名与许可
 
 OFL 1.1 第 2 条要求每份副本都带上版权声明与许可全文。本仓库的做法：
 
-- `crates/theme/fonts/<名字>.LICENSE.txt`：上游 `OFL.txt` 原样复制（构建强制要求），随字体一起编进程序（`BuiltinFont::license`）。
-- **发布前还缺一步**：用户要能看到这些文字。可选方案是安装包把 `crates/theme/fonts/*.LICENSE.txt` 拷到 `licenses/fonts/`，或者「关于」页加一个字体许可列表。两者择一，由维护者决定。
-
-关于页 / 第三方声明里可以用这样的署名（版权行以上游 `OFL.txt` 为准 ⚠）：
-
-```text
-Fusion Pixel Font — Copyright (c) TakWolf. SIL Open Font License 1.1.
-LXGW WenKai / 霞鹜文楷 — Copyright (c) LXGW. SIL Open Font License 1.1.
-Noto Sans SC (NanaUI) — Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. SIL Open Font License 1.1.
-```
+- `crates/theme/fonts/<名字>.LICENSE.txt`：上游许可原样复制（构建强制要求），随字体一起编进程序（`BuiltinFont::license`）。
+- **关于页**：「开源字体」一行，点「查看许可」展开一个可滚动的面板，逐个列出本次构建嵌入的字体：家族名、作者、版本、许可名与许可全文（都从嵌入的字体与许可读出，不带字体的构建不显示这一行）。
+- **安装包**：`packaging/nanatype.iss` 把 `crates/theme/fonts/*.LICENSE.txt` 与仓库根目录的 `THIRD_PARTY_NOTICES.md` 装到 `{app}\licenses\`；`scripts/package.ps1 -Portable` 的压缩包里也有同样的 `licenses/` 文件夹。
+- 仓库根目录的 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 汇总署名。
 
 ## 加入一个字体的步骤
 
-1. 从官方 Release 下载，核对许可（OFL-1.1 或同样允许随软件分发的许可），记下版本与 SHA-256。
-2. 按上面的方法子集，放进 `crates/theme/fonts/`，旁边放 `<名字>.LICENSE.txt`。
+1. 从官方 Release 下载，核对许可（OFL-1.1 或同样允许随软件分发的许可）与保留字体名，记下版本与 SHA-256。
+2. 按上面的方法子集，放进 `crates/theme/fonts/`，旁边放 `<名字>.LICENSE.txt`；在 `crates/theme/fonts/README.md` 记下来源、版本、SHA-256、子集命令与日期，在 `THIRD_PARTY_NOTICES.md` 加上署名。
 3. 皮肤里写 `file = "builtin:fonts/<名字>.ttf"`，`families` 保持不变作为回落。
-4. `cargo test -p nanatype-theme`：测试会检查每个嵌入的字体能解析、带许可，每个内置皮肤的 `builtin:` 引用都在 `fonts/` 里。
+4. `cargo test -p nanatype-theme`：测试会检查每个嵌入的字体能解析、带许可、合计不超过预算，每个内置皮肤的 `builtin:` 引用都在 `fonts/` 里。

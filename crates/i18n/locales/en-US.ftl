@@ -569,3 +569,13 @@ playback-reduced-system-off = System setting: off
 skins-fallback-font = Fallback font
 skins-fallback-font-detail = { $family } is not installed; text shows in a fallback font
 ## end wave5-fonts
+
+## wave5-fonts-licences
+about-fonts = Open-source fonts
+about-fonts-hint = Fonts bundled for the built-in skins, with their full licences
+about-fonts-show = View licences
+about-fonts-hide = Hide
+about-fonts-author = By { $author }
+about-fonts-version = Version: { $version }
+about-fonts-license-other = Licence below
+## end wave5-fonts-licences

@@ -43,6 +43,10 @@ Name: "autostart"; Description: "Launch NanaType at login"; Flags: unchecked
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Licences of the fonts embedded in the executable (OFL 1.1 asks that they
+; travel with every copy), and the notices that name them.
+Source: "..\crates\theme\fonts\*.LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\NanaType"; Filename: "{app}\NanaType.exe"
