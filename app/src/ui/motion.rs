@@ -80,11 +80,6 @@ pub fn enter() -> Transition {
     )
 }
 
-/// `state` for a badge or chip whose content changes: the new one fades in.
-pub fn state() -> Transition {
-    Transition::new().enter(Presence::new(ms(STATE_MS)).opacity(0.0).ease(FADE))
-}
-
 /// `enter` as implicit transitions, for a node that stays mounted and is
 /// shown by binding its opacity to 1 and its transform to [`rest`] (the
 /// summoned input window).

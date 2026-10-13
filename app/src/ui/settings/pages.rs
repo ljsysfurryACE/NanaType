@@ -71,19 +71,6 @@ fn primary(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView
     .into_any()
 }
 
-/// The view's one call to action: a solid accent button.
-// Unused since the guide's Next took a press of its own; kept for pages.
-#[allow(dead_code)]
-fn cta(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView {
-    widget(crate::skin_theme::cta(
-        Button::new(ui.now_t(key))
-            .kind(ButtonKind::Primary)
-            .size(ControlSize::Small),
-    ))
-    .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
-    .into_any()
-}
-
 /// "Follow system" and every language by its own name.
 fn language_options(ui: Ui) -> Vec<(String, String)> {
     let mut langs = vec![("system".to_owned(), ui.now_t("general-language-system"))];
