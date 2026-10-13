@@ -289,6 +289,7 @@ hotkeys-local-hint = Ctrl+B/I/U 设置样式，Ctrl+↑/↓ 调出已发送的�
 output-display = 展示框
 output-history = 历史记录
 output-spout = Spout2 输出
+output-syphon = Syphon 输出
 output-spout-name = 发送端名称
 output-spout-copy = 复制名称
 output-spout-size = 输出分辨率
@@ -298,11 +299,13 @@ output-spout-straight-hint = 接收端不支持预乘 Alpha 时开启
 output-status-active = 正在发送
 output-status-unavailable = 不可用：{ $reason }
 output-spout-unsupported = Spout2 仅支持 Windows，请使用窗口捕获
+output-syphon-missing = 未找到 Syphon.framework
+output-syphon-publish = 发布画面失败
 output-sample = 播放示例台词
 output-sample-line = [b]你好！[/b]这是 NanaType 的[wave]示例台词[/wave]。[wait=300][shake]看得到吗？[/shake]
 output-obs-title = 在 OBS 中接入
 output-obs-window = 也可以使用「窗口捕获」（捕获方式选 Windows 10 (1903 及以上)），展示框窗口背景为透明。
-output-obs-mac = macOS 上请使用「macOS 屏幕捕获」并选择展示框窗口。
+output-obs-mac = 也可以使用「macOS 屏幕捕获」并选择展示框窗口。
 
 ## 联动
 int-vts = VTube Studio
@@ -390,6 +393,7 @@ err-settings-newer = 设置文件来自更新版本的 NanaType，本次修改�
 err-audio = 音频设备不可用：{ $message }
 err-image = 图片无法读取：{ $message }
 err-spout = Spout 输出失败：{ $message }
+err-syphon = Syphon 输出失败：{ $message }
 # blivechat
 window-chat = 弹幕
 chat-mention = @ 提及
@@ -478,6 +482,8 @@ settings-about-sub = 版本、文件夹与链接
 output-obs-step-plugin = 为 OBS 安装 Spout2 插件
 output-obs-step-source = 添加「Spout2 Capture」来源，选择这个发送端：
 output-obs-step-alpha = 将合成模式设为「预乘 Alpha」
+output-obs-step-syphon = 在 OBS 中添加「Syphon Client」来源（macOS 版 OBS 自带）
+output-obs-step-syphon-source = 选择这个发送端：
 output-obs-other = 其他方式
 int-vts-authorized = 已授权
 int-vts-map-empty = 连接并授权后即可列出你的 VTS 热键

@@ -5,7 +5,7 @@
 - **输入框**：所见即所得——直接在与展示框完全一致的样式里打字，顶部是富文本与特效工具栏；也可切换到标记源码编辑。
 - **展示框**：透明的展示框窗口，打字机逐字揭示，支持逐字特效、停顿、翻页、震屏、立绘差分。
 - **历史记录**：头像 + 名字 + 气泡的聊天列表，可随打字同步出现。
-- **接入 OBS**：Spout2（GPU 共享纹理，零回读，窗口隐藏时也持续输出）或透明窗口捕获。
+- **接入 OBS**：Spout2（Windows）或 Syphon（macOS）共享 GPU 纹理，零回读，窗口隐藏时也持续输出；也可以用透明窗口捕获。
 - **联动**：VTube Studio（表情、热键、参数和口型同步，`[expr]` / `[vts]` 标记按打字位置触发）、OSC、本地 WebSocket 广播。
 - **blivechat 弹幕**：连接本机运行的 [blivechat](https://github.com/xfgryujk/blivechat)，弹幕面板里可 @ 或回复观众，观众以带头像和昵称的标签出现在台词中；弹幕、醒目留言、礼物、上舰也可以混入历史记录。
 - **皮肤**：内置 18 套（光环、夜色、羊皮纸、ADV 经典、RPG 窗口、香草、气泡、字幕、直播弹幕、漫画、终端、掌机像素、樱花、水墨、Echo-Live 原版、Echo-Live 玻璃、Echo-Live 气泡、Echo-Live 虚空；后四套还原 Echo-Live），可导入 / 导出 `.ntskin` 皮肤包，支持热重载。
@@ -45,7 +45,7 @@ cargo run -p nanatype-blive --example mock_blivechat
 
 - **Spout2**：设置 › 输出 / OBS 打开 Spout2 输出。OBS 中安装 Spout2 插件，添加 *Spout2 Capture*，选择发送端名称（默认 `NanaType Display` / `NanaType History`），合成模式选 *Premultiplied Alpha*。
 - **窗口捕获**：*Window Capture*，捕获方式选 *Windows 10 (1903 and up)*。
-- macOS：使用 *macOS Screen Capture* 捕获展示框窗口（Spout2 仅 Windows）。
+- **Syphon**（macOS）：设置 › 输出 / OBS 打开 Syphon 输出。OBS 中添加 *Syphon Client*，选择发送端名称（默认 `NanaType Display` / `NanaType History`），合成模式选 *Premultiplied Alpha*。也可以用 *macOS Screen Capture* 捕获展示框窗口。Spout2 仅 Windows。
 
 ## 台词标记
 

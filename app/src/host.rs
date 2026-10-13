@@ -487,6 +487,12 @@ impl RuntimeProgram for Host {
                                 .with_native_handle(|h| match h.as_raw() {
                                     #[cfg(windows)]
                                     raw_window_handle::RawWindowHandle::Win32(w) => w.hwnd.get(),
+                                    #[cfg(target_os = "macos")]
+                                    raw_window_handle::RawWindowHandle::AppKit(w) => {
+                                        // The platform handle is the content view. Activation
+                                        // resolves its window on the main thread.
+                                        w.ns_view.as_ptr() as isize
+                                    }
                                     _ => 0,
                                 })
                                 .wait()
@@ -651,7 +657,7 @@ impl RuntimeProgram for Host {
         &mut self,
         id: WindowId,
         frame: &nana_ui::WindowOutputFrame,
-        _: &RuntimeProgramContext<Msg>,
+        context: &RuntimeProgramContext<Msg>,
     ) {
         let Some(kind) = WindowKind::from_id(id) else {
             return;
@@ -661,7 +667,7 @@ impl RuntimeProgram for Host {
         else {
             return;
         };
-        if let Some((key, detail)) = self.app.spout.frame(kind, &name, frame) {
+        if let Some((key, detail)) = self.app.spout.frame(kind, &name, frame, context.gpu()) {
             crate::debug_log(&format!("spout {kind:?}: {detail}"));
             let locale = self.app.ui.locale.get_untracked();
             let state = crate::ui::link_text::spout_send(locale, key);

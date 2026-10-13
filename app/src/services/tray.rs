@@ -84,8 +84,9 @@ pub struct Tray {
 
 /// The tray image: on Windows the size of a small icon at the system DPI
 /// (16 at 100 %, 20 at 125 %, 24 at 150 %, 32 at 200 %), picked from the
-/// app's multi-size icon so the shell need not scale it; elsewhere the
-/// 32 px PNG.
+/// app's multi-size icon so the shell need not scale it; on macOS the 64 px
+/// PNG, which stays sharp when the status item draws it at 18 pt; elsewhere
+/// the 32 px PNG.
 fn base_image() -> Result<image::RgbaImage, String> {
     if let Some(img) = sized_image() {
         return Ok(img);
@@ -114,7 +115,13 @@ fn sized_image() -> Option<image::RgbaImage> {
     image_at(px)
 }
 
-#[cfg(not(windows))]
+/// Menu-bar icons are drawn at 18pt. A 64px bitmap stays sharp at 2x.
+#[cfg(target_os = "macos")]
+fn sized_image() -> Option<image::RgbaImage> {
+    decode(include_bytes!("../../assets/tray-64.png")).ok()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn sized_image() -> Option<image::RgbaImage> {
     None
 }

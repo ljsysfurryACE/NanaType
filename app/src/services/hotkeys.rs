@@ -4,7 +4,12 @@
 //! blocks in `GetMessageW`; rebinding wakes it with a thread message, so
 //! nothing polls. The summon key raises the input window from that thread,
 //! because the foreground right granted by `WM_HOTKEY` belongs to it.
-//! Other platforms report the hotkeys as unavailable for now.
+//!
+//! macOS: the same worker owns `RegisterEventHotKey` and sleeps in
+//! `CFRunLoop`. Carbon delivers the key to the application event target,
+//! which the UI run loop already pumps, so the handler only posts the
+//! action. Raising the input window happens later on the UI thread:
+//! AppKit will not take it from the hotkey thread.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicIsize, Ordering};
@@ -13,6 +18,10 @@ use std::sync::{Arc, Mutex};
 use nanatype_settings::Hotkey;
 
 use crate::msg::GlobalAction;
+
+#[cfg(target_os = "macos")]
+#[path = "hotkeys_macos.rs"]
+mod mac;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HotkeyState {
@@ -37,6 +46,8 @@ pub struct Hotkeys {
     input_hwnd: Arc<AtomicIsize>,
     #[cfg(windows)]
     thread_id: Arc<std::sync::atomic::AtomicU32>,
+    #[cfg(target_os = "macos")]
+    mac: Arc<mac::State>,
 }
 
 impl Hotkeys {
@@ -65,7 +76,21 @@ impl Hotkeys {
                 thread_id,
             }
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        {
+            let state = mac::State::new(shared.clone(), hit, status);
+            let thread_state = Arc::clone(&state);
+            std::thread::Builder::new()
+                .name("nanatype-hotkeys".into())
+                .spawn(move || mac::run(thread_state))
+                .expect("spawn hotkey thread");
+            Self {
+                shared,
+                input_hwnd,
+                mac: state,
+            }
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             let _ = hit;
             let _ = status;
@@ -89,8 +114,8 @@ impl Hotkeys {
             if s.bindings == bindings && s.suspended == suspended {
                 return;
             }
-            // No global hotkeys here yet: every binding reports so.
-            #[cfg(not(windows))]
+            // Linux has no registration thread yet: every binding reports so.
+            #[cfg(not(any(windows, target_os = "macos")))]
             {
                 s.status = bindings
                     .iter()
@@ -102,6 +127,8 @@ impl Hotkeys {
         }
         #[cfg(windows)]
         win::poke(self.thread_id.load(Ordering::Acquire));
+        #[cfg(target_os = "macos")]
+        mac::poke(&self.mac);
     }
 
     pub fn status(&self) -> HashMap<GlobalAction, HotkeyState> {
@@ -120,7 +147,14 @@ pub fn activate(hwnd: isize) -> bool {
     win::activate(hwnd)
 }
 
-#[cfg(not(windows))]
+/// Bring this process forward and order the input window front.
+/// `ns_view` is the content view. Must run on the main thread.
+#[cfg(target_os = "macos")]
+pub fn activate(ns_window: isize) -> bool {
+    mac::activate(ns_window)
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn activate(_hwnd: isize) -> bool {
     false
 }

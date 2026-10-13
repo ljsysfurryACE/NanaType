@@ -3000,10 +3000,17 @@ fn obs_guide(ui: Ui) -> AnyView {
             step(2, (body("output-obs-step-source"), sender)),
             step(3, body("output-obs-step-alpha")),
         ]
+    } else if cfg!(target_os = "macos") {
+        vec![
+            step(1, body("output-obs-step-syphon")),
+            step(2, (body("output-obs-step-syphon-source"), sender)),
+            step(3, body("output-obs-step-alpha")),
+        ]
     } else {
+        let _ = sender;
         vec![hint(ui.now_t("output-spout-unsupported"))]
     };
-    let other_open = signal(!cfg!(windows));
+    let other_open = signal(!(cfg!(windows) || cfg!(target_os = "macos")));
     let other = widget(Stack::column(6.0).align(AlignSpec::Start)).children((
         widget(
             Button::new(ui.now_t("output-obs-other"))
@@ -3061,7 +3068,11 @@ fn output(ui: Ui) -> AnyView {
             vec![
                 row(
                     ui,
-                    "output-spout",
+                    if cfg!(target_os = "macos") {
+                        "output-syphon"
+                    } else {
+                        "output-spout"
+                    },
                     None,
                     widget(Stack::row(10.0).align(AlignSpec::Center))
                         .children((

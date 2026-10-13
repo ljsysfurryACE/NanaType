@@ -138,9 +138,14 @@ pub fn spout(locale: Locale, status: &WindowOutputStatus) -> Option<LinkState> {
 
 /// A Spout sender's failure (`key` from [`crate::output::Spout::frame`]).
 pub fn spout_send(locale: Locale, key: &str) -> LinkState {
+    let wrapper = if crate::output::SYPHON_ERROR_KEYS.contains(&key) {
+        "err-syphon"
+    } else {
+        "err-spout"
+    };
     LinkState::Error(I18N.tr_in(
         locale,
-        "err-spout",
+        wrapper,
         &[("message", I18N.t_in(locale, key).into())],
     ))
 }
@@ -199,7 +204,10 @@ mod tests {
                     other => panic!("{other:?}"),
                 }
             }
-            for key in crate::output::SPOUT_ERROR_KEYS {
+            for key in crate::output::SPOUT_ERROR_KEYS
+                .into_iter()
+                .chain(crate::output::SYPHON_ERROR_KEYS)
+            {
                 let LinkState::Error(t) = spout_send(locale, key) else {
                     panic!()
                 };

@@ -292,6 +292,7 @@ hotkeys-local-hint = Ctrl+B/I/U for style, Ctrl+↑/↓ to recall sent lines, Es
 output-display = Display
 output-history = History
 output-spout = Spout2 output
+output-syphon = Syphon output
 output-spout-name = Sender name
 output-spout-copy = Copy name
 output-spout-size = Output resolution
@@ -301,11 +302,13 @@ output-spout-straight-hint = Turn on if the receiver has no premultiplied alpha 
 output-status-active = Sending
 output-status-unavailable = Unavailable: { $reason }
 output-spout-unsupported = Spout2 is Windows-only; use window capture
+output-syphon-missing = Syphon.framework was not found
+output-syphon-publish = Could not publish the frame
 output-sample = Play a sample line
 output-sample-line = [b]Hello![/b] This is a NanaType [wave]sample line[/wave].[wait=300][shake]Can you see it?[/shake]
 output-obs-title = Set up OBS
 output-obs-window = You can also use “Window Capture” (method: Windows 10 1903 and up); the display window background is transparent.
-output-obs-mac = On macOS use “macOS Screen Capture” and pick the display window.
+output-obs-mac = Or use “macOS Screen Capture” and pick the display window.
 
 ## Integrations
 int-vts = VTube Studio
@@ -396,6 +399,7 @@ err-settings-newer = These settings come from a newer NanaType; changes made now
 err-audio = Audio device unavailable: { $message }
 err-image = The image could not be read: { $message }
 err-spout = Spout output failed: { $message }
+err-syphon = Syphon output failed: { $message }
 # blivechat
 window-chat = Chat
 chat-mention = Mention
@@ -484,6 +488,8 @@ settings-about-sub = Version, folders and links
 output-obs-step-plugin = Install the Spout2 plugin for OBS
 output-obs-step-source = Add a “Spout2 Capture” source and pick this sender:
 output-obs-step-alpha = Set Composite mode to “Premultiplied Alpha”
+output-obs-step-syphon = Add a “Syphon Client” source (included with OBS on macOS)
+output-obs-step-syphon-source = Pick this sender:
 output-obs-other = Other ways
 int-vts-authorized = Authorized
 int-vts-map-empty = Connect and authorize to list your VTS hotkeys

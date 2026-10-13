@@ -289,6 +289,7 @@ hotkeys-local-hint = Ctrl+B/I/U で書式、Ctrl+↑/↓ で送信済みのセ�
 output-display = 表示ウィンドウ
 output-history = 履歴
 output-spout = Spout2 出力
+output-syphon = Syphon 出力
 output-spout-name = センダー名
 output-spout-copy = 名前をコピー
 output-spout-size = 出力解像度
@@ -298,11 +299,13 @@ output-spout-straight-hint = 受信側が乗算済みアルファに対応して
 output-status-active = 送信中
 output-status-unavailable = 使用不可：{ $reason }
 output-spout-unsupported = Spout2 は Windows 専用です。ウィンドウキャプチャをご利用ください
+output-syphon-missing = Syphon.framework が見つかりません
+output-syphon-publish = フレームを公開できませんでした
 output-sample = サンプルを再生
 output-sample-line = [b]こんにちは！[/b]NanaType の[wave]サンプルセリフ[/wave]です。[wait=300][shake]見えていますか？[/shake]
 output-obs-title = OBS に接続する
 output-obs-window = 「ウィンドウキャプチャ」（方式：Windows 10 1903 以降）も使えます。表示ウィンドウの背景は透明です。
-output-obs-mac = macOS では「macOS 画面キャプチャ」で表示ウィンドウを選んでください。
+output-obs-mac = 「macOS 画面キャプチャ」で表示ウィンドウを選ぶこともできます。
 
 ## 連携
 int-vts = VTube Studio
@@ -390,6 +393,7 @@ err-settings-newer = この設定は新しいバージョンの NanaType のも�
 err-audio = オーディオデバイスを使用できません：{ $message }
 err-image = 画像を読み込めません：{ $message }
 err-spout = Spout 出力に失敗しました：{ $message }
+err-syphon = Syphon 出力に失敗しました：{ $message }
 # blivechat
 window-chat = コメント
 chat-mention = メンション
@@ -478,6 +482,8 @@ settings-about-sub = バージョン、フォルダー、リンク
 output-obs-step-plugin = OBS に Spout2 プラグインを入れる
 output-obs-step-source = 「Spout2 Capture」ソースを追加し、このセンダーを選ぶ：
 output-obs-step-alpha = 合成モードを「乗算済みアルファ」にする
+output-obs-step-syphon = OBS に「Syphon Client」ソースを追加する（macOS 版 OBS に同梱）
+output-obs-step-syphon-source = このセンダーを選ぶ：
 output-obs-other = その他の方法
 int-vts-authorized = 許可済み
 int-vts-map-empty = 接続して許可すると VTS のホットキーが一覧に出ます

@@ -1,9 +1,13 @@
-//! Spout2 output of the dialogue and history windows.
+//! Spout2 (Windows) and Syphon (macOS) output of the dialogue and history windows.
 //!
-//! NanaUI paints each window's own scene a second time into a shared DX12
-//! texture (window output with native export); here every frame's token is
-//! handed to a Spout sender that copies it on the GPU. Nothing is read back
-//! to the CPU, and output keeps flowing while the window is hidden.
+//! NanaUI paints each window's own scene a second time into an offscreen
+//! texture. On Windows that texture is exported as a DX12 shared handle and
+//! handed to a Spout sender. On macOS the same-device texture is blitted into
+//! a Syphon server on the Metal queue. Nothing is read back to the CPU, and
+//! output keeps flowing while the window is hidden.
+
+#[cfg(target_os = "macos")]
+mod syphon;
 
 use std::collections::HashMap;
 
@@ -26,6 +30,9 @@ pub const SPOUT_ERROR_KEYS: [&str; 6] = [
     "spout-error-publish",
     "spout-error-name",
 ];
+
+/// Syphon failures. Kept beside the Spout keys so every locale is checked.
+pub const SYPHON_ERROR_KEYS: [&str; 2] = ["output-syphon-missing", "output-syphon-publish"];
 
 #[cfg(windows)]
 fn spout_error_key(e: &nanalive_spout::SpoutOutputError) -> &'static str {
@@ -52,13 +59,20 @@ pub fn settings_for(kind: WindowKind, s: &Settings) -> Option<&SpoutOutput> {
 
 /// The output NanaUI should produce for a window, if any.
 pub fn config(kind: WindowKind, s: &Settings) -> Option<WindowOutputConfig> {
-    if !cfg!(windows) {
+    if !(cfg!(windows) || cfg!(target_os = "macos")) {
         return None;
     }
     let out = settings_for(kind, s).filter(|o| o.enabled && !o.name.trim().is_empty())?;
     let extent = match out.size {
         Some([width, height]) => WindowOutputExtent::Fixed { width, height },
         None => WindowOutputExtent::MatchWindow,
+    };
+    // Windows shares a DX12 texture. macOS blits the same-device texture
+    // into Syphon; NanaUI has no Metal export token.
+    let export = if cfg!(windows) {
+        WindowOutputExport::Native
+    } else {
+        WindowOutputExport::SameDevice
     };
     Some(
         WindowOutputConfig::default()
@@ -68,7 +82,7 @@ pub fn config(kind: WindowKind, s: &Settings) -> Option<WindowOutputConfig> {
             } else {
                 WindowOutputAlpha::Premultiplied
             })
-            .with_export(WindowOutputExport::Native)
+            .with_export(export)
             .while_hidden(true),
     )
 }
@@ -84,7 +98,9 @@ struct Sender {
 pub struct Spout {
     #[cfg(windows)]
     senders: HashMap<WindowKind, Sender>,
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    syphon: syphon::Outputs,
+    #[cfg(not(any(windows, target_os = "macos")))]
     _unused: HashMap<WindowKind, ()>,
     /// Last link state per window, for the settings page.
     pub status: HashMap<WindowKind, LinkState>,
@@ -109,7 +125,7 @@ impl Spout {
             }
             let state = match wanted {
                 None => LinkState::Off,
-                Some(_) if !cfg!(windows) => {
+                Some(_) if !(cfg!(windows) || cfg!(target_os = "macos")) => {
                     LinkState::Error(t(locale, "output-spout-unsupported"))
                 }
                 Some(_) => match self.status.get(&kind) {
@@ -120,6 +136,16 @@ impl Spout {
             };
             self.status.insert(kind, state);
         }
+        #[cfg(target_os = "macos")]
+        self.syphon.sync(
+            &[WindowKind::Display, WindowKind::History]
+                .into_iter()
+                .filter_map(|kind| {
+                    let out = settings_for(kind, s)?;
+                    (out.enabled && !out.name.trim().is_empty()).then(|| (kind, out.name.clone()))
+                })
+                .collect::<Vec<_>>(),
+        );
     }
 
     pub fn status_changed(
@@ -130,7 +156,15 @@ impl Spout {
     ) {
         // A retired pool needs nothing here: the sender reopens its handles
         // on the next frame.
-        if let Some(state) = crate::ui::link_text::spout(locale, status) {
+        if let Some(mut state) = crate::ui::link_text::spout(locale, status) {
+            // NanaUI reports Active for the texture itself. A failed Syphon
+            // publish has to stay on the badge.
+            #[cfg(target_os = "macos")]
+            if let LinkState::Connected(_) = &state
+                && let Some(key) = self.syphon.failure(kind)
+            {
+                state = crate::ui::link_text::spout_send(locale, key);
+            }
             self.status.insert(kind, state);
         }
     }
@@ -144,6 +178,7 @@ impl Spout {
         kind: WindowKind,
         name: &str,
         frame: &WindowOutputFrame,
+        gpu: &nana_ui::GpuContext,
     ) -> Option<(&'static str, String)> {
         #[cfg(windows)]
         {
@@ -196,9 +231,11 @@ impl Spout {
             };
             result.err().map(|e| (spout_error_key(&e), e.to_string()))
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        return self.syphon.publish(kind, name, gpu, frame);
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
-            let _ = frame;
+            let _ = (frame, gpu);
             None
         }
     }

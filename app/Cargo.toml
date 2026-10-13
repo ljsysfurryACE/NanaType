@@ -47,6 +47,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 tray-icon = "0.21"
 ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+objc2-metal = "0.3"
+
 [target.'cfg(windows)'.dependencies]
 nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout", rev = "106e124cdbe3a5eb9ee104715ee1d54c3903b217", default-features = false, features = ["gpu-dx11-shared"] }
 windows = { version = "0.62", features = [

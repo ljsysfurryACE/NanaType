@@ -1847,6 +1847,12 @@ impl App {
                     self.summoned = false;
                 } else {
                     self.update(Msg::ShowWindow(WindowKind::Input));
+                    // Carbon does not grant foreground the way WM_HOTKEY does,
+                    // and AppKit has to be touched on this thread.
+                    #[cfg(target_os = "macos")]
+                    {
+                        hotkeys::activate(self.hotkeys.input_window());
+                    }
                 }
             }
             GlobalAction::Continue => self.run(Cmd::Continue),
