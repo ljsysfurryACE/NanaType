@@ -3129,6 +3129,7 @@ name = "nanatype-theme"
 version = "0.1.0"
 dependencies = [
  "imagesize",
+ "nana-ui-core",
  "nanatype-model",
  "nanatype-playback",
  "serde",

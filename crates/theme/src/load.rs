@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock};
 use toml::{Table, Value};
 
 use crate::files::{FileError, SkinFiles, clean_path};
+use crate::fonts::{BuiltinFonts, builtin_path, is_builtin_font};
 use crate::manifest::{
     DecorSpec, FileKind, GradientSpec, Len, SKIN_SCHEMA, ShadowSpec, ShapeSpec, Skin,
 };
@@ -361,6 +362,10 @@ fn validate(skin: &Skin, files: &dyn SkinFiles, app_version: &str, out: &mut Vec
     validate_shapes(skin, out);
 
     for (field, path, kind) in skin.referenced_files() {
+        if kind == FileKind::Font && is_builtin_font(path) {
+            validate_builtin_font(field, path, &BuiltinFonts::embedded(), out);
+            continue;
+        }
         let path = match clean_path(path) {
             Ok(p) => p,
             Err(e) => {
@@ -420,6 +425,36 @@ fn validate(skin: &Skin, files: &dyn SkinFiles, app_version: &str, out: &mut Vec
                 }
             }
         }
+    }
+}
+
+/// Check a `builtin:` font reference against `fonts`. A font in
+/// `crates/theme/fonts/` that this build leaves out is fine (the role falls
+/// back to its families); a name that is not there at all is a warning, as
+/// it is most likely a typo.
+pub(crate) fn validate_builtin_font(
+    field: &str,
+    reference: &str,
+    fonts: &BuiltinFonts,
+    out: &mut Vec<SkinDiagnostic>,
+) {
+    if builtin_path(reference).is_none() {
+        out.push(SkinDiagnostic::error(
+            field,
+            FileError::UnsafePath(reference.to_owned()).to_string(),
+        ));
+    } else if let Some(font) = fonts.resolve(reference) {
+        if ttf_parser::Face::parse(font.bytes, 0).is_err() {
+            out.push(SkinDiagnostic::error(
+                field,
+                format!("`{reference}` is not an OpenType/TrueType font"),
+            ));
+        }
+    } else if !fonts.knows(reference) {
+        out.push(SkinDiagnostic::warning(
+            field,
+            format!("no built-in font `{reference}`; the families are used instead"),
+        ));
     }
 }
 

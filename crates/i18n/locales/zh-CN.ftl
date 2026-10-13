@@ -558,3 +558,8 @@ about-setup-guide = 打开新手引导
 playback-reduced-system-on = 系统设置：开
 playback-reduced-system-off = 系统设置：关
 ## end wave4-onboarding
+
+## wave5-fonts
+skins-fallback-font = 替代字体
+skins-fallback-font-detail = 未安装 { $family }，正以替代字体显示
+## end wave5-fonts

@@ -925,3 +925,127 @@ fn docs_name_every_manifest_key() {
         );
     }
 }
+
+// ---- built-in fonts ---------------------------------------------------------
+
+/// Noto Sans SC, the OFL face NanaUI already embeds, as a `builtin:` font.
+static NOTO: &[BuiltinFont] = &[BuiltinFont {
+    path: "fonts/NotoSansSC-Regular.ttf",
+    bytes: nana_ui_core::fonts::UI_FONT_REGULAR,
+    license: "SIL Open Font License 1.1",
+}];
+const NOTO_REF: &str = "builtin:fonts/NotoSansSC-Regular.ttf";
+
+fn diagnose_builtin(reference: &str, fonts: &BuiltinFonts) -> Vec<SkinDiagnostic> {
+    let mut out = Vec::new();
+    crate::load::validate_builtin_font("fonts.body.file", reference, fonts, &mut out);
+    out
+}
+
+#[test]
+fn builtin_font_references_resolve_to_embedded_bytes() {
+    let fonts = BuiltinFonts::new(NOTO, &[]);
+    let font = fonts.resolve(NOTO_REF).expect("resolves");
+    assert_eq!(font.bytes.len(), nana_ui_core::fonts::UI_FONT_REGULAR.len());
+    assert_eq!(font_family(font.bytes).as_deref(), Some("Noto Sans SC"));
+    // The path is cleaned like any skin path.
+    assert!(
+        fonts
+            .resolve("builtin:./fonts\\NotoSansSC-Regular.ttf")
+            .is_some()
+    );
+    // Without the prefix it is a skin file, never a built-in font.
+    assert!(fonts.resolve("fonts/NotoSansSC-Regular.ttf").is_none());
+    assert!(fonts.resolve("builtin:fonts/Other.ttf").is_none());
+    // `builtin:` cannot reach outside crates/theme/.
+    assert_eq!(builtin_path("builtin:../secret.ttf"), None);
+    assert!(
+        fonts
+            .resolve("builtin:../fonts/NotoSansSC-Regular.ttf")
+            .is_none()
+    );
+    assert!(diagnose_builtin(NOTO_REF, &fonts).is_empty());
+    assert_eq!(fonts.total_bytes(), font.bytes.len());
+}
+
+#[test]
+fn builtin_font_left_out_of_the_build_falls_back_quietly() {
+    // Named in crates/theme/fonts/ but not embedded (the feature is off).
+    let absent = BuiltinFonts::new(&[], &["fonts/NotoSansSC-Regular.ttf"]);
+    assert!(absent.resolve(NOTO_REF).is_none());
+    assert!(absent.knows(NOTO_REF));
+    assert!(diagnose_builtin(NOTO_REF, &absent).is_empty());
+    // Not there at all: loads, with a warning about the likely typo.
+    let unknown = diagnose_builtin("builtin:fonts/Typo.ttf", &absent);
+    assert_eq!(unknown.len(), 1);
+    assert_eq!(unknown[0].severity, Severity::Warning);
+    // An escaping path is refused outright.
+    let unsafe_ref = diagnose_builtin("builtin:../x.ttf", &absent);
+    assert_eq!(unsafe_ref[0].severity, Severity::Error);
+    // Bytes that are not a font are refused like a skin's own file.
+    static BAD: &[BuiltinFont] = &[BuiltinFont {
+        path: "fonts/Bad.ttf",
+        bytes: b"not a font",
+        license: "",
+    }];
+    let bad = diagnose_builtin("builtin:fonts/Bad.ttf", &BuiltinFonts::new(BAD, &[]));
+    assert_eq!(bad[0].severity, Severity::Error);
+}
+
+#[test]
+fn skin_naming_a_missing_builtin_font_loads_and_keeps_its_families() {
+    let dir = tempfile::tempdir().unwrap();
+    let skin_dir = dir.path().join("x");
+    write_skin(
+        &skin_dir,
+        "[meta]\nid = \"x\"\nbase = \"nanatype.pixel\"\n\
+         [fonts.body]\nfile = \"builtin:fonts/NotInThisBuild.ttf\"\n",
+        &[],
+    );
+    let loaded = load_dir(&skin_dir).expect("a missing built-in font is not an error");
+    let body = &loaded.skin.fonts.body;
+    assert_eq!(
+        body.file.as_deref(),
+        Some("builtin:fonts/NotInThisBuild.ttf")
+    );
+    assert_eq!(body.families[0], "Fusion Pixel 12px Proportional SC");
+    assert!(!body.has_usable_file());
+    assert!(
+        loaded.warnings.iter().any(|w| w.field == "fonts.body.file"),
+        "{:?}",
+        loaded.warnings
+    );
+    // A skin file is usable once the skin loaded; no file is not.
+    let mut spec = FontSpec::default();
+    assert!(!spec.has_usable_file());
+    spec.file = Some("fonts/own.ttf".into());
+    assert!(spec.has_usable_file());
+}
+
+#[test]
+fn this_builds_embedded_fonts_parse_and_carry_their_licence() {
+    let fonts = BuiltinFonts::embedded();
+    // With the feature every font in fonts/ is embedded; without it, none.
+    let embedded: Vec<&str> = fonts.fonts().iter().map(|f| f.path).collect();
+    if cfg!(feature = "builtin-fonts") {
+        assert_eq!(embedded, fonts.known());
+    } else {
+        assert!(embedded.is_empty());
+    }
+    for f in fonts.fonts() {
+        assert!(f.path.starts_with("fonts/"), "{}", f.path);
+        assert!(font_family(f.bytes).is_some(), "{} has no family", f.path);
+        assert!(!f.license.trim().is_empty(), "{} has no licence", f.path);
+        assert!(fonts.knows(&format!("{BUILTIN_FONT_PREFIX}{}", f.path)));
+    }
+    // Every built-in skin's `builtin:` reference names a font in fonts/.
+    let registry = SkinRegistry::new(None, APP);
+    for entry in registry.entries() {
+        let skin = entry.skin.as_ref().unwrap();
+        for spec in [&skin.fonts.body, &skin.fonts.name, &skin.fonts.accent] {
+            if let Some(f) = spec.file.as_deref().filter(|f| is_builtin_font(f)) {
+                assert!(fonts.knows(f), "{}: {f}", entry.id);
+            }
+        }
+    }
+}

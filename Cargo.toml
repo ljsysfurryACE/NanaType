@@ -25,7 +25,8 @@ rust-version = "1.98"
 nanatype-model = { path = "crates/model" }
 nanatype-markup = { path = "crates/markup" }
 nanatype-playback = { path = "crates/playback" }
-nanatype-theme = { path = "crates/theme" }
+# Without default features: the app turns `builtin-fonts` on (or off).
+nanatype-theme = { path = "crates/theme", default-features = false }
 nanatype-i18n = { path = "crates/i18n" }
 nanatype-settings = { path = "crates/settings" }
 nanatype-audio = { path = "crates/audio" }

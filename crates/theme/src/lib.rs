@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod files;
+mod fonts;
 mod geometry;
 mod load;
 mod manifest;
@@ -21,6 +22,10 @@ mod tests;
 pub use files::{
     DirFiles, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, MemoryFiles, SkinFiles, ZipFiles,
     clean_path,
+};
+pub use fonts::{
+    BUILTIN_FONT_PREFIX, BuiltinFont, BuiltinFonts, builtin_font, builtin_path, font_family,
+    is_builtin_font,
 };
 pub use geometry::*;
 pub use load::{

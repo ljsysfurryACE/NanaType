@@ -564,3 +564,8 @@ about-setup-guide = Show the setup guide
 playback-reduced-system-on = System setting: on
 playback-reduced-system-off = System setting: off
 ## end wave4-onboarding
+
+## wave5-fonts
+skins-fallback-font = Fallback font
+skins-fallback-font-detail = { $family } is not installed; text shows in a fallback font
+## end wave5-fonts

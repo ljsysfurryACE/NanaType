@@ -102,6 +102,9 @@ pub struct SkinRow {
     pub accent: [f32; 4],
     pub box_color: [f32; 4],
     pub text_color: [f32; 4],
+    /// The skin's own body font is neither installed nor bundled, so its
+    /// text shows in a stand-in ([`crate::skin_theme::uses_fallback_font`]).
+    pub fallback_font: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -256,6 +259,7 @@ pub fn skin_rows(registry: &nanatype_theme::SkinRegistry, locale: Locale) -> Vec
                 accent: [0.5; 4],
                 box_color: [0.5; 4],
                 text_color: [0.5; 4],
+                fallback_font: false,
                 skin: e.skin.clone(),
             };
             if let Some(s) = &e.skin {
@@ -272,6 +276,7 @@ pub fn skin_rows(registry: &nanatype_theme::SkinRegistry, locale: Locale) -> Vec
                 let first = b.shape.gradient.as_ref().and_then(|g| g.stops.first());
                 row.box_color = c(first.map_or(b.color, |(_, col)| s.color(*col)));
                 row.text_color = c(s.dialogue.text.color);
+                row.fallback_font = crate::skin_theme::uses_fallback_font(s);
             }
             row
         })

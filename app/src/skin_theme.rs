@@ -80,7 +80,10 @@ pub fn prepare(
             }
         }
         if let Some(family) = family {
+            // Registered just now, so the installed cache may not know it
+            // yet; it always comes first.
             spec.families.insert(0, family.clone());
+            continue;
         }
         // NanaUI takes a single family name, so the fallback list is resolved
         // here: the first installed family goes first.
@@ -92,6 +95,18 @@ pub fn prepare(
         }
     }
     skin
+}
+
+/// Whether the skin's dialogue text will be drawn in a stand-in font: it
+/// names its own body families, the first of them is not installed, and it
+/// brings no font file this build can use (its own, or an embedded
+/// `builtin:` one). Skins on the default system stack never are.
+pub fn uses_fallback_font(skin: &Skin) -> bool {
+    let body = &skin.fonts.body;
+    if body.is_default_stack() || body.has_usable_file() {
+        return false;
+    }
+    body.families.first().is_some_and(|f| !installed(f))
 }
 
 /// Whether the text engine shapes with `family` itself rather than a
@@ -557,6 +572,38 @@ pub fn cta(button: nana_ui::runtime::Button) -> nana_ui::runtime::Button {
 mod tests {
     use super::*;
     use nanatype_theme::{SkinOrigin, SkinRegistry};
+
+    #[test]
+    fn a_skin_is_flagged_only_when_its_own_body_font_is_missing() {
+        let mut skin = Skin::default();
+        // The default system stack is never flagged.
+        assert!(!uses_fallback_font(&skin));
+        skin.fonts.body.families = vec!["No Such Font 7f3a".into(), "SimSun".into()];
+        assert!(uses_fallback_font(&skin));
+        // A built-in font this build does not embed still falls back.
+        skin.fonts.body.file = Some("builtin:fonts/NotInThisBuild.ttf".into());
+        assert!(uses_fallback_font(&skin));
+        // The skin's own file is always used.
+        skin.fonts.body.file = Some("fonts/own.ttf".into());
+        assert!(!uses_fallback_font(&skin));
+        // Installed: NanaUI registers Noto Sans SC itself.
+        skin.fonts.body.file = None;
+        skin.fonts.body.families = vec!["Noto Sans SC".into()];
+        assert!(!uses_fallback_font(&skin));
+    }
+
+    #[test]
+    fn a_registered_bundled_family_stays_first() {
+        let mut skin = Skin::default();
+        skin.fonts.body.families = vec!["Noto Sans SC".into(), "SimSun".into()];
+        let bundled = [Some("Bundled Face 7f3a".to_owned()), None, None];
+        let prepared = prepare(&skin, &SkinOverrides::default(), &bundled, "zh-CN");
+        // Not moved behind the installed Noto Sans SC.
+        assert_eq!(
+            prepared.fonts.body.families[..2],
+            ["Bundled Face 7f3a", "Noto Sans SC"]
+        );
+    }
 
     #[test]
     fn on_accent_text_reaches_4_5_for_every_builtin_skin() {
