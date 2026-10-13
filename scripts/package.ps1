@@ -17,8 +17,9 @@ if (-not $SkipBuild) {
 }
 $exe = Join-Path $root "target\dist\nanatype.exe"
 
-# DX12 shader compiler shipped beside the exe (MIT-licensed DXC). Set DXC_DLL
-# to an official release build; otherwise the Windows SDK copy is used.
+# DX12 shader compiler shipped beside the exe (open-source DXC, see
+# THIRD_PARTY_NOTICES.md). Set DXC_DLL to an official release's
+# bin\x64\dxcompiler.dll; otherwise the Windows SDK copy is used.
 $dxc = $env:DXC_DLL
 if (-not $dxc) {
     $dxc = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\dxcompiler.dll" |
@@ -26,6 +27,20 @@ if (-not $dxc) {
 }
 New-Item -ItemType Directory -Force (Join-Path $root "target\dxc") | Out-Null
 Copy-Item $dxc (Join-Path $root "target\dxc\dxcompiler.dll") -Force
+
+# Licences, staged in target\licenses for the installer and the zip: the
+# notices (checked against Cargo.lock), each Rust crate's licence files, and
+# a DXC release's own licence files (bin\x64\ -> two levels up).
+$staged = Join-Path $root "target\licenses"
+Remove-Item -Recurse -Force $staged -ErrorAction SilentlyContinue
+pwsh (Join-Path $PSScriptRoot "third-party-notices.ps1") -Check -Texts $staged
+if ($env:DXC_DLL) {
+    $release = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $env:DXC_DLL))
+    $dxcLicenses = Get-ChildItem (Join-Path $release "LICENSE*") -File -ErrorAction SilentlyContinue
+    if (-not $dxcLicenses) { throw "No LICENSE* files in $release for the DXC release named by DXC_DLL" }
+    New-Item -ItemType Directory -Force (Join-Path $staged "dxc") | Out-Null
+    Copy-Item $dxcLicenses (Join-Path $staged "dxc")
+}
 # Outside target/: NanaUI treats executables under a cargo target dir as dev builds.
 $out = Join-Path $root "dist"
 Remove-Item -Recurse -Force $out -ErrorAction SilentlyContinue
@@ -47,7 +62,9 @@ if ($Portable) {
     $licenses = Join-Path $app "licenses"
     New-Item -ItemType Directory -Force $licenses | Out-Null
     Copy-Item (Join-Path $root "crates\theme\fonts\*.LICENSE.txt") $licenses
+    Copy-Item (Join-Path $root "packaging\licenses\*") $licenses
     Copy-Item (Join-Path $root "THIRD_PARTY_NOTICES.md") $licenses
+    Copy-Item (Join-Path $staged "*") $licenses -Recurse
     Compress-Archive -Path (Join-Path $app "*") -DestinationPath (Join-Path $out "NanaType-$version-portable.zip")
 } else {
     iscc "/DAppVersion=$version" "/DSourceDir=$app" "/DOutputDir=$out" (Join-Path $root "packaging\nanatype.iss")

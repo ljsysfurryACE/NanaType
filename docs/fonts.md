@@ -72,8 +72,8 @@ OFL 1.1 第 2 条要求每份副本都带上版权声明与许可全文。本仓
 
 - `crates/theme/fonts/<名字>.LICENSE.txt`：上游许可原样复制（构建强制要求），随字体一起编进程序（`BuiltinFont::license`）。
 - **关于页**：「开源字体」一行，点「查看许可」展开一个可滚动的面板，逐个列出本次构建嵌入的字体：家族名、作者、版本、许可名与许可全文（都从嵌入的字体与许可读出，不带字体的构建不显示这一行）。
-- **安装包**：`packaging/nanatype.iss` 把 `crates/theme/fonts/*.LICENSE.txt` 与仓库根目录的 `THIRD_PARTY_NOTICES.md` 装到 `{app}\licenses\`；`scripts/package.ps1 -Portable` 的压缩包里也有同样的 `licenses/` 文件夹。
-- 仓库根目录的 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 汇总署名。
+- **安装包**：`packaging/nanatype.iss` 把 `crates/theme/fonts/*.LICENSE.txt`、`packaging/licenses/`（NanaUI 自带 Noto Sans SC 的 `NotoSansSC-OFL.txt`）、仓库根目录的 `THIRD_PARTY_NOTICES.md` 与打包时生成的 `rust-crates.txt`（各 Rust 依赖自己的许可文件）装到 `{app}\licenses\`；`scripts/package.ps1 -Portable` 的压缩包里也有同样的 `licenses/` 文件夹。
+- 仓库根目录的 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) 汇总署名：字体、`dxcompiler.dll` 与全部 Rust 依赖（后者由 `pwsh scripts/third-party-notices.ps1` 从 `cargo metadata --offline` 生成，CI 用 `-Check` 检查它是否过期、每个依赖是否都有许可表达式）。
 
 ## 加入一个字体的步骤
 
