@@ -281,8 +281,8 @@ impl ChipKind {
     /// The chip's picture: the hue as a stripe down its left edge and the
     /// glyph in `ink` beside it, as an SVG data URL.
     pub fn icon(self, ink: Rgba8) -> Arc<str> {
-        static CACHE: LazyLock<Mutex<HashMap<(ChipKind, Rgba8), Arc<str>>>> =
-            LazyLock::new(Default::default);
+        type IconCache = Mutex<HashMap<(ChipKind, Rgba8), Arc<str>>>;
+        static CACHE: LazyLock<IconCache> = LazyLock::new(Default::default);
         let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
         Arc::clone(cache.entry((self, ink)).or_insert_with(|| {
             let rgb = |c: Rgba8| format!("rgb({},{},{})", c.r, c.g, c.b);

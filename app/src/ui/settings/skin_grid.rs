@@ -162,7 +162,8 @@ impl Thumb {
 
 /// Cached miniatures by skin id, with the skin they were made from: a
 /// reloaded skin is a new `Arc` and is worked out again.
-static CACHE: Mutex<Option<HashMap<String, (Arc<Skin>, Arc<Thumb>)>>> = Mutex::new(None);
+type ThumbCache = Mutex<Option<HashMap<String, (Arc<Skin>, Arc<Thumb>)>>>;
+static CACHE: ThumbCache = Mutex::new(None);
 
 /// The miniature of `row`, from the cache when its skin has not changed.
 pub fn thumb(row: &SkinRow) -> Arc<Thumb> {

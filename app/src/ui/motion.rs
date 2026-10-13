@@ -155,10 +155,8 @@ pub fn press<V: View>(cx: &mut ViewContext<'_, V>, reduced: bool) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn tokens_keep_their_order() {
-        assert!(PRESS_MS < HOVER_MS && HOVER_MS < STATE_MS && STATE_MS < ENTER_MS);
-    }
+    // Checked at compile time: the tokens are constants.
+    const _: () = assert!(PRESS_MS < HOVER_MS && HOVER_MS < STATE_MS && STATE_MS < ENTER_MS);
 
     #[test]
     fn the_settle_overshoots_and_lands() {

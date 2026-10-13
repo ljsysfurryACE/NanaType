@@ -113,7 +113,7 @@ fn framed_skin(dir: &std::path::Path) {
     // 48×48 frame: 12 px dark-teal border with a notch, cream inside.
     image::RgbaImage::from_fn(48, 48, |x, y| {
         let edge = x < 12 || y < 12 || x >= 36 || y >= 36;
-        let notch = (x < 4 || x >= 44) && (y < 4 || y >= 44);
+        let notch = !(4..44).contains(&x) && !(4..44).contains(&y);
         if notch {
             image::Rgba([0, 0, 0, 0])
         } else if edge {

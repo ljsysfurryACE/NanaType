@@ -115,7 +115,7 @@ pub fn section_with(ui: Ui, title_key: &str, rows: Vec<(AnyView, Shown)>) -> Any
         .map(|(i, (r, shown))| {
             let item = widget(Stack::column(0.0)).children(((i > 0).then(divider), r));
             match shown {
-                Some(cond) => item.visible(move || cond()).into_any(),
+                Some(cond) => item.visible(cond).into_any(),
                 None => item.into_any(),
             }
         })

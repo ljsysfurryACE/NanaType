@@ -341,7 +341,7 @@ impl App {
         ));
         // The tray says the latest error, so it is seen with every window
         // hidden (summon mode) too.
-        self.tray_error = error.then(|| (id, text));
+        self.tray_error = error.then_some((id, text));
         let ctx = self.ctx.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(feedback::NOTICE_MS));
