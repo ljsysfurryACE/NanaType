@@ -297,20 +297,26 @@ impl ChipKind {
     }
 }
 
-/// The `@` label's fill and ink. The skin's ink stays when it reads on the
-/// fill at 4.5:1; otherwise (white on a light accent such as pixel's lime)
-/// the label takes whichever of dark ink or white reads best.
+/// The smallest contrast between the `@` label's ink and its fill.
+pub const MENTION_MIN: f32 = 4.5;
+
+/// The `@` label's fill and ink. The skin's ink (white on the accent by
+/// default) always stays: dark ink on a light accent turned into a smudge
+/// under the line's drop shadow (rpg, night). When the ink does not reach
+/// [`MENTION_MIN`] on the fill, the fill is deepened instead, toward the ink
+/// that reads best on the label's own ink, just far enough that it does.
 pub fn mention_colors(skin: &nanatype_theme::Skin) -> (Rgba8, Rgba8) {
+    use crate::skin_theme::{accent_fg, contrast, on};
     let m = &skin.mention;
     let fill = skin.color(m.fill);
-    let text = skin.color(m.text_color);
+    let text = skin.color(m.text_color).with_alpha(255);
     let solid = fill.with_alpha(255);
-    let text = if crate::skin_theme::contrast(text.with_alpha(255), solid) >= 4.5 {
-        text
-    } else {
-        crate::skin_theme::on(solid)
-    };
-    (fill, text)
+    if contrast(text, solid) >= MENTION_MIN {
+        return (fill, text);
+    }
+    let deeper = accent_fg(solid, text, on(text), MENTION_MIN);
+    // Opaque: the ratio holds whatever the label is drawn over.
+    (deeper.with_alpha(255), text)
 }
 
 impl Default for MentionLook {
@@ -634,7 +640,18 @@ pub fn to_rich(doc: &Document, env: &Env<'_>) -> RichText {
                 }
                 Inline::Mention(m) => {
                     let id = object_id(inline);
-                    let s = span_style(&Style::default(), &m.effects, Pace::Inherit, env.look);
+                    let mut s = span_style(&Style::default(), &m.effects, Pace::Inherit, env.look);
+                    // The label is a solid pill: the line's drop shadow
+                    // under its glyphs only blurs them (rpg). A clear
+                    // shadow of its own instead; not in the editor, whose
+                    // spans convert back exactly.
+                    if !env.editor {
+                        s = s.shadow(RichTextShadow::new(
+                            [0.0, 0.0],
+                            0.0,
+                            color(Rgba8::rgba(0, 0, 0, 0)),
+                        ));
+                    }
                     if !s.is_empty() {
                         object_spans.push((len, s));
                     }
@@ -937,8 +954,30 @@ mod tests {
             let skin = reg.load(&e.id).unwrap().skin;
             let (fill, text) = mention_colors(&skin);
             let r = crate::skin_theme::contrast(text.with_alpha(255), fill.with_alpha(255));
-            assert!(r >= 4.5, "{}: @ label {r:.2}:1", e.id);
+            assert!(r >= MENTION_MIN, "{}: @ label {r:.2}:1", e.id);
         }
+    }
+
+    #[test]
+    fn a_mention_keeps_the_skins_ink_and_deepens_a_light_fill() {
+        let reg = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+        for id in ["nanatype.rpg", "nanatype.night", "nanatype.pixel"] {
+            let skin = reg.load(id).unwrap().skin;
+            let (fill, text) = mention_colors(&skin);
+            // White on the accent, as the skin says; never dark ink, which
+            // the line's drop shadow smears.
+            assert_eq!(
+                text,
+                skin.color(skin.mention.text_color).with_alpha(255),
+                "{id}"
+            );
+            assert!(crate::skin_theme::contrast(text, fill.with_alpha(255)) >= MENTION_MIN);
+        }
+        // rpg's light periwinkle accent is deepened, pixel's dark green kept.
+        let rpg = reg.load("nanatype.rpg").unwrap().skin;
+        assert_ne!(mention_colors(&rpg).0.with_alpha(255), rpg.chrome.accent);
+        let pixel = reg.load("nanatype.pixel").unwrap().skin;
+        assert_eq!(mention_colors(&pixel).0, pixel.chrome.accent);
     }
 
     #[test]
