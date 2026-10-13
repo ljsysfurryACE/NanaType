@@ -305,7 +305,7 @@ contrast_guard = 3.0              # 自带颜色的文字与框色对比低于 3
 
 NanaUI 一次只用一个字体名，NanaType 会从 `families` 里挑第一个已安装的放在最前；都没装时使用系统默认字体。皮肤里随附的 `file` 字体总是优先。
 
-`file = "builtin:fonts/X.ttf"` 引用编译进程序的字体（`crates/theme/fonts/`，见 [fonts.md](fonts.md)），内置皮肤靠它带字体，用户皮肤也可以引用。只在选中皮肤时注册，几个角色或几套皮肤共用同一个字体时只注册一次。本版本没有带这个字体时不报错，直接回落到 `families`。皮肤库会给 `families` 第一个字体既没安装、也没随附的皮肤标上「替代字体」。
+`file = "builtin:fonts/X.ttf"` 引用编译进程序的字体（`crates/theme/fonts/`，见 [fonts.md](fonts.md)），内置皮肤靠它带字体，用户皮肤也可以引用。只在选中皮肤时注册，几个角色或几套皮肤共用同一个字体时只注册一次。本版本没有带这个字体时不报错，直接回落到 `families`。皮肤库只在 `families` 里没有一个可用字体（已安装，或是 NanaUI 自带的 Noto Sans SC），而且也没有随附可用的字体文件时，才给皮肤标上「替代字体」。
 
 现在随附的内置字体（版本、来源与 SHA-256 见 [fonts.md](fonts.md)）：
 

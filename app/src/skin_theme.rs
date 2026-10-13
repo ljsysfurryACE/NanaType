@@ -98,15 +98,28 @@ pub fn prepare(
 }
 
 /// Whether the skin's dialogue text will be drawn in a stand-in font: it
-/// names its own body families, the first of them is not installed, and it
-/// brings no font file this build can use (its own, or an embedded
+/// names its own body families, none of them is available ([`available`]),
+/// and it brings no font file this build can use (its own, or an embedded
 /// `builtin:` one). Skins on the default system stack never are.
 pub fn uses_fallback_font(skin: &Skin) -> bool {
     let body = &skin.fonts.body;
     if body.is_default_stack() || body.has_usable_file() {
         return false;
     }
-    body.families.first().is_some_and(|f| !installed(f))
+    !body.families.iter().any(|f| available(f))
+}
+
+/// The families NanaUI embeds itself (its UI face), always there to shape
+/// with whatever is installed.
+pub const NANA_UI_FAMILIES: &[&str] = &[nana_ui_core::fonts::UI_FONT_FAMILY];
+
+/// Whether text asked for in `family` is drawn in that family: one NanaUI
+/// embeds ([`NANA_UI_FAMILIES`]), or one installed on this system.
+pub fn available(family: &str) -> bool {
+    NANA_UI_FAMILIES
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case(family))
+        || installed(family)
 }
 
 /// Whether the text engine shapes with `family` itself rather than a
@@ -574,11 +587,11 @@ mod tests {
     use nanatype_theme::{SkinOrigin, SkinRegistry};
 
     #[test]
-    fn a_skin_is_flagged_only_when_its_own_body_font_is_missing() {
+    fn a_skin_is_flagged_only_when_none_of_its_body_fonts_is_available() {
         let mut skin = Skin::default();
         // The default system stack is never flagged.
         assert!(!uses_fallback_font(&skin));
-        skin.fonts.body.families = vec!["No Such Font 7f3a".into(), "SimSun".into()];
+        skin.fonts.body.families = vec!["No Such Font 7f3a".into(), "Nor This 7f3b".into()];
         assert!(uses_fallback_font(&skin));
         // A built-in font this build does not embed still falls back.
         skin.fonts.body.file = Some("builtin:fonts/NotInThisBuild.ttf".into());
@@ -590,6 +603,42 @@ mod tests {
         skin.fonts.body.file = None;
         skin.fonts.body.families = vec!["Noto Sans SC".into()];
         assert!(!uses_fallback_font(&skin));
+        // A later family that is available is enough: it is what the text
+        // is drawn in, not a stand-in.
+        skin.fonts.body.families = vec!["No Such Font 7f3a".into(), "noto sans sc".into()];
+        assert!(!uses_fallback_font(&skin));
+    }
+
+    #[test]
+    fn nana_ui_embedded_families_are_always_available() {
+        for f in NANA_UI_FAMILIES {
+            assert!(available(f), "{f}");
+        }
+        assert!(!available("No Such Font 7f3a"));
+    }
+
+    #[test]
+    fn echo_skins_are_not_flagged() {
+        // Their stacks end in NanaUI's own Noto Sans SC, so their text never
+        // shows in a stand-in, whatever is installed.
+        let reg = SkinRegistry::new(None, "test");
+        for id in [
+            "nanatype.echo_vanilla",
+            "nanatype.echo_glass",
+            "nanatype.echo_bubble",
+            "nanatype.echo_void",
+        ] {
+            let skin = reg.load(id).expect("builtin skin loads").skin;
+            assert!(
+                skin.fonts
+                    .body
+                    .families
+                    .iter()
+                    .any(|f| NANA_UI_FAMILIES.iter().any(|n| n.eq_ignore_ascii_case(f))),
+                "{id} lists a NanaUI family"
+            );
+            assert!(!uses_fallback_font(&skin), "{id}");
+        }
     }
 
     #[test]

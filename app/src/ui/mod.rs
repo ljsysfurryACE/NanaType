@@ -102,8 +102,9 @@ pub struct SkinRow {
     pub accent: [f32; 4],
     pub box_color: [f32; 4],
     pub text_color: [f32; 4],
-    /// The skin's own body font is neither installed nor bundled, so its
-    /// text shows in a stand-in ([`crate::skin_theme::uses_fallback_font`]).
+    /// None of the skin's body fonts is installed, bundled or embedded by
+    /// NanaUI, so its text shows in a stand-in
+    /// ([`crate::skin_theme::uses_fallback_font`]).
     pub fallback_font: bool,
 }
 
