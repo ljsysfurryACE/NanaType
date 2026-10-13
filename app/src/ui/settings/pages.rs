@@ -1492,7 +1492,7 @@ fn tag_line(locale: Locale, row: &SkinRow) -> String {
 
 /// One skin in the grid: a thumbnail of its box over its name and tags.
 /// The previewed card takes the selected fill; the current skin carries a
-/// "Current" badge and a 3px accent bar.
+/// "Current" badge in its name row and a 3px accent bar.
 fn skin_card(
     ui: Ui,
     skin: &SkinRow,
@@ -1522,27 +1522,7 @@ fn skin_card(
                 l.paint.background_image = Some(backdrop);
             }),
     )
-    .children((
-        super::skin_grid::miniature(&super::skin_grid::thumb(skin)),
-        current.then(|| {
-            // On a surface pill, so the badge's tint reads over any box.
-            widget(
-                Stack::row(0.0)
-                    .surface(SemanticColorRole::Surface)
-                    .radius_px(999.0)
-                    .with_layout(|l| {
-                        // Top right, over the miniature: name plates sit top left.
-                        l.position = PositionSpec::Absolute;
-                        l.offset_right = Some(LengthSpec::Px(6.0));
-                        l.offset_top = Some(LengthSpec::Px(6.0));
-                        l.z_index = Some(5);
-                    }),
-            )
-            .children(widget(
-                StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success).compact(true),
-            ))
-        }),
-    ));
+    .children(super::skin_grid::miniature(&super::skin_grid::thumb(skin)));
     let (tags, tone) = match &skin.error {
         Some(_) => (I18N.t_in(locale, "skins-broken"), SemanticColorRole::Danger),
         None => (tag_line(locale, skin), SemanticColorRole::Muted),
@@ -1554,6 +1534,13 @@ fn skin_card(
     )
     .children((
         widget(Text::new(skin.name.clone()).style(one_line(13.0, 500))),
+        // The current skin's badge takes the Apply button's place, off the
+        // thumbnail, so no box is covered.
+        current.then(|| {
+            widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0))).children(widget(
+                StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success).compact(true),
+            ))
+        }),
         (!current && usable).then(|| apply_button(ui, skin.id.clone(), previewed.clone())),
         skin_actions(ui, skin, locale),
     ));
