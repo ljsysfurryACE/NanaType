@@ -15,12 +15,12 @@
 //! VTube Studio is closed.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::TcpStream;
+use std::net::{SocketAddr, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use nanatype_model::{VtsAction, VtsReset};
+use nanatype_model::{LinkFault, VtsAction, VtsReset};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket};
 
@@ -251,31 +251,24 @@ impl VtsClient {
     }
 }
 
-fn connect(port: u16) -> Result<WebSocket<TcpStream>, String> {
-    let addr = format!("127.0.0.1:{port}");
-    let stream = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .map_err(|e: std::net::AddrParseError| e.to_string())?,
-        Duration::from_secs(2),
-    )
-    .map_err(|e| e.to_string())?;
+fn connect(port: u16) -> Result<WebSocket<TcpStream>, LinkFault> {
+    let io = |e: std::io::Error| LinkFault::from_io(&e);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(io)?;
     // Bound the handshake too: a port held by something else must not hang
     // the client.
     let timeout = Some(Duration::from_secs(2));
-    stream
-        .set_read_timeout(timeout)
-        .map_err(|e| e.to_string())?;
-    stream
-        .set_write_timeout(timeout)
-        .map_err(|e| e.to_string())?;
-    let (socket, _) =
-        tungstenite::client(format!("ws://{addr}"), stream).map_err(|e| e.to_string())?;
+    stream.set_read_timeout(timeout).map_err(io)?;
+    stream.set_write_timeout(timeout).map_err(io)?;
+    let (socket, _) = tungstenite::client(format!("ws://{addr}"), stream).map_err(|e| match e {
+        tungstenite::HandshakeError::Failure(e) => crate::ws_fault(&e),
+        tungstenite::HandshakeError::Interrupted(_) => LinkFault::TimedOut,
+    })?;
     // Short reads keep events (and the mouth) on time.
     socket
         .get_ref()
         .set_read_timeout(Some(Duration::from_millis(10)))
-        .map_err(|e| e.to_string())?;
+        .map_err(io)?;
     Ok(socket)
 }
 
@@ -311,12 +304,12 @@ impl Client {
             return;
         };
         if let Err(e) = s.socket.send(Message::text(text)) {
-            self.drop_session(e.to_string());
+            self.drop_session(crate::ws_fault(&e));
         }
     }
 
     /// The connection is gone: say why and try again shortly.
-    fn drop_session(&mut self, why: String) {
+    fn drop_session(&mut self, why: LinkFault) {
         self.session = None;
         (self.status)(BridgeStatus::Error(Sink::Vts, why));
         self.next_attempt = Instant::now() + Duration::from_secs(3);
@@ -549,14 +542,14 @@ impl Client {
                     self.response(&v);
                 }
             }
-            Ok(Message::Close(_)) => self.drop_session("VTube Studio closed".into()),
+            Ok(Message::Close(_)) => self.drop_session(LinkFault::Closed),
             Ok(_) => {}
             Err(tungstenite::Error::Io(e))
                 if matches!(
                     e.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) => {}
-            Err(e) => self.drop_session(e.to_string()),
+            Err(e) => self.drop_session(crate::ws_fault(&e)),
         }
     }
 
@@ -601,8 +594,9 @@ impl Client {
                 self.send("HotkeysInCurrentModelRequest", json!({}));
             }
             "APIError" => {
-                let msg = data["message"].as_str().unwrap_or("API error").to_owned();
-                (self.status)(BridgeStatus::Error(Sink::Vts, msg));
+                // VTube Studio's own words; empty when it gave none.
+                let msg = data["message"].as_str().unwrap_or_default().to_owned();
+                (self.status)(BridgeStatus::Error(Sink::Vts, LinkFault::Remote(msg)));
             }
             _ => {}
         }

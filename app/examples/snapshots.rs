@@ -7,16 +7,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use nana_ui::WindowOutputStatus;
 use nana_ui::runtime::{DocumentId, RuntimeDocument};
 use nana_ui_devtools::agent::RuntimeAgentSession;
 use nanatype::assets::AssetLibrary;
 use nanatype::chat::{ChatKind, ChatMessage};
-use nanatype::ui::{LinkState, StickerRow, Ui, danmaku, dialogue, history, input, settings};
-use nanatype_blive::Guard;
+use nanatype::ui::{
+    Status, StickerRow, Ui, danmaku, dialogue, history, input, link_text, settings,
+};
+use nanatype_blive::{BliveStatus, Guard};
+use nanatype_bridge::{BridgeStatus, Sink};
 use nanatype_core::{Cmd, Core};
 use nanatype_i18n::Locale;
 use nanatype_markup::parse;
-use nanatype_model::{AssetRef, ChatUser, Document};
+use nanatype_model::{AssetRef, ChatUser, Document, LinkFault};
 use nanatype_settings::Settings;
 use nanatype_theme::SkinRegistry;
 
@@ -367,6 +371,31 @@ fn sample_stickers(
         .collect()
 }
 
+/// The settings pages' link states after these reports from the clients,
+/// in `locale`, the way the app turns them into text.
+fn reported(
+    locale: Locale,
+    bridge: &[BridgeStatus],
+    [display, history]: [WindowOutputStatus; 2],
+    blive: &BliveStatus,
+    room: &str,
+) -> Status {
+    let mut s = Status::default();
+    for report in bridge {
+        if let Some((sink, state)) = link_text::bridge(locale, report) {
+            match sink {
+                Sink::Vts => s.vts = state,
+                Sink::Osc => s.osc = state,
+                Sink::WebSocket => s.ws = state,
+            }
+        }
+    }
+    s.spout_display = link_text::spout(locale, &display).unwrap_or_default();
+    s.spout_history = link_text::spout(locale, &history).unwrap_or_default();
+    (s.blive, s.blive_link) = link_text::blive(locale, blive, room);
+    s
+}
+
 fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
     std::fs::create_dir_all(out).unwrap();
     let loaded = registry.load(skin_id).expect("skin");
@@ -450,9 +479,8 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         .set(Arc::new(chat.iter().cloned().map(Arc::new).collect()));
     ui.reply.set(Some(chat[1].quote(locale)));
     let mut status = (*ui.status.get_untracked()).clone();
-    status.blive =
-        nanatype::ui::I18N.tr_in(locale, "chat-status-joined", &[("room", "21452505".into())]);
-    status.blive_link = danmaku::Link::Connected;
+    (status.blive, status.blive_link) =
+        link_text::blive(locale, &BliveStatus::Connected, "21452505");
     ui.status.set(Arc::new(status));
     std::thread::sleep(std::time::Duration::from_millis(1500));
     let draft = "[at=1002 name=路过的猫 avatar=blob:bili-face-1002] [b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[sticker=nana/heart][se=coin]";
@@ -680,23 +708,36 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     });
 
     // The same two pages with every link switched on, one in each state.
+    // The states come from the clients' own reports, turned into text the
+    // way the app does, so the pages read in the shot's language.
     let mut on = settings.clone();
     on.integrations.vts.enabled = true;
     on.integrations.osc.enabled = true;
     on.integrations.websocket.enabled = true;
     on.output.display.enabled = true;
     on.output.history.enabled = true;
+    let status = reported(
+        locale,
+        &[
+            BridgeStatus::VtsNeedsToken,
+            BridgeStatus::Connecting(Sink::Osc),
+            BridgeStatus::Connected(Sink::WebSocket),
+            BridgeStatus::Clients(2),
+        ],
+        [
+            WindowOutputStatus::Active {
+                extent: [1920, 1080],
+                native: true,
+            },
+            WindowOutputStatus::NativeUnavailable {
+                reason: "no GPU".into(),
+            },
+        ],
+        &BliveStatus::Error(LinkFault::Refused),
+        &on.integrations.blivechat.room,
+    );
     ui.settings.set(Arc::new(on));
-    ui.status.set(Arc::new(nanatype::ui::Status {
-        vts: LinkState::NeedsAuth,
-        osc: LinkState::Connecting,
-        ws: LinkState::Connected("Connected".into()),
-        spout_display: LinkState::Connected("Sending · 1920×1080".into()),
-        spout_history: LinkState::Error("Unavailable: no GPU".into()),
-        blive: "Disconnected, retrying: connection refused".into(),
-        blive_link: danmaku::Link::Error,
-        ..Default::default()
-    }));
+    ui.status.set(Arc::new(status));
     for page in [settings::Page::Integrations, settings::Page::Output] {
         ui.page.set(page);
         shot(
@@ -739,16 +780,20 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             hotkey: None,
         },
     ];
+    let mut status = reported(
+        locale,
+        &[BridgeStatus::Connected(Sink::Vts)],
+        [WindowOutputStatus::Stopped, WindowOutputStatus::Stopped],
+        &BliveStatus::Off,
+        &on.integrations.blivechat.room,
+    );
+    status.vts_hotkeys = vec![
+        ("hk-1".into(), "Smile".into()),
+        ("hk-2".into(), "Angry Face".into()),
+        ("hk-3".into(), "Heart Eyes".into()),
+    ];
     ui.settings.set(Arc::new(on));
-    ui.status.set(Arc::new(nanatype::ui::Status {
-        vts: LinkState::Connected("Connected · Hiyori".into()),
-        vts_hotkeys: vec![
-            ("hk-1".into(), "Smile".into()),
-            ("hk-2".into(), "Angry Face".into()),
-            ("hk-3".into(), "Heart Eyes".into()),
-        ],
-        ..Default::default()
-    }));
+    ui.status.set(Arc::new(status));
     for page in [settings::Page::Integrations, settings::Page::Assets] {
         ui.page.set(page);
         shot(

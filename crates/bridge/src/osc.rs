@@ -1,6 +1,6 @@
 use std::net::{ToSocketAddrs, UdpSocket};
 
-use nanatype_model::VtsAction;
+use nanatype_model::{LinkFault, VtsAction};
 use rosc::{OscMessage, OscPacket, OscType, encoder};
 
 use crate::{BridgeEvent, BridgeStatus, Sink, StatusFn};
@@ -77,7 +77,7 @@ impl OscSender {
             None => {
                 status(BridgeStatus::Error(
                     Sink::Osc,
-                    format!("cannot resolve {}", config.host),
+                    LinkFault::Unresolved(config.host.clone()),
                 ));
                 return None;
             }
@@ -98,7 +98,7 @@ impl OscSender {
                 })
             }
             Err(e) => {
-                status(BridgeStatus::Error(Sink::Osc, e.to_string()));
+                status(BridgeStatus::Error(Sink::Osc, LinkFault::from_io(&e)));
                 None
             }
         }
@@ -115,7 +115,7 @@ impl OscSender {
         if let Ok(bytes) = encoder::encode(&OscPacket::Message(msg))
             && let Err(e) = self.socket.send_to(&bytes, self.target)
         {
-            (self.status)(BridgeStatus::Error(Sink::Osc, e.to_string()));
+            (self.status)(BridgeStatus::Error(Sink::Osc, LinkFault::from_io(&e)));
         }
     }
 }

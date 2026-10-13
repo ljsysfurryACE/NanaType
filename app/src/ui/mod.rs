@@ -7,6 +7,7 @@ pub mod feedback;
 pub mod history;
 pub mod input;
 pub mod keycap;
+pub mod link_text;
 pub mod motion;
 pub mod overflow;
 pub mod quote;

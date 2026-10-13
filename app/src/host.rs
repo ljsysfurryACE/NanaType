@@ -661,14 +661,10 @@ impl RuntimeProgram for Host {
         else {
             return;
         };
-        if let Some(error) = self.app.spout.frame(kind, &name, frame) {
-            crate::debug_log(&format!("spout {kind:?}: {error}"));
+        if let Some((key, detail)) = self.app.spout.frame(kind, &name, frame) {
+            crate::debug_log(&format!("spout {kind:?}: {detail}"));
             let locale = self.app.ui.locale.get_untracked();
-            let state = crate::ui::LinkState::Error(crate::ui::I18N.tr_in(
-                locale,
-                "err-spout",
-                &[("message", error.as_str().into())],
-            ));
+            let state = crate::ui::link_text::spout_send(locale, key);
             if self.app.spout.status.get(&kind) != Some(&state) {
                 self.app.spout.status.insert(kind, state);
                 self.app.refresh_spout_status();

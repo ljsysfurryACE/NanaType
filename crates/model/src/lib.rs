@@ -13,6 +13,7 @@ mod color;
 mod document;
 mod envelope;
 mod line;
+mod link;
 mod source;
 mod style;
 
@@ -27,6 +28,7 @@ pub use document::{
 };
 pub use envelope::{DOCUMENT_FORMAT, DOCUMENT_VERSION, DocumentEnvelope, EnvelopeError};
 pub use line::{AfterLine, Line, LineId, LineMeta, Speaker, unix_millis};
+pub use link::LinkFault;
 pub use source::{
     ChatRef, ChatUser, HistoryItem, MessageSource, SourceEvent, SourceId, SourceKind,
 };

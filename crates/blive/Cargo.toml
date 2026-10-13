@@ -7,6 +7,7 @@ rust-version.workspace = true
 description = "NanaType live chat: a blivechat (Bilibili danmaku) client"
 
 [dependencies]
+nanatype-model.workspace = true
 serde_json.workspace = true
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 crossbeam-channel = "0.5"

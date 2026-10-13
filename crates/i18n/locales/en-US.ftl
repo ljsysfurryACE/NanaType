@@ -530,3 +530,26 @@ about-fonts-license-other = Licence below
 ## round2-skins
 skins-fallback-font-missing = { $family } not installed
 ## end round2-skins
+## round2-status
+link-fault-refused = The other program is not running (connection refused)
+link-fault-timeout = Timed out
+link-fault-closed = The other side closed the connection
+link-fault-port-in-use = Port { $port } is used by another program
+link-fault-unresolved = Cannot find host { $host }
+link-fault-silent = No data for too long
+link-fault-remote = The other side said: { $message }
+link-fault-remote-empty = The other side refused the request
+chat-fatal-auth-code = The auth code is not valid; check it and enter it again
+chat-fatal-too-many-retries = Too many retries; try again later
+chat-fatal-too-many-connections = Too many clients connected; try again later
+output-status-native-unavailable = The graphics card cannot share the output texture
+output-status-failed = The output picture could not be produced
+spout-error-backend = Spout could not start
+spout-error-interop = The picture cannot be shared between graphics devices
+spout-error-format = The picture's format or size is not supported
+spout-error-publish = The picture could not be sent
+spout-error-name = The sender name is not valid
+err-tray = Tray icon unavailable: { $message }
+skins-export-failed = The skin could not be exported: { $message }
+skins-delete-failed = The skin could not be deleted: { $message }
+## end round2-status

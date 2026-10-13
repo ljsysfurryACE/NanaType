@@ -17,6 +17,31 @@ use nanatype_settings::{Settings, SpoutOutput};
 use crate::ui::{I18N, LinkState};
 use crate::windows::WindowKind;
 
+/// What a Spout sender's failure is called, one key per kind of failure.
+pub const SPOUT_ERROR_KEYS: [&str; 6] = [
+    "output-spout-unsupported",
+    "spout-error-backend",
+    "spout-error-interop",
+    "spout-error-format",
+    "spout-error-publish",
+    "spout-error-name",
+];
+
+#[cfg(windows)]
+fn spout_error_key(e: &nanalive_spout::SpoutOutputError) -> &'static str {
+    use nanalive_spout::SpoutOutputError as E;
+    match e {
+        E::UnsupportedPlatform => SPOUT_ERROR_KEYS[0],
+        E::BackendUnavailable => SPOUT_ERROR_KEYS[1],
+        E::DeviceInteropUnavailable => SPOUT_ERROR_KEYS[2],
+        E::SurfaceFormatUnsupported
+        | E::InvalidFrameDimensions { .. }
+        | E::BufferTooSmall { .. } => SPOUT_ERROR_KEYS[3],
+        E::PublishFailed => SPOUT_ERROR_KEYS[4],
+        E::InvalidSenderName => SPOUT_ERROR_KEYS[5],
+    }
+}
+
 pub fn settings_for(kind: WindowKind, s: &Settings) -> Option<&SpoutOutput> {
     match kind {
         WindowKind::Display => Some(&s.output.display),
@@ -103,45 +128,23 @@ impl Spout {
         status: &WindowOutputStatus,
         locale: Locale,
     ) {
-        let unavailable = |reason: &str| {
-            LinkState::Error(I18N.tr_in(
-                locale,
-                "output-status-unavailable",
-                &[("reason", reason.into())],
-            ))
-        };
-        let state = match status {
-            WindowOutputStatus::Active { extent, .. } => LinkState::Connected(format!(
-                "{} · {}×{}",
-                t(locale, "output-status-active"),
-                extent[0],
-                extent[1]
-            )),
-            WindowOutputStatus::NativeUnavailable { reason } => unavailable(reason),
-            WindowOutputStatus::Failed { reason } => unavailable(reason),
-            WindowOutputStatus::Stopped => LinkState::Off,
-            WindowOutputStatus::NativeRetired { .. } => {
-                #[cfg(windows)]
-                if let Some(s) = self.senders.get_mut(&kind) {
-                    // Handles change; the sender reopens on the next frame.
-                    let _ = s;
-                }
-                return;
-            }
-            _ => return,
-        };
-        self.status.insert(kind, state);
+        // A retired pool needs nothing here: the sender reopens its handles
+        // on the next frame.
+        if let Some(state) = crate::ui::link_text::spout(locale, status) {
+            self.status.insert(kind, state);
+        }
     }
 
-    /// Hand a frame to the window's Spout sender. Returns an error text when
-    /// sending failed so the caller can surface it.
+    /// Hand a frame to the window's Spout sender. When sending failed,
+    /// returns what to say ([`SPOUT_ERROR_KEYS`]) and the sender's own
+    /// (English) words for the log.
     #[allow(unused_variables)]
     pub fn frame(
         &mut self,
         kind: WindowKind,
         name: &str,
         frame: &WindowOutputFrame,
-    ) -> Option<String> {
+    ) -> Option<(&'static str, String)> {
         #[cfg(windows)]
         {
             use std::os::windows::io::AsRawHandle;
@@ -164,7 +167,7 @@ impl Spout {
                             },
                         );
                     }
-                    Err(e) => return Some(e.to_string()),
+                    Err(e) => return Some((spout_error_key(&e), e.to_string())),
                 }
             }
             let sender = self.senders.get_mut(&kind)?;
@@ -191,7 +194,7 @@ impl Spout {
                     .sender
                     .send(&shared, nanalive_spout::GpuDx11SharedOptions::default())
             };
-            result.err().map(|e| e.to_string())
+            result.err().map(|e| (spout_error_key(&e), e.to_string()))
         }
         #[cfg(not(windows))]
         {

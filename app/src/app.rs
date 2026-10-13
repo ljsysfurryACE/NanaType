@@ -260,7 +260,10 @@ impl App {
         }
         match Tray::build(post) {
             Ok(tray) => app.tray = Some(tray),
-            Err(e) => app.notice(format!("tray: {e}"), true),
+            Err(e) => {
+                let text = app.ui.tr("err-tray", &[("message", e.as_str().into())]);
+                app.notice(text, true);
+            }
         }
         app.register_fonts();
         app.apply_skin();
@@ -1370,7 +1373,10 @@ impl App {
                 if let Some(id) = self.export_target.take()
                     && let Err(e) = self.registry.export(&id, &path)
                 {
-                    self.notice(e.to_string(), true);
+                    let text = self
+                        .ui
+                        .tr("skins-export-failed", &[("message", e.to_string().into())]);
+                    self.notice(text, true);
                 }
             }
             FileTarget::StickerFolder => {
@@ -1495,7 +1501,10 @@ impl App {
             Msg::PickFile(target) => self.pick(target),
             Msg::DeleteSkin(id) => {
                 if let Err(e) = self.registry.remove(&id) {
-                    self.notice(e.to_string(), true);
+                    let text = self
+                        .ui
+                        .tr("skins-delete-failed", &[("message", e.to_string().into())]);
+                    self.notice(text, true);
                 }
                 self.refresh_skin_rows();
                 self.sync_tray_skins();
@@ -1716,33 +1725,21 @@ impl App {
                 Sink::WebSocket => s.ws = state,
             });
         };
+        if let BridgeStatus::Error(sink, fault) = &status {
+            crate::debug_log(&format!("bridge {sink:?}: {fault}"));
+        }
+        let locale = self.ui.locale.get_untracked();
+        if let Some((sink, state)) = crate::ui::link_text::bridge(locale, &status) {
+            set(self, sink, state);
+        }
         match status {
             BridgeStatus::VtsToken(token) => self.edit(|s| s.integrations.vts.token = Some(token)),
-            BridgeStatus::VtsTokenRejected => {
-                self.edit(|s| s.integrations.vts.token = None);
-                set(self, Sink::Vts, LinkState::NeedsAuth);
-            }
+            BridgeStatus::VtsTokenRejected => self.edit(|s| s.integrations.vts.token = None),
             BridgeStatus::VtsHotkeys(keys) => {
                 let list = keys.into_iter().map(|k| (k.id, k.name)).collect();
                 self.edit_status(|s| s.vts_hotkeys = list);
             }
-            BridgeStatus::VtsNeedsToken => set(self, Sink::Vts, LinkState::NeedsAuth),
-            BridgeStatus::Clients(n) => {
-                let v = self.ui.tr("int-ws-clients", &[("count", n.into())]);
-                set(self, Sink::WebSocket, LinkState::Connected(v));
-            }
-            BridgeStatus::Off(sink) => set(self, sink, LinkState::Off),
-            BridgeStatus::Connecting(sink) => set(self, sink, LinkState::Connecting),
-            BridgeStatus::Connected(sink) => {
-                let v = self.ui.now_t("int-status-connected");
-                set(self, sink, LinkState::Connected(v));
-            }
-            BridgeStatus::Error(sink, message) => {
-                let v = self
-                    .ui
-                    .tr("int-status-error", &[("message", message.into())]);
-                set(self, sink, LinkState::Error(v));
-            }
+            _ => {}
         }
     }
 
@@ -1769,27 +1766,17 @@ impl App {
     }
 
     fn chat_status(&mut self, status: BliveStatus) {
-        use crate::ui::danmaku::Link;
         let room = self.settings.integrations.blivechat.room.clone();
-        let (text, link) = match status {
-            BliveStatus::Off => (self.ui.now_t("int-status-off"), Link::Off),
-            BliveStatus::Connecting => (self.ui.now_t("int-status-connecting"), Link::Connecting),
-            BliveStatus::Connected => (
-                self.ui
-                    .tr("chat-status-joined", &[("room", room.as_str().into())]),
-                Link::Connected,
-            ),
-            BliveStatus::Error(message) => (
-                self.ui
-                    .tr("chat-status-retrying", &[("message", message.into())]),
-                Link::Error,
-            ),
-            BliveStatus::Fatal(_, message) => {
-                let text = self.ui.tr("chat-fatal", &[("message", message.into())]);
+        let locale = self.ui.locale.get_untracked();
+        let (text, link) = crate::ui::link_text::blive(locale, &status, &room);
+        match &status {
+            BliveStatus::Error(fault) => crate::debug_log(&format!("blivechat: {fault}")),
+            BliveStatus::Fatal(kind, message) => {
+                crate::debug_log(&format!("blivechat fatal {kind:?}: {message}"));
                 self.notice(text.clone(), true);
-                (text, Link::Error)
             }
-        };
+            _ => {}
+        }
         self.edit_status(|s| {
             s.blive = text;
             s.blive_link = link;

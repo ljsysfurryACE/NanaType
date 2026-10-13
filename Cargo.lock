@@ -3049,6 +3049,7 @@ name = "nanatype-blive"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "nanatype-model",
  "serde_json",
  "tungstenite",
 ]

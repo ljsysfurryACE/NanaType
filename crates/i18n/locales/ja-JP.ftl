@@ -524,3 +524,26 @@ about-fonts-license-other = ライセンスは下記のとおり
 ## round2-skins
 skins-fallback-font-missing = { $family } 未インストール
 ## end round2-skins
+## round2-status
+link-fault-refused = 相手のプログラムが起動していません（接続拒否）
+link-fault-timeout = タイムアウトしました
+link-fault-closed = 相手が接続を閉じました
+link-fault-port-in-use = ポート { $port } は別のプログラムが使用中です
+link-fault-unresolved = ホスト { $host } が見つかりません
+link-fault-silent = 長い間データが届いていません
+link-fault-remote = 相手からの応答：{ $message }
+link-fault-remote-empty = 相手がリクエストを拒否しました
+chat-fatal-auth-code = 認証コードが無効です。確認してもう一度入力してください
+chat-fatal-too-many-retries = 再試行が多すぎます。しばらくしてから接続します
+chat-fatal-too-many-connections = 接続中のクライアントが多すぎます。しばらくしてから接続します
+output-status-native-unavailable = グラフィックカードが出力テクスチャを共有できません
+output-status-failed = 出力映像を生成できません
+spout-error-backend = Spout を起動できません
+spout-error-interop = グラフィックデバイス間で映像を共有できません
+spout-error-format = 映像の形式またはサイズに対応していません
+spout-error-publish = 映像を送信できませんでした
+spout-error-name = センダー名が無効です
+err-tray = トレイアイコンを使用できません：{ $message }
+skins-export-failed = スキンを書き出せませんでした：{ $message }
+skins-delete-failed = スキンを削除できませんでした：{ $message }
+## end round2-status

@@ -6,6 +6,7 @@ use std::thread;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use nanatype_model::LinkFault;
 use tungstenite::{Message, WebSocket};
 
 use crate::{BridgeEvent, BridgeStatus, Sink, StatusFn};
@@ -53,10 +54,12 @@ fn run(port: u16, rx: Receiver<String>, stop: Receiver<()>, status: StatusFn) {
     let listener = match TcpListener::bind(addr) {
         Ok(l) => l,
         Err(e) => {
-            status(BridgeStatus::Error(
-                Sink::WebSocket,
-                format!("port {port}: {e}"),
-            ));
+            let fault = if e.kind() == std::io::ErrorKind::AddrInUse {
+                LinkFault::PortInUse(port)
+            } else {
+                LinkFault::from_io(&e)
+            };
+            status(BridgeStatus::Error(Sink::WebSocket, fault));
             return;
         }
     };

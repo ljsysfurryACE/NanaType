@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
+use nanatype_model::LinkFault;
 use tungstenite::{Message, WebSocket};
 
 use crate::protocol::{self, ChatEvent, FatalKind, Incoming, RoomKey};
@@ -31,7 +32,7 @@ pub enum BliveStatus {
     /// Joined the room.
     Connected,
     /// The connection failed or dropped; it is retried.
-    Error(String),
+    Error(LinkFault),
     /// blivechat gave up on the room. An auth code error is not retried.
     Fatal(FatalKind, String),
 }
@@ -92,20 +93,35 @@ impl BliveHandle {
     }
 }
 
-fn connect(config: &BliveConfig) -> Result<WebSocket<TcpStream>, String> {
+/// The fault behind a WebSocket error.
+fn ws_fault(e: &tungstenite::Error) -> LinkFault {
+    match e {
+        tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed => {
+            LinkFault::Closed
+        }
+        tungstenite::Error::Io(io) => LinkFault::from_io(io),
+        other => LinkFault::Other(other.to_string()),
+    }
+}
+
+fn connect(config: &BliveConfig) -> Result<WebSocket<TcpStream>, LinkFault> {
+    let io = |e: std::io::Error| LinkFault::from_io(&e);
+    let unresolved = || LinkFault::Unresolved(config.host.clone());
     let addr = (config.host.as_str(), config.port)
         .to_socket_addrs()
-        .map_err(|e| e.to_string())?
+        .map_err(|_| unresolved())?
         .next()
-        .ok_or_else(|| format!("{} has no address", config.host))?;
-    let stream =
-        TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(|e| e.to_string())?;
+        .ok_or_else(unresolved)?;
+    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map_err(io)?;
     let url = format!("ws://{}:{}/api/chat", config.host, config.port);
-    let (socket, _) = tungstenite::client(url, stream).map_err(|e| e.to_string())?;
+    let (socket, _) = tungstenite::client(url, stream).map_err(|e| match e {
+        tungstenite::HandshakeError::Failure(e) => ws_fault(&e),
+        tungstenite::HandshakeError::Interrupted(_) => LinkFault::TimedOut,
+    })?;
     socket
         .get_ref()
         .set_read_timeout(Some(Duration::from_millis(100)))
-        .map_err(|e| e.to_string())?;
+        .map_err(io)?;
     Ok(socket)
 }
 
@@ -153,7 +169,7 @@ fn run(config: BliveConfig, stop: Receiver<()>, status: StatusFn, events: EventF
 
 enum Ended {
     Stopped,
-    Dropped(String),
+    Dropped(LinkFault),
     Fatal(FatalKind, String),
 }
 
@@ -168,7 +184,7 @@ fn session(
         Err(e) => return Ended::Dropped(e),
     };
     if let Err(e) = socket.send(Message::text(protocol::join_message(&config.room))) {
-        return Ended::Dropped(e.to_string());
+        return Ended::Dropped(ws_fault(&e));
     }
     status(BliveStatus::Connected);
     let mut last_sent = Instant::now();
@@ -181,12 +197,12 @@ fn session(
         }
         if last_sent.elapsed() >= HEARTBEAT_EVERY {
             if let Err(e) = socket.send(Message::text(protocol::heartbeat_message())) {
-                return Ended::Dropped(e.to_string());
+                return Ended::Dropped(ws_fault(&e));
             }
             last_sent = Instant::now();
         }
         if last_heard.elapsed() >= SILENCE_LIMIT {
-            return Ended::Dropped("no data from blivechat".into());
+            return Ended::Dropped(LinkFault::Silent);
         }
         match socket.read() {
             Ok(Message::Text(text)) => {
@@ -194,7 +210,7 @@ fn session(
                 match protocol::parse(text.as_str()) {
                     Some(Incoming::Heartbeat) => {
                         if let Err(e) = socket.send(Message::text(protocol::heartbeat_message())) {
-                            return Ended::Dropped(e.to_string());
+                            return Ended::Dropped(ws_fault(&e));
                         }
                         last_sent = Instant::now();
                     }
@@ -207,7 +223,7 @@ fn session(
                 }
             }
             Ok(Message::Close(_)) => {
-                return Ended::Dropped("blivechat closed the connection".into());
+                return Ended::Dropped(LinkFault::Closed);
             }
             Ok(_) => last_heard = Instant::now(),
             Err(tungstenite::Error::Io(e))
@@ -215,7 +231,7 @@ fn session(
                     e.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) => {}
-            Err(e) => return Ended::Dropped(e.to_string()),
+            Err(e) => return Ended::Dropped(ws_fault(&e)),
         }
     }
 }

@@ -524,3 +524,26 @@ about-fonts-license-other = 许可见下文
 ## round2-skins
 skins-fallback-font-missing = 未安装 { $family }
 ## end round2-skins
+## round2-status
+link-fault-refused = 对方程序没有在运行（连接被拒绝）
+link-fault-timeout = 连接超时
+link-fault-closed = 对方断开了连接
+link-fault-port-in-use = 端口 { $port } 已被其他程序占用
+link-fault-unresolved = 找不到主机 { $host }
+link-fault-silent = 长时间没有收到数据
+link-fault-remote = 对方报告：{ $message }
+link-fault-remote-empty = 对方拒绝了请求
+chat-fatal-auth-code = 身份码无效，请检查后重新填写
+chat-fatal-too-many-retries = 重试次数过多，稍后再连
+chat-fatal-too-many-connections = 同时连接的客户端过多，稍后再连
+output-status-native-unavailable = 显卡不支持共享纹理输出
+output-status-failed = 无法生成输出画面
+spout-error-backend = Spout 组件无法启动
+spout-error-interop = 显卡之间无法共享画面
+spout-error-format = 画面格式或尺寸不受支持
+spout-error-publish = 画面没能发送出去
+spout-error-name = 发送端名称无效
+err-tray = 托盘图标不可用：{ $message }
+skins-export-failed = 皮肤导出失败：{ $message }
+skins-delete-failed = 皮肤删除失败：{ $message }
+## end round2-status

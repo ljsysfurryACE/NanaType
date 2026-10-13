@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use nanatype_model::VtsAction;
+use nanatype_model::{LinkFault, VtsAction};
 
 use crate::VtsHotkey;
 
@@ -57,5 +57,6 @@ pub enum BridgeStatus {
     VtsHotkeys(Vec<VtsHotkey>),
     /// WebSocket clients currently connected.
     Clients(usize),
-    Error(Sink, String),
+    /// The sink failed; it retries where it can.
+    Error(Sink, LinkFault),
 }
