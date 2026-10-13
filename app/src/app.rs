@@ -110,6 +110,9 @@ impl App {
     pub fn new(ctx: &RuntimeProgramContext<Msg>) -> Self {
         let paths = Paths::resolve();
         paths.ensure();
+        // Before any window draws a picture: NanaUI reads local pictures
+        // only under this base, and the rest are mirrored into it.
+        crate::services::media::init(&paths.data);
         let legacy = Paths::legacy_settings();
         let loaded_settings =
             nanatype_settings::load_settings(&paths.settings(), legacy.as_deref());
@@ -489,15 +492,17 @@ impl App {
             .assets
             .stickers
             .iter()
-            .map(|s| {
-                let url = crate::assets::file_url(&s.path);
+            .filter_map(|s| {
+                // A sticker NanaUI cannot load (too large, a link out of
+                // its folder) is left out of the panel.
+                let url = s.url()?;
                 urls.insert(s.asset().to_string(), url.clone());
-                StickerRow {
+                Some(StickerRow {
                     asset: s.asset().to_string(),
                     name: s.name.clone(),
                     lib: s.lib.clone(),
                     url,
-                }
+                })
             })
             .collect();
         // Pictures of files, pasted images and chat in the current views.
@@ -520,14 +525,17 @@ impl App {
         let mut portraits = HashMap::new();
         let p = &self.skin.dialogue.portrait;
         if let Some(root) = self.loaded.files.root() {
-            if let Some(img) = &p.image {
-                portraits.insert(
-                    "default".to_owned(),
-                    crate::assets::file_url(&root.join(img)),
-                );
+            if let Some(url) = p
+                .image
+                .as_deref()
+                .and_then(|img| crate::assets::skin_file_url(root, img))
+            {
+                portraits.insert("default".to_owned(), url);
             }
             for (name, img) in &p.variants {
-                portraits.insert(name.clone(), crate::assets::file_url(&root.join(img)));
+                if let Some(url) = crate::assets::skin_file_url(root, img) {
+                    portraits.insert(name.clone(), url);
+                }
             }
         }
         self.ui.asset_urls.set(Arc::new(urls));

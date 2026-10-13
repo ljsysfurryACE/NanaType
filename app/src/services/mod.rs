@@ -1,6 +1,7 @@
 pub mod chat_assets;
 pub mod hotkeys;
 pub mod instance;
+pub mod media;
 pub mod persist;
 pub mod sounds;
 pub mod tray;

@@ -20,7 +20,6 @@ use nanatype_theme::{
 use super::dialogue::{self, Base, Timing, document};
 use super::surface::{self, Surface};
 use super::{Ui, c};
-use crate::assets::file_url;
 
 pub fn local_hm(unix_ms: u64) -> String {
     local_time(unix_ms, false)
@@ -165,13 +164,13 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     };
     // Chat rows name a saved picture (`blob:…`); the local speaker's avatar
     // is a path or a URL.
-    let avatar_url = row.item.avatar.as_ref().map(|p| {
+    let avatar_url = row.item.avatar.as_ref().and_then(|p| {
         if let Some(url) = ui.asset_urls.with_untracked(|u| u.get(p).cloned()) {
-            url
+            Some(url)
         } else if p.contains("://") {
-            p.clone()
+            Some(p.clone())
         } else {
-            file_url(std::path::Path::new(p))
+            crate::services::media::url(std::path::Path::new(p), None)
         }
     });
     let chat = row.item.kind != SourceKind::Typewriter;

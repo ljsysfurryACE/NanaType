@@ -1,6 +1,8 @@
 //! Pictures referenced by documents: sticker libraries, the active skin's
 //! files, picked files and pasted images. NanaUI decodes and caches images
-//! itself, so resolving an [`AssetRef`] means finding a `file://` URL.
+//! itself, so resolving an [`AssetRef`] means finding a `file://` URL it is
+//! allowed to read; [`crate::services::media`] makes one for pictures
+//! outside its base.
 
 use std::collections::HashMap;
 use std::fs;
@@ -9,6 +11,8 @@ use std::path::{Path, PathBuf};
 use nanatype_model::AssetRef;
 use nanatype_theme::LoadedSkin;
 
+use crate::services::media;
+
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +20,8 @@ pub struct Sticker {
     pub lib: String,
     pub name: String,
     pub path: PathBuf,
+    /// The sticker folder from the settings that it was found in.
+    pub root: PathBuf,
 }
 
 impl Sticker {
@@ -24,6 +30,11 @@ impl Sticker {
             lib: self.lib.clone(),
             name: self.name.clone(),
         }
+    }
+
+    /// A URL NanaUI will load, or `None` when the picture cannot be shown.
+    pub fn url(&self) -> Option<String> {
+        media::url(&self.path, Some(&self.root))
     }
 }
 
@@ -47,11 +58,17 @@ pub fn skin_urls(files: &dyn nanatype_theme::SkinFiles) -> HashMap<String, Strin
     files
         .list()
         .into_iter()
-        .map(|path| {
-            let url = file_url(&root.join(&path));
-            (format!("skin:{path}"), url)
+        .filter_map(|path| {
+            let url = skin_file_url(root, &path)?;
+            Some((format!("skin:{path}"), url))
         })
         .collect()
+}
+
+/// URL of the skin file `path` (as the manifest names it) under `root`.
+pub fn skin_file_url(root: &Path, path: &str) -> Option<String> {
+    let clean = nanatype_theme::clean_path(path).ok()?;
+    media::url(&root.join(clean), Some(root))
 }
 
 pub fn file_url(path: &Path) -> String {
@@ -91,7 +108,7 @@ impl AssetLibrary {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "stickers".into());
-            collect(&root, &lib, &mut out, 0);
+            collect(&root, &root, &lib, &mut out, 0);
         }
         out.sort_by(|a, b| (&a.lib, &a.name).cmp(&(&b.lib, &b.name)));
         out.dedup_by(|a, b| a.lib == b.lib && a.name == b.name);
@@ -99,29 +116,43 @@ impl AssetLibrary {
     }
 
     pub fn resolve(&self, asset: &AssetRef, skin: Option<&LoadedSkin>) -> Option<PathBuf> {
+        self.locate(asset, skin).map(|(path, _)| path)
+    }
+
+    /// The file of `asset` and the folder it must stay inside, if any.
+    fn locate(
+        &self,
+        asset: &AssetRef,
+        skin: Option<&LoadedSkin>,
+    ) -> Option<(PathBuf, Option<PathBuf>)> {
         match asset {
-            AssetRef::File(path) => Some(PathBuf::from(path)).filter(|p| p.is_file()),
+            // A file the user picked or typed: no folder to stay in.
+            AssetRef::File(path) => Some(PathBuf::from(path))
+                .filter(|p| p.is_file())
+                .map(|p| (p, None)),
             AssetRef::Blob(hash) => {
                 let path = self.blob_dir.join(format!("{hash}.png"));
-                path.is_file().then_some(path)
+                path.is_file().then(|| (path, Some(self.blob_dir.clone())))
             }
             AssetRef::Library { lib, name } => self
                 .stickers
                 .iter()
                 .find(|s| &s.lib == lib && &s.name == name)
-                .map(|s| s.path.clone()),
+                .map(|s| (s.path.clone(), Some(s.root.clone()))),
             AssetRef::Skin(path) => {
                 let skin = skin?;
                 let root = skin.files.root()?;
                 let clean = nanatype_theme::clean_path(path).ok()?;
                 let full = root.join(clean);
-                full.is_file().then_some(full)
+                full.is_file().then(|| (full, Some(root.to_path_buf())))
             }
         }
     }
 
+    /// A URL NanaUI will load for `asset`, or `None` when it cannot be shown.
     pub fn url(&self, asset: &AssetRef, skin: Option<&LoadedSkin>) -> Option<String> {
-        self.resolve(asset, skin).map(|p| file_url(&p))
+        let (path, root) = self.locate(asset, skin)?;
+        media::url(&path, root.as_deref())
     }
 
     /// Store pasted RGBA pixels as a PNG named by content.
@@ -147,7 +178,7 @@ impl AssetLibrary {
     }
 }
 
-fn collect(dir: &Path, lib: &str, out: &mut Vec<Sticker>, depth: u32) {
+fn collect(root: &Path, dir: &Path, lib: &str, out: &mut Vec<Sticker>, depth: u32) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -159,7 +190,7 @@ fn collect(dir: &Path, lib: &str, out: &mut Vec<Sticker>, depth: u32) {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                collect(&path, &sub, out, depth + 1);
+                collect(root, &path, &sub, out, depth + 1);
             }
         } else if is_image(&path) {
             let name = path
@@ -170,6 +201,7 @@ fn collect(dir: &Path, lib: &str, out: &mut Vec<Sticker>, depth: u32) {
                 lib: lib.to_owned(),
                 name,
                 path,
+                root: root.to_path_buf(),
             });
         }
     }
