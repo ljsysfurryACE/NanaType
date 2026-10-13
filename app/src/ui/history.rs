@@ -409,6 +409,10 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
             }),
     )
     .children(body);
+    // Inline rows put the quote on its own line above the whole row (over
+    // the text column), so the name, the first line and the time keep
+    // sharing a baseline; stacked rows put it straight above the bubble.
+    let (quote, inline_quote) = if inline { (None, quote) } else { (quote, None) };
     let bubble = match quote {
         Some(q) => widget(
             Stack::column(2.0)
@@ -425,7 +429,21 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
 
     let content = if inline {
         let name_w = h.name_width;
-        widget(
+        let quote_indent = if show_name { name_w + 10.0 } else { 0.0 };
+        let quote_w = (col_w - quote_indent).max(40.0);
+        let quote_line = inline_quote.map(|q| {
+            widget(
+                Stack::column(0.0)
+                    .width(LengthSpec::Px(quote_w))
+                    .with_layout(move |l| {
+                        l.margin_left = Some(LengthSpec::Px(quote_indent));
+                        l.min_width = Some(LengthSpec::Px(0.0));
+                        l.flex_shrink = Some(0.0);
+                    }),
+            )
+            .children(q)
+        });
+        let line = widget(
             Stack::row(10.0)
                 .width(LengthSpec::Px(col_w))
                 .with_layout(|l| {
@@ -456,8 +474,20 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
                 }))
                 .children(t)
             }),
-        ))
-        .into_any()
+        ));
+        match quote_line {
+            Some(q) => widget(
+                Stack::column(2.0)
+                    .width(LengthSpec::Px(col_w))
+                    .with_layout(|l| {
+                        l.min_width = Some(LengthSpec::Px(0.0));
+                        l.align_items = AlignSpec::Start;
+                    }),
+            )
+            .children((q, line))
+            .into_any(),
+            None => line.into_any(),
+        }
     } else {
         let header = (name.is_some() || time.is_some())
             .then(|| widget(Stack::row(6.0).align(AlignSpec::Center)).children((name, role, time)));

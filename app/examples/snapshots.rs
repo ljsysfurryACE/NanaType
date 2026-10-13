@@ -520,10 +520,19 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     );
     // The newest rows alone: the quoted chat message and the reply that
     // quotes it and @-mentions the viewer, unclipped at the list's foot.
+    // The box has cleared, so skins that hide the line still on it (the
+    // echo_* logs, `hide_latest`) list the reply too.
     let all_rows = ui.history.get_untracked();
     ui.history.set(Arc::new(
         all_rows[all_rows.len().saturating_sub(3)..].to_vec(),
     ));
+    let on_screen = ui.display.get_untracked();
+    ui.display.set(Arc::new(nanatype_core::DisplayView::empty(
+        nanatype_model::Entrance {
+            kind: nanatype_model::EntranceKind::None,
+            ms: 0,
+        },
+    )));
     shot(
         "history-reply",
         out,
@@ -537,6 +546,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         },
     );
     ui.history.set(all_rows);
+    ui.display.set(on_screen);
     shot("chat", out, 400, 640, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || danmaku::chat_window(ui))
