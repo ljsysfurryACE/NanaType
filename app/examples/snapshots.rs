@@ -13,7 +13,7 @@ use nana_ui_devtools::agent::RuntimeAgentSession;
 use nanatype::assets::AssetLibrary;
 use nanatype::chat::{ChatKind, ChatMessage};
 use nanatype::ui::{
-    Status, StickerRow, Ui, danmaku, dialogue, history, input, link_text, settings,
+    LinkState, Status, StickerRow, Ui, danmaku, dialogue, history, input, link_text, settings,
 };
 use nanatype_blive::{BliveStatus, Guard};
 use nanatype_bridge::{BridgeStatus, Sink};
@@ -396,6 +396,39 @@ fn reported(
     s
 }
 
+/// A fixture never shows a switch on beside an "Off" badge, or the other
+/// way round: each link's state says off exactly when its switch is off.
+fn assert_consistent(settings: &Settings, status: &Status) {
+    let i = &settings.integrations;
+    let links = [
+        ("VTube Studio", i.vts.enabled, status.vts != LinkState::Off),
+        ("OSC", i.osc.enabled, status.osc != LinkState::Off),
+        (
+            "WebSocket",
+            i.websocket.enabled,
+            status.ws != LinkState::Off,
+        ),
+        (
+            "blivechat",
+            i.blivechat.enabled,
+            status.blive_link != danmaku::Link::Off,
+        ),
+        (
+            "Spout display",
+            settings.output.display.enabled,
+            status.spout_display != LinkState::Off,
+        ),
+        (
+            "Spout history",
+            settings.output.history.enabled,
+            status.spout_history != LinkState::Off,
+        ),
+    ];
+    for (name, enabled, live) in links {
+        assert_eq!(enabled, live, "{name}: switch {enabled}, state live {live}");
+    }
+}
+
 fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
     std::fs::create_dir_all(out).unwrap();
     let loaded = registry.load(skin_id).expect("skin");
@@ -481,6 +514,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     let mut status = (*ui.status.get_untracked()).clone();
     (status.blive, status.blive_link) =
         link_text::blive(locale, &BliveStatus::Connected, "21452505");
+    assert_consistent(&settings, &status);
     ui.status.set(Arc::new(status));
     std::thread::sleep(std::time::Duration::from_millis(1500));
     let draft = "[at=1002 name=路过的猫 avatar=blob:bili-face-1002] [b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[sticker=nana/heart][se=coin]";
@@ -736,6 +770,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         &BliveStatus::Error(LinkFault::Refused),
         &on.integrations.blivechat.room,
     );
+    assert_consistent(&on, &status);
     ui.settings.set(Arc::new(on));
     ui.status.set(Arc::new(status));
     for page in [settings::Page::Integrations, settings::Page::Output] {
@@ -780,10 +815,25 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
             hotkey: None,
         },
     ];
+    // The other links stay on, and say so.
     let mut status = reported(
         locale,
-        &[BridgeStatus::Connected(Sink::Vts)],
-        [WindowOutputStatus::Stopped, WindowOutputStatus::Stopped],
+        &[
+            BridgeStatus::Connected(Sink::Vts),
+            BridgeStatus::Connected(Sink::Osc),
+            BridgeStatus::Connected(Sink::WebSocket),
+            BridgeStatus::Clients(1),
+        ],
+        [
+            WindowOutputStatus::Active {
+                extent: [1920, 1080],
+                native: true,
+            },
+            WindowOutputStatus::Active {
+                extent: [420, 560],
+                native: true,
+            },
+        ],
         &BliveStatus::Off,
         &on.integrations.blivechat.room,
     );
@@ -792,6 +842,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         ("hk-2".into(), "Angry Face".into()),
         ("hk-3".into(), "Heart Eyes".into()),
     ];
+    assert_consistent(&on, &status);
     ui.settings.set(Arc::new(on));
     ui.status.set(Arc::new(status));
     for page in [settings::Page::Integrations, settings::Page::Assets] {
