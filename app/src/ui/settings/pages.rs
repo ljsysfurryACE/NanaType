@@ -1625,7 +1625,8 @@ fn skin_card(
     .into_any()
 }
 
-/// Grid or list: two icon buttons beside the filters.
+/// Grid or list: a two-state toggle of two icons in one outlined pill, the
+/// current view selected. Fixed width, so it never wraps.
 fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
     let item = |icon: nana_ui::runtime::Icon, key: &str, as_grid: bool| {
         widget(
@@ -1637,9 +1638,16 @@ fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
         .on(move |_: &Activate| grid.set(as_grid))
         .into_any()
     };
-    widget(Stack::row(2.0).align(AlignSpec::Center).with_layout(|l| {
-        l.flex_shrink = Some(0.0);
-    }))
+    widget(
+        Stack::row(2.0)
+            .align(AlignSpec::Center)
+            .padding_xy(2.0, 2.0)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .radius(nana_ui_core::RadiusTier::Md)
+            .with_layout(|l| {
+                l.flex_shrink = Some(0.0);
+            }),
+    )
     .children((
         item(ti::LAYOUT_GRID, "skins-view-grid", true),
         item(ti::LIST, "skins-view-list", false),
@@ -1733,15 +1741,30 @@ fn skin_filters(ui: Ui, filter: Signal<Option<String>>, grid: Signal<bool>) -> A
                         .into_any()
                 })
                 .collect();
-            // The grid/list switch ends the chips' line, flush right on
-            // whichever line it wraps to.
-            widget(Stack::row(6.0).wrap(true).align(AlignSpec::Center))
-                .children((
-                    chips,
-                    widget(Stack::row(0.0).grow(1.0).justify(JustifySpec::End))
-                        .children(view_switch(ui, grid)),
-                ))
-                .into_any()
+            // The chips wrap among themselves; the grid/list toggle keeps
+            // the top right of the row, beside the first line, in every
+            // language.
+            widget(
+                Stack::row(12.0)
+                    .align(AlignSpec::Start)
+                    .width(LengthSpec::Fill),
+            )
+            .children((
+                widget(
+                    Stack::row(6.0)
+                        .wrap(true)
+                        .align(AlignSpec::Center)
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .with_layout(|l| {
+                            l.min_width = Some(LengthSpec::Px(0.0));
+                            l.row_gap = Some(LengthSpec::Px(6.0));
+                        }),
+                )
+                .children(chips),
+                view_switch(ui, grid),
+            ))
+            .into_any()
         },
     )
     .into_any()
