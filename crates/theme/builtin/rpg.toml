@@ -48,12 +48,16 @@ radius = 3
 border_color = "#8fa8ff"
 border_width = 1
 
+# Fusion Pixel is drawn on a 12 px grid: sizes and line heights in whole
+# multiples of 12 keep every stroke on a pixel (24 px text, 36 px lines).
 [dialogue.text]
 color = "#ffffff"
-size = 26
+size = 24
+line_height = 1.5
 shadow = { color = "#000000", dx = 2, dy = 2 }
 
 [dialogue.nameplate]
+size = 24
 color = "#10206e"
 text_color = "#ffffff"
 radius = 4
@@ -92,5 +96,11 @@ time_color = "#c0c8f0"
 avatar = { shape = "square", size = 40, ring_color = "#ffffff", ring_width = 2, radius = 4, color = "#2a3a9a" }
 
 [history.text]
+size = 24
+line_height = 1.5
 color = "#ffffff"
 shadow = { color = "#000000", dx = 1, dy = 1 }
+
+# Chat rows at the same 24 px, so they stay on the font's grid too.
+[history.chat]
+text_scale = 1.0

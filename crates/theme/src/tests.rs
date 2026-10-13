@@ -736,6 +736,38 @@ fn skins_choose_how_long_text_overflows() {
 }
 
 #[test]
+fn pixel_font_skins_stay_on_the_12px_grid() {
+    // Fusion Pixel 12px blurs between its pixels at any other size: every
+    // size and line box drawn in it is a whole multiple of 12.
+    let reg = SkinRegistry::new(None, APP);
+    let on_grid = |px: f32| px > 0.0 && (px / 12.0 - (px / 12.0).round()).abs() < 1e-4;
+    let mut n = 0;
+    for e in reg.entries() {
+        let skin = reg.load(&e.id).unwrap().skin;
+        let pixel = |f: &FontSpec| f.file.as_deref().is_some_and(|p| p.contains("FusionPixel"));
+        if !pixel(&skin.fonts.body) {
+            continue;
+        }
+        n += 1;
+        let (d, h) = (&skin.dialogue, &skin.history);
+        let mut sizes = vec![
+            ("dialogue.text.size", d.text.size),
+            ("dialogue.text line", d.text.size * d.text.line_height),
+            ("history.text.size", h.text.size),
+            ("history.text line", h.text.size * h.text.line_height),
+            ("history chat text", h.text.size * h.chat.text_scale),
+        ];
+        if pixel(&skin.fonts.name) {
+            sizes.push(("dialogue.nameplate.size", d.nameplate.size));
+        }
+        for (what, px) in sizes {
+            assert!(on_grid(px), "{}: {what} = {px}", e.id);
+        }
+    }
+    assert_eq!(n, 2, "pixel and rpg");
+}
+
+#[test]
 fn echo_menu_rows_show_only_on_the_display() {
     let reg = SkinRegistry::new(None, APP);
     for id in [

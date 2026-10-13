@@ -42,7 +42,7 @@
 
 Fusion Pixel 的字形部分来自 Ark Pixel（OFL-1.1，TakWolf）、Cubic 11（OFL-1.1，含 JF Dot M+H 12 与 M+ BITMAP FONTS 的自由许可声明）和 Galmuri（OFL-1.1，Lee Minseo）。压缩包里这三份许可与 Fusion Pixel 自己的 `OFL.txt` 一起原样放进了 `FusionPixel12pxProportionalSC.LICENSE.txt`。
 
-皮肤的 `families` 没改，仍是回落链：不带字体的构建（`--no-default-features`）与以前完全一样。像素字体按 12 px 的整数倍显示最清楚；皮肤的字号不是 12 的倍数时笔画边缘会有些发虚。
+皮肤的 `families` 没改，仍是回落链：不带字体的构建（`--no-default-features`）与以前完全一样。像素字体按 12 px 的整数倍显示最清楚，字号不是 12 的倍数时笔画边缘会发虚：`pixel` 与 `rpg` 的正文、名牌、历史文字（含弹幕行）都用 24 px，行高 1.5（36 px），`pixel_font_skins_stay_on_the_12px_grid` 测试检查这一点。
 
 ### 暂不随附
 
