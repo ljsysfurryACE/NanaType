@@ -5,8 +5,8 @@ use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{AnyView, IntoView, Signal, dynamic, signal, widget};
 use nana_ui::runtime::{
     ActionMenu, ActionMenuItem, Activate, Button, Chip, IconButton, IconGlyph, ListItem,
-    PopoverClosed, PopoverToggled, Select, SelectChanged, SelectOption, Stack, StatusBadge, Switch,
-    Text, TextChanged, TextInput, TextSubmitted, ToggleChanged,
+    PopoverClosed, PopoverToggled, ScrollAxes, ScrollView, Select, SelectChanged, SelectOption,
+    Stack, StatusBadge, Switch, Text, TextChanged, TextInput, TextSubmitted, ToggleChanged,
 };
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{
@@ -3823,9 +3823,116 @@ fn about(ui: Ui) -> AnyView {
         })
         .into_any(),
     ]);
+    let mut rows = vec![(header.into_any(), None), (links.into_any(), None)];
+    rows.extend(font_licences(ui));
     widget(Stack::column(0.0))
-        .children(section(ui, "", vec![header.into_any(), links.into_any()]))
+        .children(section_with(ui, "", rows))
         .into_any()
+}
+
+/// The "Open-source fonts" row and, below it while open, a scrolling panel
+/// with each font this build embeds: its name, author, licence and the
+/// licence's full text (OFL 1.1 asks that it travel with the font). Nothing
+/// when the build embeds no fonts.
+fn font_licences(ui: Ui) -> Vec<(AnyView, Shown)> {
+    let fonts = nanatype_theme::BuiltinFonts::embedded().fonts();
+    if fonts.is_empty() {
+        return Vec::new();
+    }
+    let open = signal(false);
+    let toggle = |key: &str, shown: bool| {
+        widget(Button::new(ui.now_t(key)).size(ControlSize::Small))
+            .visible(move || open.get() == shown)
+            .on(move |_: &Activate| open.set(!shown))
+            .into_any()
+    };
+    let row_view = row(
+        ui,
+        "about-fonts",
+        Some("about-fonts-hint"),
+        widget(Stack::row(0.0))
+            .children((
+                toggle("about-fonts-show", false),
+                toggle("about-fonts-hide", true),
+            ))
+            .into_any(),
+    );
+    vec![
+        (row_view, None),
+        shown_if(font_licence_panel(ui), move || open.get()),
+    ]
+}
+
+/// Each font this build embeds, its author, version and licence, and the
+/// licence's full text, in a scrolling panel. Shown under About's
+/// "Open-source fonts" row.
+pub fn font_licence_panel(ui: Ui) -> AnyView {
+    let fonts = nanatype_theme::BuiltinFonts::embedded().fonts();
+    let locale = ui.locale.get_untracked();
+    let entries: Vec<AnyView> = fonts
+        .iter()
+        .map(|font| {
+            let name = font.family().unwrap_or_else(|| font.path.to_owned());
+            let mut facts = Vec::new();
+            if let Some(author) = font.author() {
+                facts.push(I18N.tr_in(locale, "about-fonts-author", &[("author", author.into())]));
+            }
+            if let Some(version) = font.version() {
+                facts.push(I18N.tr_in(
+                    locale,
+                    "about-fonts-version",
+                    &[("version", version.into())],
+                ));
+            }
+            facts.push(match font.license_name() {
+                Some(l) => l.to_owned(),
+                None => I18N.t_in(locale, "about-fonts-license-other"),
+            });
+            widget(Stack::column(4.0))
+                .children((
+                    widget(Text::new(name).style(text_style(13.0, 600))),
+                    hint(facts.join(" · ")),
+                    widget(Stack::column(0.0).with_layout(|l| {
+                        l.padding_top = Some(LengthSpec::Px(6.0));
+                    }))
+                    .children(licence_lines(font.license)),
+                ))
+                .into_any()
+        })
+        .collect();
+    widget(Stack::column(0.0).padding_xy(INSET, 10.0))
+        .children(
+            widget(ScrollView::new(ScrollAxes::Vertical).with_layout(|l| {
+                l.height = Some(LengthSpec::Px(320.0));
+            }))
+            .children(
+                widget(Stack::column(18.0).with_layout(|l| {
+                    l.padding_right = Some(LengthSpec::Px(12.0));
+                }))
+                .children(entries),
+            ),
+        )
+        .into_any()
+}
+
+/// A licence's text as it is laid out upstream: one text per line (a text
+/// folds its line breaks), a blank line as a gap.
+fn licence_lines(text: &str) -> Vec<AnyView> {
+    text.trim_end()
+        .lines()
+        .map(|line| {
+            if line.trim().is_empty() {
+                widget(Stack::column(0.0).height(LengthSpec::Px(8.0))).into_any()
+            } else {
+                widget(
+                    Text::new(line.to_owned())
+                        .style(mono_style(11.0, 400))
+                        .color(SemanticColorRole::Muted),
+                )
+                .into_any()
+            }
+        })
+        .collect()
 }
 
 /// Where the project lives.

@@ -25,7 +25,7 @@ pub use files::{
 };
 pub use fonts::{
     BUILTIN_FONT_PREFIX, BuiltinFont, BuiltinFonts, builtin_font, builtin_path, font_family,
-    is_builtin_font,
+    font_name, is_builtin_font,
 };
 pub use geometry::*;
 pub use load::{

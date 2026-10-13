@@ -42,6 +42,12 @@ $app = Join-Path $out "app\NanaType"
 nana-packager validate $app --run
 
 if ($Portable) {
+    # The installer copies these itself (packaging/nanatype.iss); after
+    # validation, as nana-packager does not know the folder.
+    $licenses = Join-Path $app "licenses"
+    New-Item -ItemType Directory -Force $licenses | Out-Null
+    Copy-Item (Join-Path $root "crates\theme\fonts\*.LICENSE.txt") $licenses
+    Copy-Item (Join-Path $root "THIRD_PARTY_NOTICES.md") $licenses
     Compress-Archive -Path (Join-Path $app "*") -DestinationPath (Join-Path $out "NanaType-$version-portable.zip")
 } else {
     iscc "/DAppVersion=$version" "/DSourceDir=$app" "/DOutputDir=$out" (Join-Path $root "packaging\nanatype.iss")

@@ -96,17 +96,49 @@ pub fn builtin_font(reference: &str) -> Option<&'static [u8]> {
 /// (name ID 16) when it has one, else its family name (ID 1); the English
 /// record before localized ones (a CJK face also names itself in Chinese).
 pub fn font_family(bytes: &[u8]) -> Option<String> {
+    font_name(bytes, ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
+        .or_else(|| font_name(bytes, ttf_parser::name_id::FAMILY))
+}
+
+/// One record of a font file's name table (`name_id`, see
+/// `ttf_parser::name_id`), the English record before localized ones.
+pub fn font_name(bytes: &[u8], name_id: u16) -> Option<String> {
     let face = ttf_parser::Face::parse(bytes, 0).ok()?;
-    let names = face.names();
-    let pick = |id: u16| {
-        let mut found: Vec<_> = names
-            .into_iter()
-            .filter(|n| n.name_id == id && n.is_unicode())
-            .collect();
-        found.sort_by_key(|n| n.language() != ttf_parser::Language::English_UnitedStates);
-        found.into_iter().find_map(|n| n.to_string())
-    };
-    pick(ttf_parser::name_id::TYPOGRAPHIC_FAMILY).or_else(|| pick(ttf_parser::name_id::FAMILY))
+    let mut found: Vec<_> = face
+        .names()
+        .into_iter()
+        .filter(|n| n.name_id == name_id && n.is_unicode())
+        .collect();
+    found.sort_by_key(|n| n.language() != ttf_parser::Language::English_UnitedStates);
+    found.into_iter().find_map(|n| n.to_string())
+}
+
+/// What the OFL 1.1 text says of itself, in every upstream `OFL.txt`.
+const OFL_1_1_MARK: &str = "SIL OPEN FONT LICENSE Version 1.1";
+
+impl BuiltinFont {
+    /// The family the font registers under ([`font_family`]).
+    pub fn family(&self) -> Option<String> {
+        font_family(self.bytes)
+    }
+
+    /// Who made it: the designer (name ID 9), else the manufacturer (8).
+    pub fn author(&self) -> Option<String> {
+        font_name(self.bytes, ttf_parser::name_id::DESIGNER)
+            .or_else(|| font_name(self.bytes, ttf_parser::name_id::MANUFACTURER))
+    }
+
+    /// The version string (name ID 5).
+    pub fn version(&self) -> Option<String> {
+        font_name(self.bytes, ttf_parser::name_id::VERSION)
+    }
+
+    /// The licence's name, when its text is one this crate recognises.
+    pub fn license_name(&self) -> Option<&'static str> {
+        self.license
+            .contains(OFL_1_1_MARK)
+            .then_some("SIL Open Font License 1.1")
+    }
 }
 
 impl FontSpec {

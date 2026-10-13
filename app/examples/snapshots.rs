@@ -343,10 +343,29 @@ fn sample_stickers(
 fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
     std::fs::create_dir_all(out).unwrap();
     let loaded = registry.load(skin_id).expect("skin");
+    // The skin's built-in fonts, registered as the app does; kept alive
+    // until every shot is taken. None without the `builtin-fonts` feature.
+    let mut builtin = nanatype::skin_fonts::BuiltinFontSet::default();
+    let f = &loaded.skin.fonts;
+    let roles = [&f.body, &f.name, &f.accent];
+    let builtin_ref = |s: &&nanatype_theme::FontSpec| {
+        s.file
+            .clone()
+            .filter(|p| nanatype_theme::is_builtin_font(p))
+    };
+    let refs: Vec<String> = roles.iter().filter_map(builtin_ref).collect();
+    for e in builtin.sync(
+        refs.iter().map(String::as_str),
+        nanatype_theme::builtin_font,
+        nanatype::skin_fonts::register_with_nana_ui,
+    ) {
+        println!("font: {e}");
+    }
+    let families = roles.map(|s| builtin_ref(&s).and_then(|r| builtin.family(&r)));
     let skin = Arc::new(nanatype::skin_theme::prepare(
         &loaded.skin,
         &Default::default(),
-        &Default::default(),
+        &families,
         locale.tag(),
     ));
     let mut settings = Settings::default();
@@ -556,6 +575,26 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         );
     }
     ui.onboard_step.set(0);
+
+    // About's "Open-source fonts" panel, as it opens under its row.
+    shot(
+        "settings-About-fonts",
+        out,
+        760,
+        380,
+        theme.clone(),
+        |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || {
+                    nana_ui::runtime::view::widget(
+                        nana_ui::runtime::Stack::column(0.0)
+                            .surface(nana_ui_core::SemanticColorRole::Surface),
+                    )
+                    .children(settings::font_licence_panel(ui))
+                })
+                .unwrap();
+        },
+    );
 
     // Pages taller than the window, whole: the skin grid and the history
     // page's last row.

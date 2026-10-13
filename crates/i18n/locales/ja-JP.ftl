@@ -511,3 +511,13 @@ playback-reduced-system-off = システム設定：オフ
 skins-fallback-font = 代替フォント
 skins-fallback-font-detail = { $family } がインストールされていないため、代替フォントで表示しています
 ## end wave5-fonts
+
+## wave5-fonts-licences
+about-fonts = オープンソースフォント
+about-fonts-hint = 内蔵スキンに同梱しているフォントと、そのライセンス全文
+about-fonts-show = ライセンスを表示
+about-fonts-hide = 閉じる
+about-fonts-author = 作者：{ $author }
+about-fonts-version = バージョン：{ $version }
+about-fonts-license-other = ライセンスは下記のとおり
+## end wave5-fonts-licences

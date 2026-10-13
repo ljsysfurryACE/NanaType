@@ -20,10 +20,12 @@ warning = "#ffd060"
 danger = "#ff7a7a"
 
 [fonts.body]
+file = "builtin:fonts/FusionPixel12pxProportionalSC.ttf"
 families = ["Fusion Pixel 12px Proportional SC", "Zpix", "MS Gothic", "Microsoft YaHei UI", "PingFang SC"]
 weight = 400
 
 [fonts.name]
+file = "builtin:fonts/FusionPixel12pxProportionalSC.ttf"
 families = ["Fusion Pixel 12px Proportional SC", "Zpix", "MS Gothic", "Microsoft YaHei UI", "PingFang SC"]
 weight = 400
 

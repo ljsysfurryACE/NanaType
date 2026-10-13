@@ -1049,3 +1049,49 @@ fn this_builds_embedded_fonts_parse_and_carry_their_licence() {
         }
     }
 }
+
+/// The fonts in the repository: pixel and rpg share Fusion Pixel, ink uses
+/// LXGW WenKai, each with its OFL text, and together within the budget.
+#[cfg(feature = "builtin-fonts")]
+#[test]
+fn the_bundled_fonts_serve_the_skins_that_name_them() {
+    const PIXEL: &str = "builtin:fonts/FusionPixel12pxProportionalSC.ttf";
+    const WENKAI: &str = "builtin:fonts/LXGWWenKai-Regular.ttf";
+    let fonts = BuiltinFonts::embedded();
+    assert!(
+        fonts.total_bytes() <= 12 * 1024 * 1024,
+        "{} bytes",
+        fonts.total_bytes()
+    );
+    let registry = SkinRegistry::new(None, APP);
+    for (id, reference, roles) in [
+        ("nanatype.pixel", PIXEL, 2),
+        ("nanatype.rpg", PIXEL, 2),
+        ("nanatype.ink", WENKAI, 3),
+    ] {
+        let entry = registry.entries().iter().find(|e| e.id == id).unwrap();
+        let skin = entry.skin.as_ref().unwrap();
+        let named = [&skin.fonts.body, &skin.fonts.name, &skin.fonts.accent]
+            .into_iter()
+            .filter(|s| s.file.as_deref() == Some(reference))
+            .count();
+        assert_eq!(named, roles, "{id}");
+        assert!(skin.fonts.body.has_usable_file(), "{id}");
+    }
+    for (reference, family, author) in [
+        (PIXEL, "Fusion Pixel 12px Prop zh-Hans", "TakWolf"),
+        (WENKAI, "LXGW WenKai", "LXGW / Fontworks Inc."),
+    ] {
+        let font = fonts.resolve(reference).expect(reference);
+        assert_eq!(font.family().as_deref(), Some(family));
+        assert_eq!(font.author().as_deref(), Some(author));
+        assert_eq!(font.license_name(), Some("SIL Open Font License 1.1"));
+        assert!(font.license.contains("Copyright"), "{reference}");
+        // The subset keeps Latin, the common hanzi, kana and CJK punctuation.
+        let face = ttf_parser::Face::parse(font.bytes, 0).unwrap();
+        for ch in (' '..='~').chain("你好世界说话掌机像素水墨，。！？「」…あいうアイウ".chars())
+        {
+            assert!(face.glyph_index(ch).is_some(), "{reference} lacks {ch:?}");
+        }
+    }
+}

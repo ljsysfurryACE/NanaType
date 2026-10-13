@@ -16,14 +16,17 @@ muted = "#5e574c"
 border = "#d8cfbd"
 
 [fonts.body]
+file = "builtin:fonts/LXGWWenKai-Regular.ttf"
 families = ["LXGW WenKai", "KaiTi", "STKaiti", "Kaiti SC", "SimSun"]
 weight = 400
 
 [fonts.name]
+file = "builtin:fonts/LXGWWenKai-Regular.ttf"
 families = ["LXGW WenKai", "KaiTi", "STKaiti", "Kaiti SC", "SimSun"]
 weight = 700
 
 [fonts.accent]
+file = "builtin:fonts/LXGWWenKai-Regular.ttf"
 families = ["LXGW WenKai", "KaiTi", "STKaiti", "Kaiti SC", "SimSun"]
 weight = 700
 

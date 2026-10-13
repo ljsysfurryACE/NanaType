@@ -16,11 +16,11 @@ muted = "#666666"
 border = "#888888"
 
 [fonts.body]
-families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC"]
 weight = 400
 
 [fonts.name]
-families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC"]
+families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC"]
 weight = 400
 
 # Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
