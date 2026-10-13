@@ -307,6 +307,15 @@ NanaUI 一次只用一个字体名，NanaType 会从 `families` 里挑第一个�
 
 `file = "builtin:fonts/X.ttf"` 引用编译进程序的字体（`crates/theme/fonts/`，见 [fonts.md](fonts.md)），内置皮肤靠它带字体，用户皮肤也可以引用。只在选中皮肤时注册，几个角色或几套皮肤共用同一个字体时只注册一次。本版本没有带这个字体时不报错，直接回落到 `families`。皮肤库会给 `families` 第一个字体既没安装、也没随附的皮肤标上「替代字体」。
 
+现在随附的内置字体（版本、来源与 SHA-256 见 [fonts.md](fonts.md)）：
+
+| 引用 | 字体 | 版本 | 大小 | 用到它的内置皮肤 |
+| --- | --- | --- | --- | --- |
+| `builtin:fonts/FusionPixel12pxProportionalSC.ttf` | Fusion Pixel 12px Proportional 简体（GB2312 子集） | 2026.09.25 | 1.39 MiB | `pixel`、`rpg` |
+| `builtin:fonts/LXGWWenKai-Regular.ttf` | 霞鹜文楷 Regular（3,755 常用字子集） | 1.522 | 2.04 MiB | `ink` |
+
+`echo_*` 不带字体文件，`families` 末尾是 NanaUI 自带的 `"Noto Sans SC"`。
+
 ## 兼容性
 
 使用上面新增字段的皮肤在旧版 NanaType 中仍能加载，只是新字段会被忽略并提示。如果皮肤离不开它们，请把 `min_app` 设为支持它们的版本。`effects.rainbow_saturation` 和 `rainbow_lightness` 目前保留，暂不生效。
