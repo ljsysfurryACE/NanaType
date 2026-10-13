@@ -71,19 +71,6 @@ fn primary(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView
     .into_any()
 }
 
-/// The view's one call to action: a solid accent button.
-// Unused since the guide's Next took a press of its own; kept for pages.
-#[allow(dead_code)]
-fn cta(ui: Ui, key: &str, msg: impl Fn() -> Msg + Send + 'static) -> AnyView {
-    widget(crate::skin_theme::cta(
-        Button::new(ui.now_t(key))
-            .kind(ButtonKind::Primary)
-            .size(ControlSize::Small),
-    ))
-    .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
-    .into_any()
-}
-
 /// "Follow system" and every language by its own name.
 fn language_options(ui: Ui) -> Vec<(String, String)> {
     let mut langs = vec![("system".to_owned(), ui.now_t("general-language-system"))];
@@ -442,7 +429,9 @@ fn step_indicator(ui: Ui) -> AnyView {
         .into_any()
 }
 
-/// One step's body, under the guide's header.
+/// One step's body, under the guide's header. Its rows carry no dividers of
+/// their own: the footer's line is the step's only one, so none stacks on
+/// it.
 fn onboard_step(ui: Ui, n: u8) -> AnyView {
     let lead = |key: &str| {
         widget(Stack::column(0.0).padding_xy(INSET, 4.0))
@@ -453,7 +442,6 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
         0 => vec![
             lead("onboard-welcome-body"),
             row(ui, "onboard-language", None, language_select(ui)),
-            divider(),
             row(
                 ui,
                 "onboard-speaker",
@@ -485,7 +473,6 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
             widget(Stack::column(10.0).padding_xy(INSET, 8.0))
                 .children((subheading(ui, "onboard-hotkeys"), hotkeys_sentence(ui)))
                 .into_any(),
-            divider(),
             row(
                 ui,
                 "onboard-obs",
@@ -1523,7 +1510,7 @@ fn tag_line(locale: Locale, row: &SkinRow) -> String {
 
 /// One skin in the grid: a thumbnail of its box over its name and tags.
 /// The previewed card takes the selected fill; the current skin carries a
-/// "Current" badge and a 3px accent bar.
+/// "Current" badge in its name row and a 3px accent bar.
 fn skin_card(
     ui: Ui,
     skin: &SkinRow,
@@ -1553,27 +1540,7 @@ fn skin_card(
                 l.paint.background_image = Some(backdrop);
             }),
     )
-    .children((
-        super::skin_grid::miniature(&super::skin_grid::thumb(skin)),
-        current.then(|| {
-            // On a surface pill, so the badge's tint reads over any box.
-            widget(
-                Stack::row(0.0)
-                    .surface(SemanticColorRole::Surface)
-                    .radius_px(999.0)
-                    .with_layout(|l| {
-                        // Top right, over the miniature: name plates sit top left.
-                        l.position = PositionSpec::Absolute;
-                        l.offset_right = Some(LengthSpec::Px(6.0));
-                        l.offset_top = Some(LengthSpec::Px(6.0));
-                        l.z_index = Some(5);
-                    }),
-            )
-            .children(widget(
-                StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success).compact(true),
-            ))
-        }),
-    ));
+    .children(super::skin_grid::miniature(&super::skin_grid::thumb(skin)));
     let (tags, tone) = match &skin.error {
         Some(_) => (I18N.t_in(locale, "skins-broken"), SemanticColorRole::Danger),
         None if skin.fallback_font => (
@@ -1593,6 +1560,13 @@ fn skin_card(
     )
     .children((
         widget(Text::new(skin.name.clone()).style(one_line(13.0, 500))),
+        // The current skin's badge takes the Apply button's place, off the
+        // thumbnail, so no box is covered.
+        current.then(|| {
+            widget(Stack::row(0.0).with_layout(|l| l.flex_shrink = Some(0.0))).children(widget(
+                StatusBadge::new(ui.now_t("skins-active"), StatusTone::Success).compact(true),
+            ))
+        }),
         (!current && usable).then(|| apply_button(ui, skin.id.clone(), previewed.clone())),
         skin_actions(ui, skin, locale),
     ));
@@ -1664,7 +1638,8 @@ fn skin_card(
     .into_any()
 }
 
-/// Grid or list: two icon buttons beside the filters.
+/// Grid or list: a two-state toggle of two icons in one outlined pill, the
+/// current view selected. Fixed width, so it never wraps.
 fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
     let item = |icon: nana_ui::runtime::Icon, key: &str, as_grid: bool| {
         widget(
@@ -1676,9 +1651,16 @@ fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
         .on(move |_: &Activate| grid.set(as_grid))
         .into_any()
     };
-    widget(Stack::row(2.0).align(AlignSpec::Center).with_layout(|l| {
-        l.flex_shrink = Some(0.0);
-    }))
+    widget(
+        Stack::row(2.0)
+            .align(AlignSpec::Center)
+            .padding_xy(2.0, 2.0)
+            .outline(SemanticColorRole::BorderSoft, 1.0)
+            .radius(nana_ui_core::RadiusTier::Md)
+            .with_layout(|l| {
+                l.flex_shrink = Some(0.0);
+            }),
+    )
     .children((
         item(ti::LAYOUT_GRID, "skins-view-grid", true),
         item(ti::LIST, "skins-view-list", false),
@@ -1772,15 +1754,30 @@ fn skin_filters(ui: Ui, filter: Signal<Option<String>>, grid: Signal<bool>) -> A
                         .into_any()
                 })
                 .collect();
-            // The grid/list switch ends the chips' line, flush right on
-            // whichever line it wraps to.
-            widget(Stack::row(6.0).wrap(true).align(AlignSpec::Center))
-                .children((
-                    chips,
-                    widget(Stack::row(0.0).grow(1.0).justify(JustifySpec::End))
-                        .children(view_switch(ui, grid)),
-                ))
-                .into_any()
+            // The chips wrap among themselves; the grid/list toggle keeps
+            // the top right of the row, beside the first line, in every
+            // language.
+            widget(
+                Stack::row(12.0)
+                    .align(AlignSpec::Start)
+                    .width(LengthSpec::Fill),
+            )
+            .children((
+                widget(
+                    Stack::row(6.0)
+                        .wrap(true)
+                        .align(AlignSpec::Center)
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .with_layout(|l| {
+                            l.min_width = Some(LengthSpec::Px(0.0));
+                            l.row_gap = Some(LengthSpec::Px(6.0));
+                        }),
+                )
+                .children(chips),
+                view_switch(ui, grid),
+            ))
+            .into_any()
         },
     )
     .into_any()

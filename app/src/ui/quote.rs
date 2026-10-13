@@ -29,14 +29,20 @@ fn mix(a: Rgba8, b: Rgba8, t: f32) -> Rgba8 {
 /// The smallest contrast a quote's name or text keeps on its backdrop.
 pub const QUOTE_MIN: f32 = 4.5;
 
-/// `fg` drawn at `opacity` over `bg`, moved toward the ink that reads best
-/// on `bg` just far enough to reach [`QUOTE_MIN`]:1 as painted.
-pub fn legible(fg: Rgba8, bg: Rgba8, opacity: f32) -> Rgba8 {
+/// The contrast a quote's colours are picked for against the backdrop's
+/// one known colour. Higher than [`QUOTE_MIN`]: boxes with a gradient or a
+/// glow are lighter or darker than their fill where the quote sits (rpg's
+/// box renders a name picked for 7:1 at 5.7:1), and the quote's text is
+/// small (62% of the line's) and thin.
+pub const QUOTE_PICK: f32 = 7.0;
+
+/// `fg` over `bg`, moved toward the ink that reads best on `bg` just far
+/// enough to reach `target`:1.
+pub fn legible(fg: Rgba8, bg: Rgba8, target: f32) -> Rgba8 {
     let ink = on(bg);
-    let painted = |c: Rgba8| mix(bg, c, opacity);
     (0..=20)
         .map(|i| mix(fg.with_alpha(255), ink, i as f32 / 20.0))
-        .find(|c| contrast(painted(*c), bg) >= QUOTE_MIN)
+        .find(|c| contrast(*c, bg) >= target)
         .unwrap_or(ink)
 }
 
@@ -44,7 +50,9 @@ pub fn legible(fg: Rgba8, bg: Rgba8, opacity: f32) -> Rgba8 {
 /// spec's colour), kept legible on `backdrop` when it is known. Over an
 /// unknown backdrop the name takes the text colour too, which the skin
 /// already made readable where its lines are drawn; the accent stays on the
-/// quote's bar.
+/// quote's bar. Both are drawn at full opacity: the spec's `opacity` quiets
+/// only the bar and the avatar, since fading the text over the backdrop is
+/// what left it pale.
 pub fn colors(
     skin: &Skin,
     spec: &ReplySpec,
@@ -53,9 +61,8 @@ pub fn colors(
 ) -> (Rgba8, Rgba8) {
     let text = spec.color.map_or(text_color, |col| skin.color(col));
     let name = skin.chrome.accent;
-    let opacity = spec.opacity.clamp(0.0, 1.0);
     match backdrop {
-        Some(bg) if opacity > 0.0 => (legible(name, bg, opacity), legible(text, bg, opacity)),
+        Some(bg) => (legible(name, bg, QUOTE_PICK), legible(text, bg, QUOTE_PICK)),
         _ => (text, text),
     }
 }
@@ -89,20 +96,24 @@ pub fn quote_view(
         ui.asset_urls
             .with_untracked(|u| u.get(&a.to_string()).cloned())
     });
-    let avatar = super::danmaku::avatar(
+    let opacity = spec.opacity.clamp(0.0, 1.0);
+    let avatar = widget(Stack::row(0.0).with_layout(move |l| {
+        l.opacity = Some(opacity);
+        l.flex_shrink = Some(0.0);
+    }))
+    .children(super::danmaku::avatar(
         url,
         &reply.user.name,
         (size * 1.4).round(),
         c(skin.chrome.accent),
-    );
-    let opacity = spec.opacity.clamp(0.0, 1.0);
-    let bar = c(skin.chrome.accent);
+    ));
+    let mut bar = c(skin.chrome.accent);
+    bar[3] *= opacity;
     widget(
         Stack::row((size * 0.4).round())
             .align(AlignSpec::Center)
             .width(LengthSpec::Fill)
             .with_layout(move |l| {
-                l.opacity = Some(opacity);
                 l.margin_bottom = Some(LengthSpec::Px(4.0));
                 l.flex_shrink = Some(0.0);
                 l.min_width = Some(LengthSpec::Px(0.0));
@@ -164,9 +175,8 @@ mod tests {
             for (place, bg, spec, text_color) in places {
                 let Some(bg) = bg else { continue };
                 let (name, text) = colors(&skin, spec, text_color, Some(bg));
-                let o = spec.opacity.clamp(0.0, 1.0);
                 for (what, col) in [("name", name), ("text", text)] {
-                    let r = contrast(mix(bg, col, o), bg);
+                    let r = contrast(col, bg);
                     if r < QUOTE_MIN {
                         bad.push(format!("{} {place} {what} {r:.2}", e.id));
                     }

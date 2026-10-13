@@ -998,6 +998,8 @@ pub struct ReplySpec {
     pub size: Option<f32>,
     /// Defaults to the text colour; the name takes the accent colour.
     pub color: Option<ColorRef>,
+    /// How strongly the quote's accent rule and avatar are drawn; its name
+    /// and text stay at full strength, so they keep their contrast.
     pub opacity: f32,
 }
 
