@@ -232,7 +232,7 @@ size = 18
 text_scale = 0.88                 # 弹幕文字相对 history.text 的大小
 bubble_opacity = 0.7              # 弹幕气泡相对 bubble_color 的不透明度
 
-[history.reply]                   # 回复弹幕的台词，气泡上方的一行引用：头像 · 昵称：原文
+[history.reply]                   # 回复弹幕的台词，气泡上方的一行引用：头像 · 昵称：原文（inline 布局时在整行上方，对齐台词栏）
 visible = true
 size = 12                         # 默认是正文的 62%
 color = "#7a6070"                 # 原文颜色，默认同正文，可写颜色角色；昵称用 accent
@@ -242,8 +242,8 @@ opacity = 0.8
 visible = true                    # 用户也可在 设置 › 联动 › blivechat 里关闭
 
 [mention]                         # 台词里的 [at=…]：带头像和昵称的标签，输入框、对话框和历史记录一致
-fill = "accent"                   # 标签底色，可写颜色角色
-text_color = "#ffffff"
+fill = "accent"                   # 标签底色，可写颜色角色；与 text_color 对比不足 4.5:1 时自动加深
+text_color = "#ffffff"            # 始终照用；标签下不画台词的阴影或发光
 scale = 0.82                      # 相对周围文字的字号
 avatar = true                     # 昵称前显示头像
 
