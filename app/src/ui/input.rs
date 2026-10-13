@@ -529,7 +529,8 @@ fn expression_panel(ui: Ui, open: Signal<bool>) -> AnyView {
         .into_any()
 }
 
-fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
+/// The toolbar's sticker picker; `open` is its popover's state.
+pub fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
     let query = signal(String::new());
     widget(Stack::column(8.0).padding(4.0))
         .children((

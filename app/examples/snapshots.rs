@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use nana_ui::runtime::{DocumentId, RuntimeDocument};
 use nana_ui_devtools::agent::RuntimeAgentSession;
+use nanatype::assets::AssetLibrary;
 use nanatype::chat::{ChatKind, ChatMessage};
-use nanatype::ui::{LinkState, Ui, danmaku, dialogue, history, input, settings};
+use nanatype::ui::{LinkState, StickerRow, Ui, danmaku, dialogue, history, input, settings};
 use nanatype_blive::Guard;
 use nanatype_core::{Cmd, Core};
 use nanatype_i18n::Locale;
@@ -46,16 +47,20 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let out = PathBuf::from(args.next().unwrap_or_else(|| "snapshots".into()));
     std::fs::create_dir_all(&out).unwrap();
-    // NanaUI reads local pictures only under its URL base (the working
-    // directory unless set); the drawn avatars live under `out`.
-    nana_ui::set_background_image_url_base(std::fs::canonicalize(&out).unwrap());
+    // The app's own start-up: `out/data` stands in for the data folder and
+    // becomes NanaUI's image base. Avatars (`out/cache/images`) and stickers
+    // (`out/stickers`) live outside it, like they do on a real install.
+    nanatype::services::media::init(&out.join("data")).expect("media mirror");
     let skin_id = args.next().unwrap_or_else(|| "nanatype.halo".into());
     let locale = args
         .next()
         .and_then(|l| Locale::from_tag(&l))
         .unwrap_or(Locale::ZhCn);
     tray_strip(&out);
-    let registry = SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+    // Installed skins live in the data folder, like the app's.
+    let skins = out.join("data").join("skins");
+    framed_skin(&skins.join(FRAMED));
+    let registry = SkinRegistry::new(Some(skins), env!("CARGO_PKG_VERSION"));
     if skin_id == "all" {
         let ids: Vec<String> = registry.entries().iter().map(|e| e.id.clone()).collect();
         for id in ids {
@@ -64,6 +69,91 @@ fn main() {
     } else {
         render(&registry, &out, &skin_id, locale);
     }
+}
+
+/// A user skin with pictures: render it with `snapshots <out> snap.framed`.
+const FRAMED: &str = "snap.framed";
+
+/// Writes the [`FRAMED`] skin: Halo with a nine-slice box frame, a framed
+/// nameplate, a portrait and a two-frame continue sprite, all PNG files.
+fn framed_skin(dir: &std::path::Path) {
+    let images = dir.join("images");
+    std::fs::create_dir_all(&images).unwrap();
+    // 48×48 frame: 12 px dark-teal border with a notch, cream inside.
+    image::RgbaImage::from_fn(48, 48, |x, y| {
+        let edge = x < 12 || y < 12 || x >= 36 || y >= 36;
+        let notch = (x < 4 || x >= 44) && (y < 4 || y >= 44);
+        if notch {
+            image::Rgba([0, 0, 0, 0])
+        } else if edge {
+            image::Rgba([22, 110, 120, 255])
+        } else {
+            image::Rgba([255, 248, 232, 240])
+        }
+    })
+    .save(images.join("frame.png"))
+    .unwrap();
+    image::RgbaImage::from_fn(24, 24, |x, y| {
+        if x < 6 || y < 6 || x >= 18 || y >= 18 {
+            image::Rgba([200, 70, 40, 255])
+        } else {
+            image::Rgba([240, 120, 60, 255])
+        }
+    })
+    .save(images.join("nameplate.png"))
+    .unwrap();
+    image::RgbaImage::from_fn(90, 110, |x, y| {
+        let (dx, dy) = (x as f32 - 45.0, y as f32 - 40.0);
+        if dx * dx + dy * dy < 30.0 * 30.0 || (y > 72 && (x as f32 - 45.0).abs() < 40.0) {
+            image::Rgba([110, 90, 200, 255])
+        } else {
+            image::Rgba([0, 0, 0, 0])
+        }
+    })
+    .save(images.join("portrait.png"))
+    .unwrap();
+    image::RgbaImage::from_fn(44, 22, |x, y| {
+        let cx = if x < 22 { 11.0 } else { 33.0 };
+        let (dx, dy) = (x as f32 - cx, y as f32 - 11.0);
+        if dx.abs() + dy.abs() < 9.0 {
+            image::Rgba([22, 110, 120, 255])
+        } else {
+            image::Rgba([0, 0, 0, 0])
+        }
+    })
+    .save(images.join("continue.png"))
+    .unwrap();
+    std::fs::write(
+        dir.join("skin.toml"),
+        format!(
+            r#"[meta]
+id = "{FRAMED}"
+version = "1.0.0"
+min_app = "0.1.0"
+base = "nanatype.halo"
+name = {{ zh-CN = "贴图框", en-US = "Framed" }}
+author = "snapshots"
+
+[dialogue.box]
+frame = {{ image = "images/frame.png", slice = [12, 12, 12, 12], scale = 1 }}
+
+[dialogue.nameplate]
+frame = {{ image = "images/nameplate.png", slice = [6, 6, 6, 6] }}
+
+[dialogue.portrait]
+visible = true
+side = "left"
+size = [90, 110]
+image = "images/portrait.png"
+
+[dialogue.continue]
+image = "images/continue.png"
+frames = 2
+image_size = [22, 22]
+"#
+        ),
+    )
+    .unwrap();
 }
 
 /// The tray image's states (plain, mirroring, overlays hidden, locked, all
@@ -119,13 +209,15 @@ fn tray_strip(out: &std::path::Path) {
     strip.save(out.join("tray-badges.png")).unwrap();
 }
 
-/// A few viewers with drawn avatars, and what they said.
+/// A few viewers with drawn avatars, and what they said. The avatars are
+/// saved where the chat saver keeps them and resolved like the app does.
 fn sample_chat(
     out: &std::path::Path,
     urls: &mut std::collections::HashMap<String, String>,
 ) -> Vec<ChatMessage> {
-    let dir = out.join("avatars");
+    let dir = out.join("cache").join("images");
     std::fs::create_dir_all(&dir).unwrap();
+    let blobs = AssetLibrary::new(dir.clone());
     let viewers = [
         ("1001", "星野ほたる", [232u8, 106, 146], Guard::Captain),
         ("1002", "路过的猫", [61, 155, 233], Guard::None),
@@ -138,12 +230,10 @@ fn sample_chat(
             let f = |c: u8| (f32::from(c) * shade) as u8;
             image::Rgba([f(r), f(g), f(b), 255])
         });
-        let path = dir.join(format!("{uid}.png"));
-        img.save(&path).unwrap();
-        urls.insert(
-            format!("blob:bili-face-{uid}"),
-            nanatype::assets::file_url(&path),
-        );
+        img.save(dir.join(format!("bili-face-{uid}.png"))).unwrap();
+        let asset = AssetRef::Blob(format!("bili-face-{uid}"));
+        let url = blobs.url(&asset, None).expect("avatar url");
+        urls.insert(asset.to_string(), url);
     }
     let message = |seq: u64, who: usize, kind: ChatKind, text: &str| {
         let (uid, name, _, guard) = viewers[who];
@@ -202,6 +292,54 @@ fn sample_chat(
     ]
 }
 
+/// A sticker folder outside the data folder, scanned and resolved like the
+/// app does (Settings › Assets › sticker folders).
+fn sample_stickers(
+    out: &std::path::Path,
+    urls: &mut std::collections::HashMap<String, String>,
+) -> Vec<StickerRow> {
+    let dir = out.join("stickers").join("nana");
+    std::fs::create_dir_all(&dir).unwrap();
+    let shapes: [(&str, [u8; 3]); 4] = [
+        ("heart", [232, 80, 120]),
+        ("star", [247, 201, 72]),
+        ("leaf", [92, 184, 92]),
+        ("drop", [61, 155, 233]),
+    ];
+    for (i, (name, [r, g, b])) in shapes.into_iter().enumerate() {
+        let img = image::RgbaImage::from_fn(64, 64, |x, y| {
+            let (dx, dy) = (x as f32 - 31.5, y as f32 - 31.5);
+            let inside = match i {
+                0 => (dx.abs() + dy.abs()) < 28.0,
+                1 => dx.abs().max(dy.abs()) < 24.0,
+                2 => (dx * dx + dy * dy).sqrt() < 28.0,
+                _ => (dx * dx / 2.0 + dy * dy).sqrt() < 22.0,
+            };
+            if inside {
+                image::Rgba([r, g, b, 255])
+            } else {
+                image::Rgba([0, 0, 0, 0])
+            }
+        });
+        img.save(dir.join(format!("{name}.png"))).unwrap();
+    }
+    let mut lib = AssetLibrary::new(out.join("cache").join("images"));
+    lib.scan(&[dir.display().to_string()]);
+    lib.stickers
+        .iter()
+        .filter_map(|s| {
+            let url = s.url()?;
+            urls.insert(s.asset().to_string(), url.clone());
+            Some(StickerRow {
+                asset: s.asset().to_string(),
+                name: s.name.clone(),
+                lib: s.lib.clone(),
+                url,
+            })
+        })
+        .collect()
+}
+
 fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
     std::fs::create_dir_all(out).unwrap();
     let loaded = registry.load(skin_id).expect("skin");
@@ -227,7 +365,18 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         .set(Arc::new(nanatype::ui::skin_rows(registry, locale)));
     let mut urls = nanatype::assets::skin_urls(&*loaded.files);
     let chat = sample_chat(out, &mut urls);
+    let stickers = sample_stickers(out, &mut urls);
+    assert_eq!(stickers.len(), 4, "every sample sticker resolves");
+    ui.stickers.set(Arc::new(stickers));
     ui.asset_urls.set(Arc::new(urls));
+    // The portrait the way `App::refresh_assets` finds it.
+    if let (Some(root), Some(img)) = (loaded.files.root(), &skin.dialogue.portrait.image)
+        && let Some(url) = nanatype::assets::skin_file_url(root, img)
+    {
+        ui.portraits.set(Arc::new(
+            [("default".to_owned(), url)].into_iter().collect(),
+        ));
+    }
 
     let mut core = Core::new(settings.clone(), skin.clone());
     for line in [
@@ -260,7 +409,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     status.blive_link = danmaku::Link::Connected;
     ui.status.set(Arc::new(status));
     std::thread::sleep(std::time::Duration::from_millis(1500));
-    let draft = "[at=1002 name=路过的猫 avatar=blob:bili-face-1002] [b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[se=coin]";
+    let draft = "[at=1002 name=路过的猫 avatar=blob:bili-face-1002] [b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[sticker=nana/heart][se=coin]";
     let parsed = parse(draft);
     ui.draft.set(Arc::new(parsed.doc.clone()));
     let look = dialogue::Base::editor(&skin).look();
@@ -322,6 +471,22 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
                 .unwrap();
         },
     );
+    // The toolbar's sticker panel, listing the sticker folder.
+    shot("input-stickers", out, 380, 200, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || {
+                nana_ui::runtime::view::widget(
+                    nana_ui::runtime::Stack::column(0.0)
+                        .padding(8.0)
+                        .surface(nana_ui_core::SemanticColorRole::Surface),
+                )
+                .children(input::sticker_panel(
+                    ui,
+                    nana_ui::runtime::view::signal(true),
+                ))
+            })
+            .unwrap();
+    });
     shot(
         "history",
         out,
