@@ -14,6 +14,7 @@ use nana_ui::runtime::view::{AnyView, IntoView, computed, dynamic, each, signal,
 use nana_ui::runtime::{
     Activate, IconButton, NodeStyle, RichTextView, ScrollAxes, ScrollView, Stack, Text, UserScroll,
 };
+use nana_ui::theme::space;
 use nana_ui_core::{
     AlignSpec, BackgroundImage, BackgroundImageFit, JustifySpec, LengthSpec, OverflowSpec,
     SemanticColorRole,
@@ -30,8 +31,8 @@ const AVATAR: f32 = 30.0;
 const TEXT: f32 = 14.0;
 /// The row's buttons.
 const ACTIONS: f32 = 60.0;
-/// List padding, row padding and gaps, and room for the scrollbar.
-const CHROME: f32 = 2.0 * 4.0 + 2.0 * 10.0 + 2.0 * 8.0 + 12.0;
+/// Row padding, the row gap, and room for the scrollbar.
+const CHROME: f32 = 2.0 * space::XL + 2.0 * space::MD + 12.0;
 
 /// Connection state, for the dot in the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -273,10 +274,10 @@ fn row_view(ui: Ui, seq: u64, text_w: f32) -> AnyView {
         }),
     ));
     widget(
-        Stack::row(8.0)
+        Stack::row(space::MD)
             .align(AlignSpec::Start)
             .width(LengthSpec::Fill)
-            .padding_xy(10.0, 6.0)
+            .padding_xy(space::XL, space::SM)
             .with_layout(move |l| {
                 if let Some(col) = band {
                     l.background = Some([col[0], col[1], col[2], 0.85]);
@@ -363,9 +364,9 @@ fn header(ui: Ui) -> AnyView {
         }
     });
     widget(
-        Stack::bar(4.0)
+        Stack::bar(space::XS)
             .height(LengthSpec::Px(42.0))
-            .padding_xy(12.0, 4.0)
+            .padding_xy(space::XL, space::XS)
             .align(AlignSpec::Center),
     )
     .children(vec![
@@ -374,7 +375,7 @@ fn header(ui: Ui) -> AnyView {
             l.flex_grow = Some(1.0);
             l.flex_shrink = Some(1.0);
             l.min_width = Some(LengthSpec::Px(0.0));
-            l.margin_left = Some(LengthSpec::Px(6.0));
+            l.margin_left = Some(LengthSpec::Px(space::SM));
         }))
         .children(status)
         .into_any(),
@@ -481,8 +482,8 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
             move |width| {
                 let text_w = (*width as f32 - AVATAR - ACTIONS - CHROME).max(120.0);
                 widget(
-                    Stack::column(2.0)
-                        .padding_xy(4.0, 6.0)
+                    Stack::column(space::XXS)
+                        .padding_xy(0.0, space::SM)
                         .width(LengthSpec::Fill),
                 )
                 .children(each(

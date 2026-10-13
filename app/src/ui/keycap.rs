@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use nana_ui::runtime::view::{AnyView, IntoView, widget};
 use nana_ui::runtime::{IconGlyph, NodeStyle, Stack, Text};
+use nana_ui::theme::space;
 use nana_ui_core::{AlignSpec, BoxShadowSpec, JustifySpec, LengthSpec, SemanticColorRole};
 
 fn label_style(weight: u16) -> NodeStyle {
@@ -24,7 +25,7 @@ pub fn face() -> Stack {
     Stack::row(0.0)
         .height(LengthSpec::Px(24.0))
         .min_width(LengthSpec::Px(24.0))
-        .padding_xy(7.0, 0.0)
+        .padding_xy(space::LG, 0.0)
         .align(AlignSpec::Center)
         .justify(JustifySpec::Center)
         .surface(SemanticColorRole::Surface)

@@ -11,6 +11,7 @@ use nana_ui::runtime::{
     RangeChanged, RangeField, SegmentedControl, SegmentedOptionChosen, Select, SelectChanged,
     SelectOption, Stack, StatusBadge, Switch, Text, TextChanged, TextInput, ToggleChanged,
 };
+use nana_ui::theme::{space, type_scale};
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{AlignSpec, LengthSpec, SemanticColorRole};
 use nanatype_i18n::Locale;
@@ -59,7 +60,8 @@ pub fn text_style(size: f32, weight: u16) -> NodeStyle {
 }
 
 pub fn heading(ui: Ui, key: &str) -> AnyView {
-    widget(Text::new(ui.now_t(key)).style(text_style(20.0, 700))).into_any()
+    widget(Text::new(ui.now_t(key)).style(text_style(type_scale::TITLE, type_scale::SEMIBOLD)))
+        .into_any()
 }
 
 /// [`text_style`] in the mono role ([`crate::ui::MONO`]) with tabular
@@ -70,28 +72,33 @@ pub fn mono_style(size: f32, weight: u16) -> NodeStyle {
     st
 }
 
-/// A heading inside a section card (13/600), below the page title's size.
+/// A heading inside a section card, below the page title.
 pub fn subheading(ui: Ui, key: &str) -> AnyView {
-    widget(Text::new(ui.now_t(key)).style(text_style(13.0, 600))).into_any()
+    widget(Text::new(ui.now_t(key)).style(text_style(type_scale::BODY, type_scale::SEMIBOLD)))
+        .into_any()
 }
 
 pub fn label(text: String) -> AnyView {
-    widget(Text::new(text).style(text_style(13.0, 500))).into_any()
+    widget(Text::new(text).style(text_style(type_scale::BODY, type_scale::MEDIUM))).into_any()
 }
 
 pub fn hint(text: String) -> AnyView {
     widget(
         Text::new(text)
-            .style(text_style(12.0, 400))
+            .style(text_style(type_scale::META, type_scale::REGULAR))
             .color(SemanticColorRole::Muted),
     )
     .into_any()
 }
 
-/// Horizontal inset of rows, blocks and dividers inside a section card.
-pub const INSET: f32 = 16.0;
-/// Shortest a settings row gets.
-pub const ROW_MIN_H: f32 = 48.0;
+/// Horizontal inset inside a section card (`space::XXXL`).
+pub const INSET: f32 = space::XXXL;
+/// Gap between sections (`space::XXXL`).
+pub const SECTION_GAP: f32 = space::XXXL;
+/// Vertical padding of a block in a card (`space::XXL`).
+pub const BLOCK_PAD_Y: f32 = space::XXL;
+/// Vertical padding of a row that is not a `SettingsRow` (`space::LG`).
+pub const ROW_PAD_Y: f32 = space::LG;
 
 /// Whether a section row is shown; `None` always shows it.
 pub type Shown = Option<Box<dyn Fn() -> bool + Send + 'static>>;
@@ -121,30 +128,25 @@ pub fn section_with(ui: Ui, title_key: &str, rows: Vec<(AnyView, Shown)>) -> Any
         })
         .collect();
     let titled = !title_key.is_empty();
-    widget(Stack::column(0.0).with_layout(move |l| {
-        l.margin_top = Some(LengthSpec::Px(if titled { 22.0 } else { 14.0 }));
-    }))
-    .children((
-        titled.then(|| {
+    widget(Stack::column(if titled { space::MD } else { 0.0 }))
+        .children((
+            titled.then(|| {
+                widget(
+                    Text::new(ui.now_t(title_key))
+                        .style(text_style(type_scale::META, type_scale::SEMIBOLD))
+                        .color(SemanticColorRole::Muted),
+                )
+            }),
             widget(
-                Text::new(ui.now_t(title_key))
-                    .style(text_style(12.0, 600))
-                    .color(SemanticColorRole::Muted),
+                // Surface, outline (dark chromes only) and the lifted shadow are
+                // painted from the theme, so a mode switch restyles the card.
+                Stack::column(0.0)
+                    .radius(nana_ui_core::RadiusTier::Lg)
+                    .painter(crate::skin_theme::CardPainter),
             )
-        }),
-        widget(
-            // Surface, outline (dark chromes only) and the lifted shadow are
-            // painted from the theme, so a mode switch restyles the card.
-            Stack::column(0.0)
-                .radius(nana_ui_core::RadiusTier::Lg)
-                .painter(crate::skin_theme::CardPainter)
-                .with_layout(move |l| {
-                    l.margin_top = Some(LengthSpec::Px(if titled { 8.0 } else { 0.0 }));
-                }),
-        )
-        .children(rows),
-    ))
-    .into_any()
+            .children(rows),
+        ))
+        .into_any()
 }
 
 /// The inset hairline between two rows of a section card.
@@ -188,7 +190,7 @@ pub fn when_on(
             widget(Stack::column(0.0))
                 .visible(move || ui.settings.with(|s| enabled(s)))
                 .children(divided(rows)),
-            widget(Stack::column(0.0).padding_xy(INSET, 12.0))
+            widget(Stack::column(0.0).padding_xy(INSET, BLOCK_PAD_Y))
                 .visible(move || !ui.settings.with(|s| enabled(s)))
                 .children(hint(ui.now_t(off_hint_key))),
         ))
@@ -299,7 +301,7 @@ fn breathing_badge(
 
 /// A full-width block inside a section card, inset like the rows.
 pub fn block(view: impl IntoView) -> AnyView {
-    widget(Stack::column(0.0).padding_xy(INSET, 12.0))
+    widget(Stack::column(0.0).padding_xy(INSET, BLOCK_PAD_Y))
         .children(view)
         .into_any()
 }
@@ -314,7 +316,7 @@ pub fn row_text(label_text: String, hint_text: Option<String>, control: AnyView)
     inset_row(
         settings_row(label_text)
             .hint(hint)
-            .control(widget(Stack::row(8.0).align(AlignSpec::Center)).children(control))
+            .control(widget(Stack::row(space::MD).align(AlignSpec::Center)).children(control))
             .into_any(),
     )
 }
@@ -329,20 +331,15 @@ pub fn row_live_hint(
     inset_row(
         settings_row(ui.now_t(label_key))
             .hint(move || hint().map(Arc::<str>::from))
-            .control(widget(Stack::row(8.0).align(AlignSpec::Center)).children(control))
+            .control(widget(Stack::row(space::MD).align(AlignSpec::Center)).children(control))
             .into_any(),
     )
 }
 
 fn inset_row(row: AnyView) -> AnyView {
-    widget(
-        Stack::column(0.0)
-            .padding_xy(INSET, 0.0)
-            .min_height(LengthSpec::Px(ROW_MIN_H))
-            .justify(nana_ui_core::JustifySpec::Center),
-    )
-    .children(row)
-    .into_any()
+    widget(Stack::column(0.0).padding_xy(INSET, 0.0))
+        .children(row)
+        .into_any()
 }
 
 pub fn edit(f: impl FnOnce(&mut Settings) + Send + 'static) -> Msg {
@@ -507,7 +504,7 @@ pub fn slider_with(
         widget(
             Text::new(String::new())
                 .style({
-                    let mut st = text_style(12.0, 500);
+                    let mut st = text_style(type_scale::META, type_scale::MEDIUM);
                     let l = Arc::make_mut(&mut st.layout);
                     l.width = Some(LengthSpec::Px(READOUT_W));
                     l.white_space_nowrap = true;
@@ -561,17 +558,17 @@ pub fn confirm(
     msg: impl Fn() -> Msg + Send + 'static,
 ) -> AnyView {
     let armed = signal(false);
-    widget(Stack::row(8.0).align(AlignSpec::Center))
+    widget(Stack::row(space::MD).align(AlignSpec::Center))
         .children((
             widget(Stack::row(0.0).align(AlignSpec::Center))
                 .visible(move || !armed.get())
                 .children(trigger(armed)),
-            widget(Stack::row(8.0).align(AlignSpec::Center).wrap(true))
+            widget(Stack::row(space::MD).align(AlignSpec::Center).wrap(true))
                 .visible(move || armed.get())
                 .children((
                     widget(
                         Text::new(question)
-                            .style(text_style(12.0, 500))
+                            .style(text_style(type_scale::META, type_scale::MEDIUM))
                             .color(SemanticColorRole::Warning),
                     ),
                     widget(Button::new(ui.now_t("common-cancel")).size(ControlSize::Small))

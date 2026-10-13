@@ -7,6 +7,7 @@ use std::sync::Arc;
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{AnyView, EntityRef, IntoView, widget};
 use nana_ui::runtime::{Activate, Button, IconGlyph, Stack, Text, ToastStack, ToastTone};
+use nana_ui::theme::space;
 use nana_ui::{ButtonKind, ControlSize};
 use nana_ui_core::{AlignSpec, LengthSpec, PositionSpec, SemanticColorRole};
 
@@ -50,7 +51,7 @@ pub fn toast_stack(stack: EntityRef<ToastStack>, bottom: f32, max_visible: usize
     {
         let l = Arc::make_mut(&mut st.layout);
         l.position = PositionSpec::Absolute;
-        l.offset_right = Some(LengthSpec::Px(12.0));
+        l.offset_right = Some(LengthSpec::Px(space::XL));
         l.offset_bottom = Some(LengthSpec::Px(bottom));
         l.width = Some(LengthSpec::Px(300.0));
         l.max_height = Some(LengthSpec::Px(240.0));
@@ -69,7 +70,7 @@ pub fn with_toasts(view: impl IntoView, stack: EntityRef<ToastStack>) -> AnyView
         l.width = Some(LengthSpec::Fill);
         l.height = Some(LengthSpec::Fill);
     }))
-    .children((view, toast_stack(stack, 16.0, 3)))
+    .children((view, toast_stack(stack, space::XXXL, 3)))
     .into_any()
 }
 
@@ -92,8 +93,8 @@ pub fn empty_state(
         .into_any()
     });
     widget(
-        Stack::row(8.0)
-            .padding_xy(16.0, 12.0)
+        Stack::row(space::MD)
+            .padding_xy(space::XXXL, space::XL)
             .align(AlignSpec::Center)
             .wrap(true),
     )

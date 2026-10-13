@@ -8,6 +8,7 @@ use nana_ui::runtime::{
     PopoverClosed, PopoverToggled, ScrollAxes, ScrollView, Select, SelectChanged, SelectOption,
     Stack, StatusBadge, Switch, Text, TextChanged, TextInput, TextSubmitted, ToggleChanged,
 };
+use nana_ui::theme::{space, type_scale};
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
 use nana_ui_core::{
     AlignSpec, BackgroundImage, JustifySpec, LengthSpec, OverflowSpec, PointerEventsSpec,
@@ -42,14 +43,16 @@ pub fn page(ui: Ui, page: Page) -> AnyView {
         Page::Assets => assets(ui),
         Page::About => about(ui),
     };
-    widget(Stack::column(4.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
-            heading(ui, page.label_key()),
-            widget(
-                Text::new(ui.now_t(page.subtitle_key()))
-                    .style(text_style(13.0, 400))
-                    .color(SemanticColorRole::Muted),
-            ),
+            widget(Stack::column(space::XS)).children((
+                heading(ui, page.label_key()),
+                widget(
+                    Text::new(ui.now_t(page.subtitle_key()))
+                        .style(text_style(type_scale::BODY, type_scale::REGULAR))
+                        .color(SemanticColorRole::Muted),
+                ),
+            )),
             body,
         ))
         .into_any()
@@ -120,7 +123,7 @@ fn general(ui: Ui) -> AnyView {
             .into_any()
     };
     let guide = (!ui.settings.get_untracked().general.onboarding_done).then(|| onboarding(ui));
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             guide,
             section(
@@ -282,14 +285,10 @@ fn onboarding(ui: Ui) -> AnyView {
         edit(|s| s.general.onboarding_done = true)
     };
     let header = widget(
-        Stack::row(8.0)
+        Stack::row(space::MD)
             .align(AlignSpec::Center)
             .width(LengthSpec::Fill)
-            .padding_xy(INSET, 0.0)
-            .with_layout(|l| {
-                l.padding_top = Some(LengthSpec::Px(14.0));
-                l.padding_bottom = Some(LengthSpec::Px(2.0));
-            }),
+            .padding_xy(INSET, 0.0),
     )
     .children((
         widget(
@@ -297,7 +296,10 @@ fn onboarding(ui: Ui) -> AnyView {
                 .size(16.0)
                 .role(SemanticColorRole::Accent),
         ),
-        widget(Text::new(ui.now_t("onboard-welcome")).style(text_style(15.0, 600))),
+        widget(
+            Text::new(ui.now_t("onboard-welcome"))
+                .style(text_style(type_scale::HEADING, type_scale::SEMIBOLD)),
+        ),
         widget(Stack::row(0.0).grow(1.0)),
         step_indicator(ui),
         widget(
@@ -311,10 +313,10 @@ fn onboarding(ui: Ui) -> AnyView {
     let body = dynamic(move || step.get(), move |n| onboard_step(ui, *n))
         .transition(crate::ui::motion::enter());
     let footer = widget(
-        Stack::row(8.0)
+        Stack::row(space::MD)
             .align(AlignSpec::Center)
             .width(LengthSpec::Fill)
-            .padding_xy(INSET, 12.0),
+            .padding_xy(INSET, 0.0),
     )
     .children((
         widget(
@@ -355,7 +357,6 @@ fn onboarding(ui: Ui) -> AnyView {
             .radius(nana_ui_core::RadiusTier::Lg)
             .outline(SemanticColorRole::BorderSoft, 1.0)
             .with_layout(|l| {
-                l.margin_top = Some(LengthSpec::Px(14.0));
                 l.position = PositionSpec::Relative;
                 l.overflow_x = OverflowSpec::Hidden;
                 l.overflow_y = OverflowSpec::Hidden;
@@ -369,12 +370,13 @@ fn onboarding(ui: Ui) -> AnyView {
                 .surface(SemanticColorRole::Accent)
                 .with_layout(accent_bar_layout),
         ),
-        widget(Stack::column(0.0).grow(1.0).shrink(1.0)).children((
-            header,
-            body,
-            divider(),
-            footer,
-        )),
+        widget(
+            Stack::column(space::MD)
+                .grow(1.0)
+                .shrink(1.0)
+                .padding_xy(0.0, BLOCK_PAD_Y),
+        )
+        .children((header, body, divider(), footer)),
     ))
     .into_any()
 }
@@ -395,27 +397,31 @@ fn step_indicator(ui: Ui) -> AnyView {
     };
     let dots: Vec<AnyView> = (0..ONBOARD_STEPS)
         .map(|i| {
-            widget(Stack::row(0.0).height(LengthSpec::Px(6.0)).radius_px(3.0))
-                .bind(move |s: &mut Stack| {
-                    let n = step.get();
-                    let role = if i <= n {
-                        SemanticColorRole::Accent
-                    } else {
-                        SemanticColorRole::BorderStrong
-                    };
-                    let taken = std::mem::replace(s, Stack::row(0.0));
-                    *s = taken
-                        .width(LengthSpec::Px(if i == n { 16.0 } else { 6.0 }))
-                        .surface(role);
-                })
-                .into_any()
+            widget(
+                Stack::row(0.0)
+                    .height(LengthSpec::Px(space::SM))
+                    .radius_px(3.0),
+            )
+            .bind(move |s: &mut Stack| {
+                let n = step.get();
+                let role = if i <= n {
+                    SemanticColorRole::Accent
+                } else {
+                    SemanticColorRole::BorderStrong
+                };
+                let taken = std::mem::replace(s, Stack::row(0.0));
+                *s = taken
+                    .width(LengthSpec::Px(if i == n { space::XXXL } else { space::SM }))
+                    .surface(role);
+            })
+            .into_any()
         })
         .collect();
-    widget(Stack::row(8.0).align(AlignSpec::Center))
+    widget(Stack::row(space::MD).align(AlignSpec::Center))
         .children((
             widget(
                 Text::new(label())
-                    .style(text_style(12.0, 400))
+                    .style(text_style(type_scale::META, type_scale::REGULAR))
                     .color(SemanticColorRole::Muted),
             )
             .bind(move |t: &mut Text| {
@@ -424,7 +430,7 @@ fn step_indicator(ui: Ui) -> AnyView {
                     t.value = text;
                 }
             }),
-            widget(Stack::row(4.0).align(AlignSpec::Center)).children(dots),
+            widget(Stack::row(space::XS).align(AlignSpec::Center)).children(dots),
         ))
         .into_any()
 }
@@ -434,7 +440,7 @@ fn step_indicator(ui: Ui) -> AnyView {
 /// it.
 fn onboard_step(ui: Ui, n: u8) -> AnyView {
     let lead = |key: &str| {
-        widget(Stack::column(0.0).padding_xy(INSET, 4.0))
+        widget(Stack::column(0.0).padding_xy(INSET, 0.0))
             .children(hint_13(ui.now_t(key)))
             .into_any()
     };
@@ -458,10 +464,10 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
         2 => vec![
             lead("onboard-mode-body"),
             widget(
-                Stack::row(12.0)
+                Stack::row(space::XL)
                     .align(AlignSpec::Stretch)
                     .width(LengthSpec::Fill)
-                    .padding_xy(INSET, 10.0),
+                    .padding_xy(INSET, 0.0),
             )
             .children((
                 mode_card(ui, InputMode::Compose),
@@ -470,7 +476,7 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
             .into_any(),
         ],
         _ => vec![
-            widget(Stack::column(10.0).padding_xy(INSET, 8.0))
+            widget(Stack::column(space::LG).padding_xy(INSET, 0.0))
                 .children((subheading(ui, "onboard-hotkeys"), hotkeys_sentence(ui)))
                 .into_any(),
             row(
@@ -479,17 +485,12 @@ fn onboard_step(ui: Ui, n: u8) -> AnyView {
                 Some("onboard-obs-hint"),
                 button(ui, "onboard-obs", || Msg::SettingsPage(Page::Output)),
             ),
-            widget(Stack::column(0.0).padding_xy(INSET, 4.0))
+            widget(Stack::column(0.0).padding_xy(INSET, 0.0))
                 .children(hint(ui.now_t("onboard-reopen")))
                 .into_any(),
         ],
     };
-    widget(Stack::column(0.0).with_layout(|l| {
-        l.padding_top = Some(LengthSpec::Px(4.0));
-        l.padding_bottom = Some(LengthSpec::Px(8.0));
-    }))
-    .children(body)
-    .into_any()
+    widget(Stack::column(0.0)).children(body).into_any()
 }
 
 /// Every skin that loads, by name, bound to the active skin: choosing one
@@ -539,7 +540,7 @@ fn mode_diagram(mode: InputMode) -> AnyView {
             .into_iter()
             .enumerate()
             .map(|(i, lw)| {
-                widget(Stack::row(2.0).align(AlignSpec::Center))
+                widget(Stack::row(space::XXS).align(AlignSpec::Center))
                     .children((
                         bar(lw, SemanticColorRole::BorderStrong),
                         (typing && i == last).then(caret),
@@ -547,9 +548,9 @@ fn mode_diagram(mode: InputMode) -> AnyView {
                     .into_any()
             })
             .collect();
-        let frame = Stack::column(5.0)
+        let frame = Stack::column(space::SM)
             .width(LengthSpec::Px(w))
-            .padding_xy(8.0, 8.0)
+            .padding_xy(space::MD, space::MD)
             .surface(SemanticColorRole::Surface)
             .outline(SemanticColorRole::BorderSoft, 1.0)
             .radius(nana_ui_core::RadiusTier::Sm)
@@ -579,11 +580,10 @@ fn mode_diagram(mode: InputMode) -> AnyView {
         InputMode::Mirror => (ti::ARROW_NARROW_RIGHT, vec![40.0, 14.0], true),
     };
     widget(
-        Stack::row(8.0)
+        Stack::row(space::MD)
             .align(AlignSpec::Center)
             .justify(JustifySpec::Center)
             .width(LengthSpec::Fill)
-            .padding_xy(10.0, 10.0)
             .surface(SemanticColorRole::Subtle)
             .radius(nana_ui_core::RadiusTier::Md),
     )
@@ -612,8 +612,11 @@ fn mode_card(ui: Ui, mode: InputMode) -> AnyView {
                 let mut st = ListItem::new("").style;
                 let l = Arc::make_mut(&mut st.layout);
                 l.width = Some(LengthSpec::Fill);
-                l.padding_top = Some(LengthSpec::Px(10.0));
-                l.padding_bottom = Some(LengthSpec::Px(12.0));
+                st.control_padding_x = None;
+                l.padding_left = Some(LengthSpec::Px(space::LG));
+                l.padding_right = Some(LengthSpec::Px(space::LG));
+                l.padding_top = Some(LengthSpec::Px(space::LG));
+                l.padding_bottom = Some(LengthSpec::Px(space::LG));
                 st
             })
             .auto_height(true),
@@ -623,9 +626,11 @@ fn mode_card(ui: Ui, mode: InputMode) -> AnyView {
         cx.dispatch_program_all(edit(move |s| s.general.input_mode = mode));
     })
     .content(
-        widget(Stack::column(8.0).width(LengthSpec::Fill)).children((
+        widget(Stack::column(space::MD).width(LengthSpec::Fill)).children((
             mode_diagram(mode),
-            widget(Text::new(ui.now_t(name)).style(text_style(13.0, 600))),
+            widget(
+                Text::new(ui.now_t(name)).style(text_style(type_scale::BODY, type_scale::SEMIBOLD)),
+            ),
             hint(ui.now_t(about)),
         )),
     );
@@ -678,7 +683,7 @@ fn hotkeys_sentence(ui: Ui) -> AnyView {
     if !rest.trim().is_empty() {
         parts.push(hint_13(rest.trim().to_owned()));
     }
-    widget(Stack::row(6.0).align(AlignSpec::Center).wrap(true))
+    widget(Stack::row(space::SM).align(AlignSpec::Center).wrap(true))
         .children(parts)
         .into_any()
 }
@@ -695,7 +700,7 @@ fn accent_bar_layout(l: &mut nana_ui_core::LayoutStyle) {
 fn hint_13(text: String) -> AnyView {
     widget(
         Text::new(text)
-            .style(text_style(13.0, 400))
+            .style(text_style(type_scale::BODY, type_scale::REGULAR))
             .color(SemanticColorRole::Muted),
     )
     .into_any()
@@ -756,7 +761,7 @@ fn playback(ui: Ui) -> AnyView {
         ui.settings
             .with(|s| matches!(s.playback.after, AfterLine::Hold))
     };
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             section(
                 ui,
@@ -1069,18 +1074,17 @@ fn skins(ui: Ui) -> AnyView {
         },
     );
     let fallback = ui.skin.get_untracked();
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
-            widget(Stack::row(8.0).with_layout(|l| l.margin_top = Some(LengthSpec::Px(12.0))))
-                .children(primary(ui, "skins-import", || {
-                    Msg::PickFile(FileTarget::ImportSkin)
-                })),
+            widget(Stack::row(space::MD)).children(primary(ui, "skins-import", || {
+                Msg::PickFile(FileTarget::ImportSkin)
+            })),
             section(ui, "skins-preview", vec![skin_preview(ui, previewing)]),
             section(
                 ui,
                 "skins-library",
                 vec![
-                    widget(Stack::column(0.0).padding_xy(16.0, 10.0))
+                    widget(Stack::column(0.0).padding_xy(INSET, space::LG))
                         .children(skin_filters(ui, filter, grid))
                         .into_any(),
                     list.into_any(),
@@ -1259,7 +1263,7 @@ fn menu_item(
 }
 
 /// Space between skin cards.
-const GRID_GAP: f32 = 12.0;
+const GRID_GAP: f32 = space::XL;
 /// Height of a card's thumbnail well.
 const THUMB_H: f32 = 76.0;
 
@@ -1450,8 +1454,8 @@ fn skin_list_row(
                     l.flex_grow = Some(1.0);
                     l.flex_shrink = Some(1.0);
                     l.min_width = Some(LengthSpec::Px(0.0));
-                    l.padding_top = Some(LengthSpec::Px(8.0));
-                    l.padding_bottom = Some(LengthSpec::Px(8.0));
+                    l.padding_top = Some(LengthSpec::Px(space::MD));
+                    l.padding_bottom = Some(LengthSpec::Px(space::MD));
                     st
                 })
                 .auto_height(true),
@@ -1661,10 +1665,10 @@ fn skin_card(
                 st.control_padding_x = None;
                 let l = Arc::make_mut(&mut st.layout);
                 l.width = Some(LengthSpec::Fill);
-                l.padding_left = Some(LengthSpec::Px(8.0));
-                l.padding_right = Some(LengthSpec::Px(8.0));
-                l.padding_top = Some(LengthSpec::Px(8.0));
-                l.padding_bottom = Some(LengthSpec::Px(8.0));
+                l.padding_left = Some(LengthSpec::Px(space::MD));
+                l.padding_right = Some(LengthSpec::Px(space::MD));
+                l.padding_top = Some(LengthSpec::Px(space::MD));
+                l.padding_bottom = Some(LengthSpec::Px(space::MD));
                 st
             })
             .auto_height(true),
@@ -1684,7 +1688,8 @@ fn skin_card(
         )
         .children((
             well,
-            widget(Stack::column(2.0).padding_xy(2.0, 0.0)).children((name_row, tags_row)),
+            widget(Stack::column(space::XXS).padding_xy(space::XXS, 0.0))
+                .children((name_row, tags_row)),
         )),
     );
     widget(Stack::column(0.0).with_layout(|l| {
@@ -1729,9 +1734,9 @@ fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
         .into_any()
     };
     widget(
-        Stack::row(2.0)
+        Stack::row(space::XXS)
             .align(AlignSpec::Center)
-            .padding_xy(2.0, 2.0)
+            .padding_xy(space::XXS, space::XXS)
             .outline(SemanticColorRole::BorderSoft, 1.0)
             .radius(nana_ui_core::RadiusTier::Md)
             .with_layout(|l| {
@@ -1748,7 +1753,7 @@ fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
 /// Width the skin preview is scaled down to fit.
 const PREVIEW_W: f32 = 600.0;
 /// Checkerboard showing around the previewed box.
-const PREVIEW_INSET: f32 = 16.0;
+const PREVIEW_INSET: f32 = INSET;
 
 /// A 10px transparency checkerboard tile as a data URL, in light or dark
 /// chrome tones.
@@ -1991,7 +1996,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                 })
             }),
         ));
-        widget(Stack::column(10.0).padding_xy(16.0, 12.0))
+        widget(Stack::column(space::LG).padding_xy(INSET, space::XL))
             .children((stage, caption))
             .into_any()
     })
@@ -2003,7 +2008,7 @@ const OVERLAYS: [WindowKind; 3] = [WindowKind::Display, WindowKind::History, Win
 /// Width of the matrix's row labels.
 const MATRIX_LABEL_W: f32 = 150.0;
 /// Space between the matrix's columns.
-const MATRIX_GAP: f32 = 8.0;
+const MATRIX_GAP: f32 = space::MD;
 
 /// A matrix line: a label, then one cell per overlay window.
 fn matrix_row(label: AnyView, cells: [AnyView; 3]) -> AnyView {
@@ -2027,8 +2032,7 @@ fn matrix_row(label: AnyView, cells: [AnyView; 3]) -> AnyView {
         Stack::row(MATRIX_GAP)
             .align(AlignSpec::Center)
             .width(LengthSpec::Fill)
-            .padding_xy(INSET, 6.0)
-            .min_height(LengthSpec::Px(ROW_MIN_H)),
+            .padding_xy(INSET, ROW_PAD_Y),
     )
     .children((
         widget(
@@ -2257,17 +2261,17 @@ fn windows(ui: Ui) -> AnyView {
             .into_any()
         }),
     );
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             section(ui, "", vec![header, show, lock, background, on_top, size]),
-            widget(Stack::column(0.0).padding_xy(4.0, 8.0))
+            widget(Stack::column(0.0).padding_xy(INSET, space::MD))
                 .children(hint(ui.now_t("windows-input-na"))),
         ))
         .into_any()
 }
 
 fn history(ui: Ui) -> AnyView {
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             section(
                 ui,
@@ -2798,7 +2802,7 @@ fn hotkey_control(ui: Ui, action: GlobalAction) -> AnyView {
     let slot = widget(
         Stack::row(0.0)
             .height(LengthSpec::Px(24.0))
-            .padding_xy(10.0, 0.0)
+            .padding_xy(space::LG, 0.0)
             .align(AlignSpec::Center)
             .outline(SemanticColorRole::Border, 1.0)
             .radius(nana_ui_core::RadiusTier::Sm)
@@ -2883,8 +2887,7 @@ fn hotkey_issue_line(ui: Ui, action: GlobalAction) -> AnyView {
     widget(Stack::column(0.0).with_layout(|l| {
         l.padding_left = Some(LengthSpec::Px(INSET));
         l.padding_right = Some(LengthSpec::Px(INSET));
-        l.padding_bottom = Some(LengthSpec::Px(12.0));
-        l.margin_top = Some(LengthSpec::Px(-4.0));
+        l.padding_bottom = Some(LengthSpec::Px(space::XL));
     }))
     .visible(move || issue().is_some())
     .children(
@@ -2905,7 +2908,7 @@ fn hotkeys(ui: Ui) -> AnyView {
     let rows: Vec<AnyView> = GlobalAction::ALL
         .into_iter()
         .map(|action| {
-            widget(Stack::column(0.0))
+            widget(Stack::column(space::XS))
                 .children((
                     row(ui, action.label_key(), None, hotkey_control(ui, action)),
                     hotkey_issue_line(ui, action),
@@ -2913,7 +2916,7 @@ fn hotkeys(ui: Ui) -> AnyView {
                 .into_any()
         })
         .collect();
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             section(ui, "", rows),
             section(
@@ -2970,7 +2973,7 @@ fn obs_guide(ui: Ui) -> AnyView {
     let sender = widget(
         Stack::row(4.0)
             .align(AlignSpec::Center)
-            .padding_xy(8.0, 2.0)
+            .padding_xy(space::MD, space::XXS)
             .surface(SemanticColorRole::Subtle)
             .outline(SemanticColorRole::BorderSoft, 1.0)
             .radius_px(6.0),
@@ -3030,7 +3033,7 @@ fn obs_guide(ui: Ui) -> AnyView {
         })
         .on(move |_: &Activate| other_open.set(!other_open.get_untracked())),
         widget(Stack::column(0.0).with_layout(|l| {
-            l.padding_left = Some(LengthSpec::Px(8.0));
+            l.padding_left = Some(LengthSpec::Px(space::MD));
         }))
         .visible(move || other_open.get())
         .children(hint(ui.now_t(if cfg!(target_os = "macos") {
@@ -3039,7 +3042,7 @@ fn obs_guide(ui: Ui) -> AnyView {
             "output-obs-window"
         }))),
     ));
-    widget(Stack::column(10.0).padding_xy(INSET, 14.0))
+    widget(Stack::column(space::LG).padding_xy(INSET, BLOCK_PAD_Y))
         .children((
             steps,
             other,
@@ -3190,7 +3193,7 @@ fn output(ui: Ui) -> AnyView {
             ],
         )
     };
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             section(ui, "output-obs-title", vec![obs_guide(ui)]),
             spout(WindowKind::Display, "output-display"),
@@ -3206,7 +3209,7 @@ const VTS_SELECT_W: f32 = 240.0;
 fn marker_chip(text: String) -> AnyView {
     widget(
         Stack::row(0.0)
-            .padding_xy(8.0, 2.0)
+            .padding_xy(space::MD, space::XXS)
             .align(AlignSpec::Center)
             .surface(SemanticColorRole::Subtle)
             .outline(SemanticColorRole::BorderSoft, 1.0)
@@ -3235,14 +3238,13 @@ fn vts_map_row(ui: Ui, key: String, options: Vec<SelectOption>) -> AnyView {
     let start = current();
     let set_key = key.clone();
     widget(
-        Stack::bar(12.0)
-            .padding_xy(INSET, 6.0)
-            .align(AlignSpec::Center)
-            .min_height(LengthSpec::Px(40.0)),
+        Stack::bar(space::XL)
+            .padding_xy(INSET, ROW_PAD_Y)
+            .align(AlignSpec::Center),
     )
     .children((
         widget(
-            Stack::row(6.0)
+            Stack::row(space::SM)
                 .align(AlignSpec::Center)
                 .grow(1.0)
                 .shrink(1.0),
@@ -3288,8 +3290,8 @@ fn vts_mapping(ui: Ui) -> AnyView {
             && ui.status.with(|s| s.vts != LinkState::NeedsAuth)
     };
     let header = widget(
-        Stack::bar(12.0)
-            .padding_xy(INSET, 12.0)
+        Stack::bar(space::XL)
+            .padding_xy(INSET, space::XL)
             .align(AlignSpec::Center),
     )
     .children((
@@ -3383,10 +3385,10 @@ fn vts_mapping(ui: Ui) -> AnyView {
                 )
             };
             let head = widget(
-                Stack::bar(12.0)
+                Stack::bar(space::XL)
                     .padding_xy(INSET, 0.0)
                     .align(AlignSpec::Center)
-                    .with_layout(|l| l.padding_bottom = Some(LengthSpec::Px(4.0))),
+                    .with_layout(|l| l.padding_bottom = Some(LengthSpec::Px(space::XS))),
             )
             .children((
                 widget(Stack::row(0.0).grow(1.0)).children(caption("int-vts-map-expression")),
@@ -3398,7 +3400,7 @@ fn vts_mapping(ui: Ui) -> AnyView {
                 .map(|key| vts_map_row(ui, key, options.clone()))
                 .collect();
             widget(Stack::column(0.0).with_layout(|l| {
-                l.padding_bottom = Some(LengthSpec::Px(6.0));
+                l.padding_bottom = Some(LengthSpec::Px(space::SM));
             }))
             .children((head, divided(rows)))
             .into_any()
@@ -3410,7 +3412,7 @@ fn vts_mapping(ui: Ui) -> AnyView {
 }
 
 fn integrations(ui: Ui) -> AnyView {
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             blivechat(ui),
             section(
@@ -3747,9 +3749,9 @@ fn assets(ui: Ui) -> AnyView {
                             }))
                         }),
                     );
-                    widget(Stack::column(0.0))
+                    widget(Stack::column(space::XS))
                         .children((
-                            widget(Stack::column(8.0).padding_xy(INSET, 12.0))
+                            widget(Stack::column(space::MD).padding_xy(INSET, space::XL))
                                 .children((first, content)),
                             hotkey_issue_line(ui, action),
                         ))
@@ -3761,17 +3763,17 @@ fn assets(ui: Ui) -> AnyView {
                 .into_any()
         },
     );
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children((
             section(
                 ui,
                 "assets-stickers",
                 vec![
-                    widget(Stack::column(0.0).padding_xy(16.0, 10.0))
+                    widget(Stack::column(0.0).padding_xy(INSET, space::LG))
                         .children(hint(ui.now_t("assets-stickers-hint")))
                         .into_any(),
                     dirs.into_any(),
-                    widget(Stack::row(0.0).padding_xy(16.0, 10.0))
+                    widget(Stack::row(0.0).padding_xy(INSET, space::LG))
                         .children(button(ui, "assets-add-folder", || {
                             Msg::PickFile(FileTarget::StickerFolder)
                         }))
@@ -3783,7 +3785,7 @@ fn assets(ui: Ui) -> AnyView {
                 "assets-phrases",
                 vec![
                     phrases.into_any(),
-                    widget(Stack::row(0.0).padding_xy(16.0, 10.0))
+                    widget(Stack::row(0.0).padding_xy(INSET, space::LG))
                         .children(button(ui, "assets-phrase-add", || {
                             edit(|s| {
                                 s.assets.phrases.push(QuickPhrase {
@@ -3824,26 +3826,28 @@ fn about(ui: Ui) -> AnyView {
     );
     let version_chip = widget(
         Stack::row(0.0)
-            .padding_xy(8.0, 1.0)
+            .padding_xy(space::MD, space::XXS)
             .surface(SemanticColorRole::Subtle)
             .outline(SemanticColorRole::BorderSoft, 1.0)
             .radius_px(999.0),
     )
     .children(widget(
         Text::new(format!("v{}", env!("CARGO_PKG_VERSION")))
-            .style(mono_style(12.0, 500))
+            .style(mono_style(type_scale::META, type_scale::MEDIUM))
             .color(SemanticColorRole::Muted),
     ));
     let header = widget(
-        Stack::row(14.0)
-            .padding_xy(INSET, 16.0)
+        Stack::row(space::XXL)
+            .padding_xy(INSET, INSET)
             .align(AlignSpec::Center),
     )
     .children((
         icon,
-        widget(Stack::column(4.0).grow(1.0).shrink(1.0)).children((
-            widget(Stack::row(8.0).align(AlignSpec::Center)).children((
-                widget(Text::new("NanaType").style(text_style(18.0, 700))),
+        widget(Stack::column(space::XS).grow(1.0).shrink(1.0)).children((
+            widget(Stack::row(space::MD).align(AlignSpec::Center)).children((
+                widget(
+                    Text::new("NanaType").style(text_style(type_scale::TITLE, type_scale::BOLD)),
+                ),
                 version_chip,
             )),
             hint_13(ui.now_t("app-tagline")),
@@ -3851,16 +3855,21 @@ fn about(ui: Ui) -> AnyView {
         )),
     ));
     let link = |key: &str, icon: nana_ui::runtime::Icon, msg: Box<dyn Fn() -> Msg + Send>| {
-        widget(
-            Button::new(ui.now_t(key))
-                .kind(ButtonKind::Ghost)
-                .size(ControlSize::Small)
-                .icon(icon),
-        )
-        .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
-        .into_any()
+        let mut button = Button::new(ui.now_t(key))
+            .kind(ButtonKind::Ghost)
+            .size(ControlSize::Small)
+            .icon(icon);
+        button.style.control_padding_x = None;
+        widget(button)
+            .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
+            .into_any()
     };
-    let links = widget(Stack::row(6.0).padding_xy(INSET - 6.0, 10.0).wrap(true)).children(vec![
+    let links = widget(
+        Stack::row(space::SM)
+            .padding_xy(INSET, space::LG)
+            .wrap(true),
+    )
+    .children(vec![
         link(
             "about-logs",
             ti::FILE_TEXT,
@@ -3877,12 +3886,14 @@ fn about(ui: Ui) -> AnyView {
             Box::new(|| Msg::OpenUrl(HOMEPAGE)),
         ),
         // The first-run guide again, from its first step, on General.
-        widget(
-            Button::new(ui.now_t("about-setup-guide"))
+        {
+            let mut guide = Button::new(ui.now_t("about-setup-guide"))
                 .kind(ButtonKind::Ghost)
                 .size(ControlSize::Small)
-                .icon(ti::SPARKLES),
-        )
+                .icon(ti::SPARKLES);
+            guide.style.control_padding_x = None;
+            widget(guide)
+        }
         .on_cx(move |_, _: &Activate, cx| {
             ui.onboard_step.set(0);
             cx.dispatch_program_all(edit(|s| s.general.onboarding_done = false));
@@ -3892,7 +3903,7 @@ fn about(ui: Ui) -> AnyView {
     ]);
     let mut rows = vec![(header.into_any(), None), (links.into_any(), None)];
     rows.extend(font_licences(ui));
-    widget(Stack::column(0.0))
+    widget(Stack::column(SECTION_GAP))
         .children(section_with(ui, "", rows))
         .into_any()
 }
@@ -3960,21 +3971,21 @@ pub fn font_licence_panel(ui: Ui) -> AnyView {
                     widget(Text::new(name).style(text_style(13.0, 600))),
                     hint(facts.join(" · ")),
                     widget(Stack::column(0.0).with_layout(|l| {
-                        l.padding_top = Some(LengthSpec::Px(6.0));
+                        l.padding_top = Some(LengthSpec::Px(space::SM));
                     }))
                     .children(licence_lines(font.license)),
                 ))
                 .into_any()
         })
         .collect();
-    widget(Stack::column(0.0).padding_xy(INSET, 10.0))
+    widget(Stack::column(0.0).padding_xy(INSET, space::LG))
         .children(
             widget(ScrollView::new(ScrollAxes::Vertical).with_layout(|l| {
                 l.height = Some(LengthSpec::Px(320.0));
             }))
             .children(
-                widget(Stack::column(18.0).with_layout(|l| {
-                    l.padding_right = Some(LengthSpec::Px(12.0));
+                widget(Stack::column(space::XXXL).with_layout(|l| {
+                    l.padding_right = Some(LengthSpec::Px(space::XL));
                 }))
                 .children(entries),
             ),

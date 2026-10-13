@@ -17,9 +17,11 @@ use nana_ui::runtime::{
     RangeField, RangeInput, RichAttrMask, RichSelectionAttrs, RichTextEditor, RichTextEditorEvent,
     Stack, Text, TextArea, TextChanged, TextInput, TextSubmitted,
 };
+use nana_ui::theme::space;
 use nana_ui::{ButtonKind, ControlSize, PopoverPlacement};
 use nana_ui_core::{
-    AlignSpec, LengthSpec, PointerEventsSpec, PositionSpec, SemanticColorRole, SquareSize,
+    AlignSpec, JustifySpec, LengthSpec, OverflowSpec, PointerEventsSpec, PositionSpec,
+    SemanticColorRole, SquareSize,
 };
 use nanatype_core::Cmd;
 use nanatype_i18n::{Arg, Locale};
@@ -68,6 +70,8 @@ fn marker(m: Marker) -> Msg {
 
 /// Toolbar glyphs: one size for every tool, centred in a 28px target.
 const GLYPH: f32 = 14.0;
+/// Icon-button hit target.
+const TARGET: f32 = 28.0;
 
 /// The toolbar's resting ink: the chrome's text at 75%, while the window
 /// wears the skin's own chrome. `None` (another light or dark mode is
@@ -217,9 +221,8 @@ fn source_toggle(ui: Ui) -> AnyView {
     .into_any()
 }
 
-/// A menu trigger's face: the toolbar glyph, and a label when given. A
-/// trigger pads its content by 10px a side, so a bare glyph sits in an 8px
-/// box it overhangs, which keeps the trigger 28px square like the buttons.
+/// A menu trigger's face. A bare glyph is centred in the box left after the
+/// trigger's own `space::LG` padding, so the hit target stays [`TARGET`].
 fn trigger_face(
     icon: nana_ui::runtime::Icon,
     label: Option<String>,
@@ -242,20 +245,25 @@ fn trigger_face(
             if ink.is_none() {
                 text = text.color(SemanticColorRole::Muted);
             }
-            widget(Stack::row(4.0).align(AlignSpec::Center))
+            widget(Stack::row(space::XS).align(AlignSpec::Center))
                 .children((widget(glyph), widget(text)))
                 .into_any()
         }
         None => {
-            let overhang = (GLYPH - 8.0) / 2.0;
-            let l = Arc::make_mut(&mut glyph.style.layout);
-            l.position = PositionSpec::Relative;
-            l.offset_left = Some(LengthSpec::Px(-overhang));
-            widget(Stack::row(0.0).align(AlignSpec::Center).with_layout(|l| {
-                l.width = Some(LengthSpec::Px(8.0));
-                l.min_width = Some(LengthSpec::Px(8.0));
-                l.flex_shrink = Some(0.0);
-            }))
+            let inner = TARGET - 2.0 * space::LG;
+            widget(
+                Stack::row(0.0)
+                    .align(AlignSpec::Center)
+                    .justify(JustifySpec::Center)
+                    .with_layout(|l| {
+                        l.width = Some(LengthSpec::Px(inner));
+                        l.min_width = Some(LengthSpec::Px(inner));
+                        l.height = Some(LengthSpec::Px(GLYPH));
+                        l.flex_shrink = Some(0.0);
+                        l.overflow_x = OverflowSpec::Visible;
+                        l.overflow_y = OverflowSpec::Visible;
+                    }),
+            )
             .children(widget(glyph))
             .into_any()
         }
@@ -1240,7 +1248,7 @@ fn toolbar(ui: Ui) -> AnyView {
         widget(
             Stack::bar(2.0)
                 .height(LengthSpec::Px(TOOLBAR_H))
-                .padding_xy(8.0, 6.0)
+                .padding_xy(space::MD, space::SM)
                 .align(AlignSpec::Center),
         )
         .children(bar)
@@ -1362,7 +1370,7 @@ fn status_line(ui: Ui) -> AnyView {
     widget(
         Stack::bar(6.0)
             .height(LengthSpec::Px(STATUS_H))
-            .padding_xy(12.0, 2.0),
+            .padding_xy(space::MD, space::XXS),
     )
     .children((
         widget(Stack::row(0.0).with_layout(|l| {

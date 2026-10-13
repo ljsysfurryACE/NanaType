@@ -14,6 +14,7 @@ use std::sync::Arc;
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{AnyView, IntoView, dynamic, widget};
 use nana_ui::runtime::{Activate, ListItem, NodeStyle, ScrollAxes, ScrollView, Stack, Text};
+use nana_ui::theme::{space, type_scale};
 use nana_ui_core::{LengthSpec, SemanticColorRole};
 
 use super::Ui;
@@ -115,7 +116,7 @@ const GROUPS: [(&str, [Page; 3]); 3] = [
 /// its name.
 fn nav_row(ui: Ui, page: Page) -> AnyView {
     let selected = move || ui.page.get() == page;
-    widget(ListItem::new("").size(nana_ui::ControlSize::Medium))
+    widget(ListItem::new("").size(nana_ui::ControlSize::Small))
         .bind(move |item: &mut ListItem| {
             let label = super::I18N.t_in(ui.locale.get(), page.label_key());
             if item.label != label {
@@ -138,14 +139,14 @@ fn nav_row(ui: Ui, page: Page) -> AnyView {
         .into_any()
 }
 
-/// A group's 11px caption.
+/// A group's caption.
 fn nav_caption(ui: Ui, key: &'static str, first: bool) -> AnyView {
-    let mut st = controls::text_style(11.0, 600);
+    let mut st = controls::text_style(type_scale::HINT, type_scale::SEMIBOLD);
     {
         let l = Arc::make_mut(&mut st.layout);
-        l.margin_top = Some(LengthSpec::Px(if first { 6.0 } else { 14.0 }));
-        l.margin_bottom = Some(LengthSpec::Px(4.0));
-        l.padding_left = Some(LengthSpec::Px(10.0));
+        l.margin_top = Some(LengthSpec::Px(if first { space::SM } else { space::XXL }));
+        l.margin_bottom = Some(LengthSpec::Px(space::XS));
+        l.padding_left = Some(LengthSpec::Px(space::LG));
     }
     widget(
         Text::new(super::I18N.t_in(ui.locale.get_untracked(), key))
@@ -170,20 +171,20 @@ fn sidebar(ui: Ui) -> AnyView {
     let mut title = NodeStyle::default();
     {
         let l = Arc::make_mut(&mut title.layout);
-        l.font_size = Some(18.0);
-        l.font_weight = Some(700);
+        l.font_size = Some(type_scale::TITLE);
+        l.font_weight = Some(type_scale::BOLD);
     }
     widget(
-        Stack::column(2.0)
+        Stack::column(space::XXS)
             .width(LengthSpec::Px(196.0))
-            .padding_xy(10.0, 14.0)
+            .padding_xy(space::LG, space::XXL)
             .surface(SemanticColorRole::Subtle)
             .with_layout(|l| {
                 l.height = Some(LengthSpec::Fill);
             }),
     )
     .children((
-        widget(Stack::row(8.0).padding_xy(8.0, 6.0)).children((
+        widget(Stack::row(space::MD).padding_xy(space::MD, space::SM)).children((
             widget(
                 Stack::row(0.0)
                     .width(LengthSpec::Px(28.0))
@@ -221,12 +222,16 @@ pub fn settings_window(ui: Ui) -> impl IntoView {
         sidebar(ui),
         widget(Stack::fill_column(0.0)).children(
             widget(ScrollView::new(ScrollAxes::Vertical)).children(
-                widget(Stack::column(0.0).padding_xy(28.0, 22.0).max_width(860.0)).children(
-                    dynamic(
-                        move || (ui.page.get(), ui.locale.get()),
-                        move |(page, _)| pages::page(ui, *page),
-                    ),
-                ),
+                widget(Stack::column(0.0).max_width(860.0).with_layout(|l| {
+                    l.padding_top = Some(LengthSpec::Px(space::PAGE_TIGHT));
+                    l.padding_right = Some(LengthSpec::Px(space::PAGE));
+                    l.padding_bottom = Some(LengthSpec::Px(space::PAGE));
+                    l.padding_left = Some(LengthSpec::Px(space::PAGE));
+                }))
+                .children(dynamic(
+                    move || (ui.page.get(), ui.locale.get()),
+                    move |(page, _)| pages::page(ui, *page),
+                )),
             ),
         ),
     ))
