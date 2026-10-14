@@ -9,7 +9,7 @@ use nana_ui::runtime::view::{AnyView, IntoView, Transition, computed, dynamic, e
 use nana_ui::runtime::{NodeStyle, ScrollAxes, ScrollView, Stack, Text};
 use nana_ui_core::{
     AlignSpec, BackgroundImage, CssGradient, Easing, GradientStop, LengthSpec, LinearGradient,
-    OverflowSpec, PositionSpec,
+    OverflowSpec, PointerEventsSpec, PositionSpec,
 };
 use nanatype_core::HistoryRow;
 use nanatype_model::{Entrance, HistoryItem, LineId, Rgba8, SourceKind};
@@ -642,6 +642,13 @@ pub fn history_window(ui: Ui) -> impl IntoView {
                 l.position = PositionSpec::Relative;
                 if let Some(s) = &panel_surface {
                     s.apply(l);
+                }
+                // The list would scroll under the press. Layout mode moves
+                // the window; this view is rebuilt when the lock changes.
+                if ui.settings.with_untracked(|x| {
+                    x.overlays.history.lock == nanatype_settings::Lock::EditLayout
+                }) {
+                    l.pointer_events = Some(PointerEventsSpec::None);
                 }
             }))
             .children((

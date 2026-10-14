@@ -444,13 +444,22 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         });
     }
 
+    // Layout mode drags the window, so the box must not take the press.
+    // Rebuilt when the lock changes; the outline behind it stays hittable.
+    let drag_window = source == Source::Display
+        && ui
+            .settings
+            .with_untracked(|s| s.overlays.display.lock == nanatype_settings::Lock::EditLayout);
     let mut frame = widget(
         Stack::fill_column(0.0)
             .width(LengthSpec::Percent(width_fraction * 100.0))
-            .with_layout(|l| {
+            .with_layout(move |l| {
                 l.position = PositionSpec::Relative;
                 l.overflow_x = OverflowSpec::Visible;
                 l.overflow_y = OverflowSpec::Visible;
+                if drag_window {
+                    l.pointer_events = Some(PointerEventsSpec::None);
+                }
             }),
     );
     if source == Source::Display {

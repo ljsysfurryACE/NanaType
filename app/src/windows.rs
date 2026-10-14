@@ -29,6 +29,8 @@ pub enum WindowKind {
 pub const TOOLBAR_H: f32 = 48.0;
 /// Status line at the bottom of the input window.
 pub const STATUS_H: f32 = 26.0;
+/// Smallest a broadcast window may be dragged to.
+pub const OVERLAY_MIN: (f64, f64) = (160.0, 96.0);
 
 impl WindowKind {
     pub const OVERLAYS: [Self; 3] = [Self::Input, Self::Display, Self::History];
@@ -251,6 +253,12 @@ pub fn descriptor(kind: WindowKind, title: &str, skin: &Skin, s: &Settings) -> W
             d.constrain_to_work_area = true;
             d.resizable = kind == WindowKind::History;
             d.system_caption = false;
+            // The descriptor default (760×520) is clamped down to whatever
+            // size the window opens at, which freezes a broadcast window
+            // there. A small floor still stops a resize from collapsing it.
+            if matches!(kind, WindowKind::Display | WindowKind::History) {
+                d.minimum_size = OVERLAY_MIN;
+            }
             // Shown once placed, so nothing flashes at the default origin.
             d.visible = false;
         }
@@ -299,6 +307,17 @@ pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool
             || matches!(kind, WindowKind::History | WindowKind::Display)
                 && lock == Lock::EditLayout,
         size: size_of(kind, skin, s),
+    }
+}
+
+/// Whether an already-open window should be forced back to `desired`'s size.
+/// A broadcast window the user is resizing keeps the size under the pointer;
+/// the chat panel does too.
+pub fn pins_size(kind: WindowKind, resizable: bool) -> bool {
+    match kind {
+        WindowKind::Chat => false,
+        WindowKind::Display | WindowKind::History if resizable => false,
+        _ => true,
     }
 }
 
@@ -429,8 +448,7 @@ impl WindowManager {
                 });
                 slot.placed = true;
             } else if prev.as_ref().is_some_and(|p| p.size != d.size)
-                && !(*kind == WindowKind::History && prev.as_ref().is_some_and(|p| p.resizable))
-                && *kind != WindowKind::Chat
+                && prev.as_ref().is_some_and(|p| pins_size(*kind, p.resizable))
                 && let Some(f) = slot.frame
             {
                 out.push(WindowCommand::SetBounds {
@@ -544,5 +562,27 @@ mod tests {
         let mut s = Settings::default();
         s.overlays.history.size = Some([300.0, 900.0]);
         assert_eq!(size_of(WindowKind::History, &skin, &s), (300.0, 900.0));
+    }
+
+    #[test]
+    fn a_live_resize_is_not_overwritten() {
+        assert!(!pins_size(WindowKind::Display, true));
+        assert!(!pins_size(WindowKind::History, true));
+        assert!(pins_size(WindowKind::Display, false));
+        assert!(pins_size(WindowKind::History, false));
+        assert!(!pins_size(WindowKind::Chat, true));
+        assert!(pins_size(WindowKind::Input, false));
+    }
+
+    #[test]
+    fn broadcast_windows_can_shrink_below_the_descriptor_default() {
+        let skin = skin();
+        let s = Settings::default();
+        for kind in [WindowKind::Display, WindowKind::History] {
+            assert_eq!(
+                descriptor(kind, kind.key(), &skin, &s).minimum_size,
+                OVERLAY_MIN
+            );
+        }
     }
 }

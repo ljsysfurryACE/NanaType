@@ -591,8 +591,8 @@ impl RuntimeProgram for Host {
             && p.button == 0
             && !input.disposition.handled
         {
-            // Overlays have no title bar: in layout mode the whole window is a
-            // drag handle; the input window drags by its empty areas.
+            // Overlays have no title bar: in layout mode the interior is a
+            // drag handle. A press on the resize band never arrives here.
             let kind = WindowKind::from_id(id);
             let editing = kind
                 .and_then(|k| k.overlay(&self.app.settings))
