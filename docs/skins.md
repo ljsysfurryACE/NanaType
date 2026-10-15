@@ -4,6 +4,8 @@
 
 所有字段都有默认值（即未加修饰的「光环」的样子）。用 `base` 继承另一个皮肤时只需写不同的部分；表格逐层合并，其它值（包括 `[[dialogue.decor]]` 这样的数组）整体替换，写 `decor = []` 可清空继承来的装饰。
 
+通用界面采用独立的 NanaUI 中性配色，在设置 › 常规 › 界面外观中选择跟随系统、浅色或深色。只有展示框（含对方展示框）、历史记录框和输入编辑区域随皮肤变化；皮肤选择器中的缩略图、示例及色板也保留皮肤效果。输入窗工具栏、状态栏和弹幕面板均使用通用配色。旧皮肤的 `chrome` 字段仍可加载，供内容框的强调色、行内标签等效果使用，但不会改变应用界面。
+
 ## 内置皮肤
 
 | id | 名称 | 标签 | 特点 |
@@ -50,7 +52,7 @@ license = "CC-BY-4.0"
 preview = "preview.png"
 tags = ["cute", "streaming"]      # 选择器里的分类：classic streaming game retro cute elegant minimal
 
-[chrome]                          # 应用界面配色（设置、工具栏）
+[chrome]                          # 内容框配色参考；不影响设置、工具栏等通用界面
 appearance = "light"              # light | dark
 accent = "#e86a92"
 background = "#fff5f8"
@@ -58,15 +60,14 @@ surface = "#ffffff"
 text = "#3a2230"
 muted = "#7a5a68"
 border = "#f0cfdc"
-# highlight = "#e86a92"           # 直播/注意态（镜像中、录制快捷键、排队）的粉色角色；
-                                  # 省略时亮色界面为 #e86a92，暗色界面为 #ff8fb1
+# highlight = "#e86a92"           # 兼容旧皮肤的强调色；不改变应用的直播/注意态
 
-[chrome.dark]                     # 可选：用户把界面设为暗色而皮肤是亮色时使用
+[chrome.dark]                     # 兼容旧皮肤；不再用于应用界面配色
 surface = "#2a1a24"               # 键与 [chrome] 相同（accent / background / surface / text /
                                   # muted / border / success / warning / danger / highlight），都可省略
-# [chrome.light] 同理：皮肤是暗色而用户把界面设为亮色时使用
+# [chrome.light] 同样仅用于兼容旧皮肤
 
-[chrome.palette]                  # 可选：直接覆盖 NanaUI 的界面色角色（background surface subtle
+[chrome.palette]                  # 兼容旧皮肤；不再覆盖通用界面的颜色（background surface subtle
 hover = "#ffe9f1"                 #   hover active selected border text muted faint highlight）
 
 [fonts.body]                      # 台词字体；name（名牌）、accent（装饰文字）同理
@@ -277,15 +278,13 @@ screen_shake_px = 6
 contrast_guard = 3.0              # 自带颜色的文字与框色对比低于 3:1 时加 1.5px 描边（0 = 关）
 ```
 
-## 界面配色（chrome）
+## 内容配色参考（chrome）
 
-`[chrome]` 只决定设置窗口、输入框工具栏等应用控件的颜色，不影响展示框。NanaType 在把它交给界面之前会做几步处理，所以写得再鲜艳也不会糊满整个窗口：
+`[chrome]` 是旧皮肤清单保留的颜色表，不再决定设置窗口、工具栏、弹幕面板或其他通用控件的外观。`appearance` 仍用于皮肤选择器的明暗分类；`accent`、`surface`、`text` 等颜色仍可被内容框、行内标签和颜色角色引用。
 
-- **混合中性色**：`background` 与 `surface` 按饱和度向 Nana 的中性底色（亮色 `#eaf4fb` / `#ffffff`，暗色 `#0f1724` / `#18233a`）混合，最高混入 65%。接近灰色的颜色保持不变；像 pixel 的荧光绿这类高饱和色只留下色调，品牌感交给 `accent`。
-- **保证可读**：`text`、`muted` 在 `surface` 和 `background` 上至少 4.5:1，`success` / `warning` / `danger` 至少 3:1，不够时向文字色（或黑/白）推近；列表选中态与 `surface` 的亮度差（CIE L*）至少 6。
-- **明暗不一致**：用户把界面设为暗色而皮肤是亮色（或反过来）时，不再退回 NanaUI 的灰色，而是用 Nana 色调的对立面板：暗色为 background `#0f1724`、surface `#18233a`、text `#e6eef8`、muted `#9fb3cc`、border `#2c3d58`，亮色为上面清单的默认值；皮肤的 `accent` 与 `highlight` 照常保留。需要自己指定时写 `[chrome.dark]` / `[chrome.light]`。
-- **两种强调色**：`accent` 是主色（开关、滑块、每页唯一的主操作按钮——实心 accent，向右渐亮（文字仍保持 4.5:1），带 accent 色投影）；`highlight` 是暖色的第二强调色，只用于直播 / 注意态。按钮文字按对比度自动选黑或白。
-- **形状**：圆角档位为 4 / 8 / 12 / 16 / 20（色块与标签 / 控件 / 弹层 / 卡片 / 浮动条），胶囊为全圆角。亮色界面的设置卡片不描边，用 `0 8px 24px` 的文字色 16% 柔和阴影；暗色界面保留 1px 描边与 `0 10px 30px -12px #00000080` 阴影。
+`[chrome.dark]`、`[chrome.light]` 和 `[chrome.palette]` 继续接受加载，以兼容已有皮肤，但不会覆盖应用主题。界面明暗只由设置 › 常规 › 界面外观决定，默认跟随系统；旧配置的「跟随皮肤」自动改为跟随系统。
+
+通用界面使用 NanaUI 标准浅色、深色配色及固定强调色，保留现有圆角、间距、卡片阴影和动效。皮肤的个性化强调色只影响皮肤内容，不改变应用按钮或选中状态。
 
 ## 文字效果与对比度
 

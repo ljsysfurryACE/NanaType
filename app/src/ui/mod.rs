@@ -137,6 +137,8 @@ pub struct Ui {
     pub locale: Signal<Locale>,
     pub settings: Signal<Arc<Settings>>,
     pub skin: Signal<Arc<Skin>>,
+    /// Resolved application appearance, independent of the selected skin.
+    pub chrome_dark: Signal<bool>,
     pub display: Signal<Arc<DisplayView>>,
     pub peer_display: Signal<Arc<DisplayView>>,
     pub peer: Signal<Arc<crate::p2p::SessionUi>>,
@@ -218,6 +220,7 @@ impl Ui {
             )
         });
         Self {
+            chrome_dark: signal(crate::skin_theme::dark_mode(settings.skin.chrome, false)),
             locale: signal(locale),
             settings: signal(settings),
             skin: signal(skin),

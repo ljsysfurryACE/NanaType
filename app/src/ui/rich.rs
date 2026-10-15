@@ -326,6 +326,22 @@ impl Default for MentionLook {
 }
 
 impl MentionLook {
+    /// Inline labels in operator panels use the application palette.
+    pub fn for_ui(dark: bool) -> Self {
+        let p = crate::skin_theme::palette(dark);
+        let fill = crate::skin_theme::rgba8(p.surface);
+        let accent = crate::skin_theme::rgba8(p.accent);
+        let fill = mix(fill, accent, 0.16);
+        let text = crate::skin_theme::on(fill);
+        Self {
+            fill: crate::skin_theme::rgba(fill),
+            text: crate::skin_theme::rgba(text),
+            scale: 0.82,
+            avatar: true,
+            markers: MarkerLook { fill, text },
+        }
+    }
+
     pub fn from_skin(skin: &nanatype_theme::Skin) -> Self {
         let m = &skin.mention;
         let (fill, text) = mention_colors(skin);

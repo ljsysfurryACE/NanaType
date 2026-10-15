@@ -216,9 +216,9 @@ impl Default for SoundSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChromeMode {
-    /// The skin decides light or dark.
+    /// Application chrome follows the OS, independently of the skin.
     #[default]
-    Skin,
+    #[serde(alias = "skin")]
     System,
     Light,
     Dark,
@@ -250,6 +250,7 @@ impl SkinOverrides {
 pub struct SkinSettings {
     pub id: String,
     pub overrides: SkinOverrides,
+    /// Independent application appearance; path retained for saved-settings compatibility.
     pub chrome: ChromeMode,
     /// Reload folder skins when their files change (for skin authors).
     pub hot_reload: bool,
@@ -260,7 +261,7 @@ impl Default for SkinSettings {
         Self {
             id: DEFAULT_SKIN.into(),
             overrides: SkinOverrides::default(),
-            chrome: ChromeMode::Skin,
+            chrome: ChromeMode::System,
             hot_reload: false,
         }
     }

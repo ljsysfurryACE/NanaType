@@ -28,7 +28,7 @@ fn vector_alpha_tail_and_same_node_palette_updates_survive_dpi_changes() {
         let id = DocumentId::new(1).unwrap();
         let mut doc = RuntimeDocument::new(id);
         doc.context_mut()
-            .set_theme_tokens(nanatype::skin_theme::compile(&skin, false))
+            .set_theme_tokens(nanatype::skin_theme::compile(false))
             .unwrap();
         doc.context_mut()
             .mount_view_root(id, move || {

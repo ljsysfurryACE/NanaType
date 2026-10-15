@@ -29,7 +29,7 @@ use nanatype_model::{
     AssetRef, Atom, AtomKind, ContinuousKind, EntranceKind, Inline, Marker, Pace, Rgba8, Shadow,
     Stroke, VtsAction,
 };
-use nanatype_settings::{ChromeMode, InputMode, SendKey, Settings};
+use nanatype_settings::{InputMode, SendKey, Settings};
 
 use super::dialogue::{Base, Source, dialogue_box};
 use super::rich::{ChipKind, MarkerLook};
@@ -73,57 +73,15 @@ const GLYPH: f32 = 14.0;
 /// Icon-button hit target.
 const TARGET: f32 = 28.0;
 
-/// The toolbar's resting ink: the chrome's text at 75%, while the window
-/// wears the skin's own chrome. `None` (another light or dark mode is
-/// forced) leaves the theme's muted ink.
-fn tool_ink(ui: Ui) -> Option<[f32; 4]> {
-    let skin = ui.skin.get_untracked();
-    let chrome = &skin.chrome;
-    let dark = chrome.appearance == nanatype_theme::Appearance::Dark;
-    let own = match ui.settings.with_untracked(|s| s.skin.chrome) {
-        ChromeMode::Skin => true,
-        ChromeMode::Light => !dark,
-        ChromeMode::Dark => dark,
-        ChromeMode::System => false,
-    };
-    own.then(|| {
-        let text = chrome.palette.get("text").copied().unwrap_or(chrome.text);
-        let [r, g, b, _] = c(text);
-        [r, g, b, 0.75]
-    })
-}
-
 /// A toolbar icon button: the shared glyph size in a 28px square, in the
 /// toolbar ink.
-fn tool_button(
-    icon: nana_ui::runtime::Icon,
-    label: String,
-    tip: String,
-    ink: Option<[f32; 4]>,
-) -> IconButton {
+fn tool_button(icon: nana_ui::runtime::Icon, label: String, tip: String) -> IconButton {
     // Large is the size whose glyph is GLYPH; the square stays 28px.
     let mut b = IconButton::new(icon, label)
         .size(ControlSize::Large)
         .with_tooltip(tip);
     b.style.square = Some(SquareSize::IconButton);
-    if let Some(ink) = ink {
-        b = b.colors_from_style();
-        paint_tool(&mut b.style, ink, false);
-    }
     b
-}
-
-/// Rest a toolbar button in `ink`, or in the soft accent while pressed.
-fn paint_tool(style: &mut NodeStyle, ink: [f32; 4], selected: bool) {
-    if selected {
-        style.background = Some(SemanticColorRole::AccentSoft);
-        style.foreground = Some(SemanticColorRole::AccentOnSoft);
-        Arc::make_mut(&mut style.layout).color = None;
-    } else {
-        style.background = None;
-        style.foreground = None;
-        Arc::make_mut(&mut style.layout).color = Some(ink);
-    }
 }
 
 /// "Bold · Ctrl+B": a tooltip with the tool's shortcut.
@@ -141,14 +99,9 @@ fn tool(
     label: &'static str,
     msg: impl Fn() -> Msg + Send + 'static,
 ) -> AnyView {
-    widget(tool_button(
-        icon,
-        ui.now_t(label),
-        ui.now_t(label),
-        tool_ink(ui),
-    ))
-    .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
-    .into_any()
+    widget(tool_button(icon, ui.now_t(label), ui.now_t(label)))
+        .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(msg()))
+        .into_any()
 }
 
 /// A toolbar toggle (bold, italic…) shown pressed while the whole selection
@@ -161,20 +114,15 @@ fn toggle(
     tool_of: fn() -> Tool,
     pressed: fn(&RichSelectionAttrs) -> bool,
 ) -> AnyView {
-    let ink = tool_ink(ui);
     widget(tool_button(
         icon,
         ui.now_t(label),
         with_shortcut(ui.now_t(label), keys),
-        ink,
     ))
     .bind(move |b: &mut IconButton| {
         let on = !ui.source_mode.get() && ui.sel_attrs.with(pressed);
         if b.selected != on {
             b.selected = on;
-            if let Some(ink) = ink {
-                paint_tool(&mut b.style, ink, on);
-            }
         }
     })
     .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(act(tool_of())))
@@ -201,20 +149,15 @@ fn is_strike(a: &RichSelectionAttrs) -> bool {
 
 /// Swaps the editor for the draft's markup source.
 fn source_toggle(ui: Ui) -> AnyView {
-    let ink = tool_ink(ui);
     widget(tool_button(
         ti::CODE,
         ui.now_t("tb-source"),
         ui.now_t("tb-source"),
-        ink,
     ))
     .bind(move |b: &mut IconButton| {
         let on = ui.source_mode.get();
         if b.selected != on {
             b.selected = on;
-            if let Some(ink) = ink {
-                paint_tool(&mut b.style, ink, on);
-            }
         }
     })
     .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::ToggleSource))
@@ -223,28 +166,19 @@ fn source_toggle(ui: Ui) -> AnyView {
 
 /// A menu trigger's face. A bare glyph is centred in the box left after the
 /// trigger's own `space::LG` padding, so the hit target stays [`TARGET`].
-fn trigger_face(
-    icon: nana_ui::runtime::Icon,
-    label: Option<String>,
-    ink: Option<[f32; 4]>,
-) -> AnyView {
-    let mut glyph = IconGlyph::new(icon).size(GLYPH).decorative();
-    if let Some(ink) = ink {
-        glyph.style.foreground = None;
-        Arc::make_mut(&mut glyph.style.layout).color = Some(ink);
-    }
+fn trigger_face(icon: nana_ui::runtime::Icon, label: Option<String>) -> AnyView {
+    let glyph = IconGlyph::new(icon).size(GLYPH).decorative();
     match label {
         Some(label) => {
             let mut st = text_style(12.0, 500);
             {
                 let l = Arc::make_mut(&mut st.layout);
                 l.white_space_nowrap = true;
-                l.color = ink;
             }
-            let mut text = Text::new(label).decorative().style(st);
-            if ink.is_none() {
-                text = text.color(SemanticColorRole::Muted);
-            }
+            let text = Text::new(label)
+                .decorative()
+                .style(st)
+                .color(SemanticColorRole::Muted);
             widget(Stack::row(space::XS).align(AlignSpec::Center))
                 .children((widget(glyph), widget(text)))
                 .into_any()
@@ -280,7 +214,6 @@ fn text_style(size: f32, weight: u16) -> NodeStyle {
 
 /// A popover whose open state the app keeps, so items can close it.
 fn popover(
-    ui: Ui,
     icon: nana_ui::runtime::Icon,
     label: String,
     width: f32,
@@ -294,7 +227,7 @@ fn popover(
             .width(width)
             .bare_trigger(true),
     )
-    .trigger(trigger_face(icon, None, tool_ink(ui)))
+    .trigger(trigger_face(icon, None))
     .bind(move |p: &mut Popover| p.open = open.get())
     .on(move |e: &PopoverToggled| open.set(e.open))
     .on(move |_: &PopoverClosed| open.set(false))
@@ -315,14 +248,13 @@ fn item(label: String, open: Signal<bool>, msg: impl Fn() -> Msg + Send + 'stati
 /// An action menu behind a toolbar glyph, labelled beside the glyph when
 /// `labelled` (the menus whose glyph alone does not say what they hold).
 fn menu(
-    ui: Ui,
     icon: nana_ui::runtime::Icon,
     label: String,
     labelled: bool,
     open: Signal<bool>,
     items: Vec<AnyView>,
 ) -> AnyView {
-    let face = trigger_face(icon, labelled.then(|| label.clone()), tool_ink(ui));
+    let face = trigger_face(icon, labelled.then(|| label.clone()));
     widget(ActionMenu::new().trigger(label).bare_trigger(true))
         .trigger(face)
         .bind(move |m: &mut ActionMenu| m.popover.open = open.get())
@@ -740,8 +672,7 @@ fn sheet_row(lead: AnyView, lead_w: f32, meaning: String) -> AnyView {
 /// The `?` sheet: the markers the editor shows as chips with what each does,
 /// and the input window's own keys.
 pub fn cheat_sheet(ui: Ui) -> AnyView {
-    let skin = ui.skin.get_untracked();
-    let look = MarkerLook::from_skin(&skin);
+    let look = super::rich::MentionLook::for_ui(ui.chrome_dark.get_untracked()).markers;
     let t = |k: &str| ui.now_t(k);
     let markers: Vec<AnyView> = [
         (ChipKind::Wait, ti::CLOCK, "[wait=500]", "cheat-wait"),
@@ -874,12 +805,12 @@ fn toolbar(ui: Ui) -> AnyView {
     let key = move || {
         (
             ui.locale.get(),
+            ui.chrome_dark.get(),
             ui.skin.with(|s| Arc::as_ptr(s) as usize),
             ui.settings.with(|s| {
                 (
                     s.general.input_mode,
                     s.general.send_key,
-                    s.skin.chrome,
                     s.assets.phrases.len(),
                 )
             }),
@@ -1077,7 +1008,6 @@ fn toolbar(ui: Ui) -> AnyView {
             ),
             divider(),
             popover(
-                ui,
                 ti::PALETTE,
                 t("tb-color"),
                 220.0,
@@ -1085,7 +1015,6 @@ fn toolbar(ui: Ui) -> AnyView {
                 color_panel(ui, color_open),
             ),
             popover(
-                ui,
                 ti::TEXT_SIZE,
                 t("tb-size"),
                 240.0,
@@ -1094,7 +1023,6 @@ fn toolbar(ui: Ui) -> AnyView {
             ),
         ];
         let stroke = popover(
-            ui,
             ti::BORDER_OUTER,
             t("tb-stroke"),
             250.0,
@@ -1102,7 +1030,6 @@ fn toolbar(ui: Ui) -> AnyView {
             stroke_panel(ui, stroke_open),
         );
         let ruby = popover(
-            ui,
             ti::LANGUAGE_HIRAGANA,
             t("tb-ruby"),
             240.0,
@@ -1110,7 +1037,6 @@ fn toolbar(ui: Ui) -> AnyView {
             ruby_panel(ui, ruby_open),
         );
         let sticker = popover(
-            ui,
             ti::STICKER,
             t("tb-sticker"),
             360.0,
@@ -1118,7 +1044,6 @@ fn toolbar(ui: Ui) -> AnyView {
             sticker_panel(ui, sticker_open),
         );
         let expression = popover(
-            ui,
             ti::MOOD_SMILE,
             t("tb-expression"),
             260.0,
@@ -1126,15 +1051,14 @@ fn toolbar(ui: Ui) -> AnyView {
             expression_panel(ui, expr_open),
         );
         let help = popover(
-            ui,
             ti::HELP,
             t("tb-cheatsheet"),
             620.0,
             help_open,
             cheat_sheet(ui),
         );
-        let effects_menu = menu(ui, ti::SPARKLES, t("tb-effects"), true, fx_open, effects);
-        let pacing_menu = menu(ui, ti::HOURGLASS, t("tb-pacing"), true, pace_open, pacing);
+        let effects_menu = menu(ti::SPARKLES, t("tb-effects"), true, fx_open, effects);
+        let pacing_menu = menu(ti::HOURGLASS, t("tb-pacing"), true, pace_open, pacing);
         // The popovers of folded tools stay mounted, invisible and out of the
         // flow, so the "…" menu can open them in place.
         let mut hidden: Vec<AnyView> = Vec::new();
@@ -1162,14 +1086,13 @@ fn toolbar(ui: Ui) -> AnyView {
                 widget(Divider::horizontal()).into_any(),
             ];
             items.extend(inserts);
-            bar.push(menu(ui, ti::DOTS, t("tb-more"), false, more_open, items));
+            bar.push(menu(ti::DOTS, t("tb-more"), false, more_open, items));
             bar.push(help);
             hidden.extend([stroke, ruby, sticker, expression]);
         } else {
             bar.extend([stroke, ruby, divider()]);
             bar.extend([effects_menu, pacing_menu, sticker, expression]);
             bar.push(menu(
-                ui,
                 ti::TEXT_PLUS,
                 t("tb-insert"),
                 false,
@@ -1199,14 +1122,7 @@ fn toolbar(ui: Ui) -> AnyView {
         let mut pinned: Vec<AnyView> = vec![
             group_divider(),
             mode_switch.into_any(),
-            menu(
-                ui,
-                ti::MESSAGE,
-                t("tb-phrases"),
-                false,
-                phrase_open,
-                phrases,
-            ),
+            menu(ti::MESSAGE, t("tb-phrases"), false, phrase_open, phrases),
             tool(ui, ti::SETTINGS, "window-settings", || Msg::OpenSettings),
         ];
         if mode == InputMode::Compose {
@@ -1390,12 +1306,11 @@ fn status_line(ui: Ui) -> AnyView {
 /// button that drops it.
 fn reply_bar(ui: Ui) -> AnyView {
     dynamic(
-        move || ui.reply.get(),
-        move |reply| {
+        move || (ui.reply.get(), ui.chrome_dark.get()),
+        move |(reply, _)| {
             let Some(reply) = reply else {
                 return widget(Stack::row(0.0)).into_any();
             };
-            let skin = ui.skin.get_untracked();
             let mut label = NodeStyle::default();
             {
                 let l = Arc::make_mut(&mut label.layout);
@@ -1431,7 +1346,9 @@ fn reply_bar(ui: Ui) -> AnyView {
                     reply.user.avatar.as_ref().map(ToString::to_string),
                     &reply.user.name,
                     18.0,
-                    super::c(skin.chrome.accent),
+                    crate::skin_theme::palette(ui.chrome_dark.get())
+                        .accent
+                        .as_rgba_array(),
                 ),
                 widget(Stack::row(0.0).with_layout(|l| {
                     l.flex_grow = Some(1.0);
@@ -1720,7 +1637,7 @@ mod tests {
                         let mut document = RuntimeDocument::new(id);
                         document
                             .context_mut()
-                            .set_theme_tokens(crate::skin_theme::compile(&skin, false))
+                            .set_theme_tokens(crate::skin_theme::compile(false))
                             .unwrap();
                         document
                             .context_mut()

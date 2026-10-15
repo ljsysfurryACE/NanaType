@@ -18,10 +18,7 @@ fn render_at(ui: Ui, remote: bool, path: &Path) -> image::RgbaImage {
     let id = DocumentId::new(if remote { 6 } else { 2 }).unwrap();
     let mut doc = RuntimeDocument::new(id);
     doc.context_mut()
-        .set_theme_tokens(nanatype::skin_theme::compile(
-            &ui.skin.get_untracked(),
-            false,
-        ))
+        .set_theme_tokens(nanatype::skin_theme::compile(false))
         .unwrap();
     doc.context_mut()
         .mount_view_root(id, move || {

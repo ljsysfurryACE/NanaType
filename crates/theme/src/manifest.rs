@@ -566,8 +566,8 @@ impl Default for Meta {
     }
 }
 
-/// Colours for the app's own controls (settings, toolbar). Roles left out
-/// derive from `accent`, `surface` and `text`.
+/// Legacy skin colour table, still used by content boxes and inline labels.
+/// Operator controls use an independent application theme.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Chrome {
@@ -581,17 +581,13 @@ pub struct Chrome {
     pub success: Rgba8,
     pub warning: Rgba8,
     pub danger: Rgba8,
-    /// The warm second accent for live and attention states (mirroring,
-    /// recording a hotkey, queued lines). Unset: Nana pink, `#e86a92` on a
-    /// light chrome and `#ff8fb1` on a dark one.
+    /// Legacy secondary accent; does not affect application controls.
     pub highlight: Option<Rgba8>,
-    /// Colours for when the chrome is drawn dark although the skin is light
-    /// (`[chrome.dark]`), over the Nana-tinted dark counterpart.
+    /// Legacy `[chrome.dark]` colours, retained for manifest compatibility.
     pub dark: Option<ChromeVariant>,
-    /// Colours for when the chrome is drawn light although the skin is dark
-    /// (`[chrome.light]`), over the Nana light counterpart.
+    /// Legacy `[chrome.light]` colours, retained for manifest compatibility.
     pub light: Option<ChromeVariant>,
-    /// Any other `SemanticPalette` role by name, for full control.
+    /// Legacy named palette overrides; no longer applied to operator controls.
     pub palette: BTreeMap<String, Rgba8>,
 }
 

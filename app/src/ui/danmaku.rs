@@ -1,5 +1,5 @@
 //! The chat panel: live chat from blivechat for the streamer to read and
-//! answer. The operator can choose compact rows or the current history skin.
+//! answer. The operator can choose compact rows or neutral history cards.
 //! Both presentations share hover/focus actions and the same retained feed.
 //!
 //! Each message has two buttons: **@** puts a label with the viewer's avatar
@@ -27,9 +27,10 @@ use nanatype_settings::{ChatFilter, ChatPanelStyle, Settings};
 
 use super::history;
 use super::rich::{Env, Look, MentionLook, to_rich};
-use super::{I18N, Ui, c};
+use super::{I18N, Ui};
 use crate::chat::{ChatKind, ChatMessage, super_chat_color};
 use crate::msg::Msg;
+use crate::skin_theme::{palette, rgba8};
 
 /// Disjoint identities keep live chat and local lines from colliding in this feed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -192,9 +193,15 @@ fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
             };
             match style {
                 ChatPanelStyle::Compact => compact_message(ui, source, width, actions),
-                ChatPanelStyle::History => {
-                    history::message_view(ui, source, false, Some(width - 28.0), actions)
-                }
+                ChatPanelStyle::History => widget(
+                    Stack::column(0.0)
+                        .surface(SemanticColorRole::Surface)
+                        .padding_xy(10.0, 8.0)
+                        .radius(nana_ui_core::RadiusTier::Sm)
+                        .width(LengthSpec::Fill),
+                )
+                .children(compact_message(ui, source, width - 20.0, actions))
+                .into_any(),
             }
         },
     );
@@ -214,8 +221,7 @@ fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
     .bind(move |s: &mut Stack| {
         let selected = matches!(source, RowSource::Chat(seq) if ui.chat_target.get() == Some(seq));
         let active = selected || hovered.get() || focused.get();
-        let skin = ui.skin.get();
-        let mut accent = c(skin.chrome.accent);
+        let mut accent = palette(ui.chrome_dark.get()).accent.as_rgba_array();
         let border = if active { accent } else { [0.0; 4] };
         accent[3] = if selected {
             0.12
@@ -342,7 +348,6 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
     let Some(row) = source.get(ui) else {
         return widget(Stack::row(0.0)).into_any();
     };
-    let skin = ui.skin.get_untracked();
     let host = matches!(source, RowSource::History(_));
     // List and row padding, scrollbar, 24px avatar and its 8px gap.
     let col_w = (width - 74.0).max(100.0);
@@ -443,15 +448,17 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
             .truncating(),
         )
     });
+    let dark = ui.chrome_dark.get_untracked();
+    let colors = palette(dark);
     let look = Look {
         size: 14.0,
-        color: skin.chrome.text,
+        color: rgba8(colors.text),
         weight: 400,
         line_height: 1.35,
         body: None,
         name: None,
         accent: None,
-        mention: MentionLook::from_skin(&skin),
+        mention: MentionLook::for_ui(dark),
         ink: None,
     };
     let mut body_style = text_style(14.0, 400);
@@ -500,7 +507,7 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
             row.item.avatar.clone(),
             &row.item.author,
             24.0,
-            c(skin.chrome.accent),
+            colors.accent.as_rgba_array(),
         ),
         widget(
             Stack::column(2.0)
@@ -793,7 +800,7 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
         move || {
             (
                 ui.chat_width.get().round() as i32,
-                Arc::as_ptr(&ui.skin.get()) as usize,
+                ui.chrome_dark.get(),
                 ui.locale.get(),
                 ui.reduced_motion.get(),
             )

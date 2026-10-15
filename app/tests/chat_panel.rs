@@ -58,7 +58,7 @@ fn panel(
     let id = DocumentId::new(1).unwrap();
     let mut doc = RuntimeDocument::new(id);
     doc.context_mut()
-        .set_theme_tokens(nanatype::skin_theme::compile(&skin, false))
+        .set_theme_tokens(nanatype::skin_theme::compile(false))
         .unwrap();
     doc.context_mut()
         .mount_view_root(id, move || danmaku::chat_window(ui))
@@ -337,4 +337,116 @@ fn changing_style_retains_reading_anchor_reply_and_draft() {
         newest.bounds.y >= 76.0 && newest.bounds.y < 450.0,
         "new messages follow after returning to latest"
     );
+}
+
+#[test]
+fn switching_skins_does_not_restyle_either_operator_layout() {
+    for style in [ChatPanelStyle::Compact, ChatPanelStyle::History] {
+        let (ui, mut session) = panel("nanatype.halo", Locale::ZhCn, style, 400, 2);
+        let mut messages = (*ui.chat.get_untracked()).clone();
+        Arc::make_mut(&mut messages[0]).doc =
+            nanatype_markup::parse(r#"正文 [at=7 name="观众"]"#).doc;
+        ui.chat.set(Arc::new(messages));
+        ui.chat_target.set(Some(1));
+        for dark in [false, true, false] {
+            ui.chrome_dark.set(dark);
+            session
+                .document_mut()
+                .context_mut()
+                .set_theme_tokens(nanatype::skin_theme::compile(dark))
+                .unwrap();
+            session.flush().unwrap();
+            let world = session.document().context().world();
+            let body = session
+                .accessibility_dump()
+                .iter()
+                .filter_map(|n| world.rich_text(StableNodeId::new(n.id).unwrap()))
+                .find(|text| text.text().starts_with("正文"))
+                .unwrap();
+            let label = body.objects()[0].1.label_style().unwrap();
+            let expected = nanatype::ui::rich::MentionLook::for_ui(dark);
+            assert_eq!((label.fill, label.text), (expected.fill, expected.text));
+            assert_skin_independent(ui, &mut session);
+        }
+    }
+}
+
+fn styles(session: &RuntimeAgentSession) -> Vec<String> {
+    let world = session.document().context().world();
+    session
+        .accessibility_dump()
+        .iter()
+        .map(|n| {
+            let id = StableNodeId::new(n.id).unwrap();
+            let style = world.node_style(id).unwrap();
+            format!(
+                "{:?} {:?} {:?} {:?} {:?} {:?}",
+                n.label,
+                n.bounds,
+                style.layout,
+                style.foreground,
+                style.background,
+                world.rich_text(id)
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn general_settings_keep_their_style_when_the_skin_changes() {
+    use nanatype::ui::settings;
+    let mut config = Settings::default();
+    config.general.onboarding_done = true;
+    let ui = Ui::new(
+        Arc::new(config),
+        nanatype_theme::SkinRegistry::new(None, "1.0.0")
+            .load("nanatype.halo")
+            .unwrap()
+            .skin,
+        Locale::ZhCn,
+    );
+    let id = DocumentId::new(1).unwrap();
+    let mut doc = RuntimeDocument::new(id);
+    doc.context_mut()
+        .set_theme_tokens(nanatype::skin_theme::compile(false))
+        .unwrap();
+    doc.context_mut()
+        .mount_view_root(id, move || settings::settings_window(ui))
+        .unwrap();
+    let mut session = RuntimeAgentSession::new(doc, 920, 660).unwrap();
+    session.flush().unwrap();
+    assert!(has_label(&session, &ui.now_t("general-appearance")));
+    for dark in [false, true] {
+        ui.chrome_dark.set(dark);
+        session
+            .document_mut()
+            .context_mut()
+            .set_theme_tokens(nanatype::skin_theme::compile(dark))
+            .unwrap();
+        session.flush().unwrap();
+        assert_skin_independent(ui, &mut session);
+    }
+    ui.page.set(settings::Page::Skins);
+    session.flush().unwrap();
+    assert!(!has_label(&session, &ui.now_t("general-appearance")));
+}
+
+fn assert_skin_independent(ui: Ui, session: &mut RuntimeAgentSession) {
+    let registry = nanatype_theme::SkinRegistry::new(None, "1.0.0");
+    let before = styles(session);
+    for skin in [
+        "nanatype.night",
+        "nanatype.pixel",
+        "nanatype.sakura",
+        "nanatype.halo",
+    ] {
+        ui.skin.set(registry.load(skin).unwrap().skin);
+        session.flush().unwrap();
+        assert_eq!(
+            styles(session),
+            before,
+            "{skin}, dark={}",
+            ui.chrome_dark.get_untracked()
+        );
+    }
 }

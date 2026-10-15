@@ -133,6 +133,34 @@ fn general(ui: Ui) -> AnyView {
                     row(ui, "general-language", None, language_select(ui)),
                     row(
                         ui,
+                        "general-appearance",
+                        None,
+                        select(
+                            ui,
+                            select_keys(
+                                ui,
+                                &[
+                                    ("system", "general-appearance-system"),
+                                    ("light", "general-appearance-light"),
+                                    ("dark", "general-appearance-dark"),
+                                ],
+                            ),
+                            |s| match s.skin.chrome {
+                                ChromeMode::System => "system".into(),
+                                ChromeMode::Light => "light".into(),
+                                ChromeMode::Dark => "dark".into(),
+                            },
+                            |s, v| {
+                                s.skin.chrome = match v {
+                                    "light" => ChromeMode::Light,
+                                    "dark" => ChromeMode::Dark,
+                                    _ => ChromeMode::System,
+                                }
+                            },
+                        ),
+                    ),
+                    row(
+                        ui,
                         "general-speaker",
                         Some("general-speaker-hint"),
                         speaker_field(ui),
@@ -1042,9 +1070,10 @@ fn skins(ui: Ui) -> AnyView {
                 ui.settings.with(|s| s.skin.id.clone()),
                 filter.get(),
                 grid.get(),
+                ui.chrome_dark.get(),
             )
         },
-        move |(_, active, shown, grid)| {
+        move |(_, active, shown, grid, _)| {
             let locale = ui.locale.get_untracked();
             let skins = ui.skins.get_untracked();
             let rows = skins
@@ -1202,45 +1231,12 @@ fn skins(ui: Ui) -> AnyView {
             section(
                 ui,
                 "skins-interface",
-                vec![
-                    row(
-                        ui,
-                        "skins-chrome",
-                        None,
-                        select(
-                            ui,
-                            select_keys(
-                                ui,
-                                &[
-                                    ("skin", "skins-chrome-skin"),
-                                    ("system", "skins-chrome-system"),
-                                    ("light", "skins-chrome-light"),
-                                    ("dark", "skins-chrome-dark"),
-                                ],
-                            ),
-                            |s| match s.skin.chrome {
-                                ChromeMode::Skin => "skin".into(),
-                                ChromeMode::System => "system".into(),
-                                ChromeMode::Light => "light".into(),
-                                ChromeMode::Dark => "dark".into(),
-                            },
-                            |s, v| {
-                                s.skin.chrome = match v {
-                                    "system" => ChromeMode::System,
-                                    "light" => ChromeMode::Light,
-                                    "dark" => ChromeMode::Dark,
-                                    _ => ChromeMode::Skin,
-                                }
-                            },
-                        ),
-                    ),
-                    row(
-                        ui,
-                        "skins-hot-reload",
-                        Some("skins-hot-reload-hint"),
-                        switch(ui, |s| s.skin.hot_reload, |s, v| s.skin.hot_reload = v),
-                    ),
-                ],
+                vec![row(
+                    ui,
+                    "skins-hot-reload",
+                    Some("skins-hot-reload-hint"),
+                    switch(ui, |s| s.skin.hot_reload, |s, v| s.skin.hot_reload = v),
+                )],
             ),
         ))
         .into_any()
@@ -1580,11 +1576,7 @@ fn skin_card(
 ) -> AnyView {
     let usable = skin.error.is_none();
     let previewed = previewed(ui, previewing, skin.id.clone());
-    let dark = crate::skin_theme::dark_mode(
-        &ui.skin.get_untracked(),
-        ui.settings.with_untracked(|s| s.skin.chrome),
-        false,
-    );
+    let dark = ui.chrome_dark.get_untracked();
     let backdrop = BackgroundImage::url(checker_url(dark));
     let well = widget(
         Stack::row(0.0)
@@ -1872,13 +1864,14 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
         // The overrides and the active skin both show up as a new `ui.skin`.
         (
             previewing.get(),
+            ui.chrome_dark.get(),
             ui.settings.with(|s| s.skin.id.clone()),
             ui.skins.with(|s| Arc::as_ptr(s) as usize),
             ui.skin.with(|s| Arc::as_ptr(s) as usize),
             ui.locale.get(),
         )
     };
-    dynamic(key, move |(want, active, _, _, locale)| {
+    dynamic(key, move |(want, _, active, _, _, locale)| {
         let locale = *locale;
         let id = want.clone().unwrap_or_else(|| active.clone());
         let rows = ui.skins.get_untracked();
@@ -1918,11 +1911,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
         let sample = dialogue::preview_box(ui, ctx, &doc);
         // A transparency checkerboard in the chrome's tone, so boxless and
         // translucent skins read as see-through.
-        let dark = crate::skin_theme::dark_mode(
-            &ui.skin.get_untracked(),
-            ui.settings.with_untracked(|s| s.skin.chrome),
-            false,
-        );
+        let dark = ui.chrome_dark.get_untracked();
         let backdrop = BackgroundImage::url(checker_url(dark));
         let stage = widget(
             Stack::row(0.0)

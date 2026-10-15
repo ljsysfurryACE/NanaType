@@ -8,6 +8,7 @@
 //! track, reduced-motion poses and long-name/narrow-region fixtures.
 //! `NANATYPE_SNAPSHOT_SKINS_DIR` loads saved `id/skin.toml` manifests for
 //! comparisons of built-in skins (self-contained manifests, no inheritance).
+//! `NANATYPE_SNAPSHOT_APPEARANCE=dark` selects neutral dark application chrome.
 //! `NANATYPE_SNAPSHOT_SCALE` captures at a physical pixel scale (default 1).
 
 use std::path::PathBuf;
@@ -518,10 +519,13 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
     settings.history.chat.enabled = true;
     settings.integrations.blivechat.enabled = true;
     settings.integrations.blivechat.room = "21452505".into();
-    let theme = nanatype::skin_theme::compile(
-        &skin,
-        skin.chrome.appearance == nanatype_theme::Appearance::Dark,
-    );
+    let dark = std::env::var("NANATYPE_SNAPSHOT_APPEARANCE").is_ok_and(|v| v == "dark");
+    settings.skin.chrome = if dark {
+        nanatype_settings::ChromeMode::Dark
+    } else {
+        nanatype_settings::ChromeMode::Light
+    };
+    let theme = nanatype::skin_theme::compile(dark);
     let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), locale);
     ui.skins
         .set(Arc::new(nanatype::ui::skin_rows(registry, locale)));
@@ -870,6 +874,15 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
             .mount_view_root(id, move || danmaku::chat_window(ui))
             .unwrap();
     });
+    let mut card_settings = (*ui.settings.get_untracked()).clone();
+    card_settings.integrations.blivechat.panel_style = nanatype_settings::ChatPanelStyle::History;
+    ui.settings.set(Arc::new(card_settings));
+    shot("chat-cards", out, 400, 640, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || danmaku::chat_window(ui))
+            .unwrap();
+    });
+    ui.settings.set(Arc::new(settings.clone()));
     for page in settings::Page::ALL {
         ui.page.set(page);
         shot(

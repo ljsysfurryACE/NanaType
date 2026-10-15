@@ -52,7 +52,7 @@ fn card_actions_fit_and_preserve_the_draft_in_each_locale() {
             let mut document = RuntimeDocument::new(id);
             document
                 .context_mut()
-                .set_theme_tokens(nanatype::skin_theme::compile(&skin, false))
+                .set_theme_tokens(nanatype::skin_theme::compile(false))
                 .unwrap();
             document
                 .context_mut()

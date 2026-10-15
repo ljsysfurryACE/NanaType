@@ -148,11 +148,10 @@ impl App {
             ctx.system_appearance(),
             Some(nana_ui_platform::SystemAppearance::Dark)
         );
-        let theme = skin_theme::compile(
-            &skin,
-            skin_theme::dark_mode(&skin, settings.skin.chrome, system_dark),
-        );
+        let theme = skin_theme::compile(skin_theme::dark_mode(settings.skin.chrome, system_dark));
         let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), locale);
+        ui.chrome_dark
+            .set(skin_theme::dark_mode(settings.skin.chrome, system_dark));
         ui.system_reduced_motion.set(ctx.reduced_motion());
         ui.reduced_motion
             .set(settings.playback.reduced_motion || ctx.reduced_motion());
@@ -660,13 +659,19 @@ impl App {
             self.ui.locale.get_untracked().tag(),
         ));
         self.skin = skin.clone();
-        let dark = skin_theme::dark_mode(&skin, self.settings.skin.chrome, self.system_dark);
-        self.theme = skin_theme::compile(&skin, dark);
-        self.theme_changed = true;
-        self.tint_captions();
+
         self.ui.skin.set(skin.clone());
         let fx = self.core.handle(Cmd::SetSkin(skin), clock::now_ms());
         self.apply_effects(fx);
+    }
+
+    /// Refresh operator chrome without reloading assets or changing content boxes.
+    pub fn refresh_theme(&mut self) {
+        let dark = skin_theme::dark_mode(self.settings.skin.chrome, self.system_dark);
+        self.theme = skin_theme::compile(dark);
+        self.ui.chrome_dark.set(dark);
+        self.theme_changed = true;
+        self.tint_captions();
     }
 
     // ---- services ---------------------------------------------------------
@@ -834,8 +839,8 @@ impl App {
         let s = &self.settings;
         let locale_changed = locale_of(&prev) != locale_of(s);
         let skin_changed = prev.skin.id != s.skin.id;
-        let look_changed =
-            prev.skin.overrides != s.skin.overrides || prev.skin.chrome != s.skin.chrome;
+        let look_changed = prev.skin.overrides != s.skin.overrides;
+        let chrome_changed = prev.skin.chrome != s.skin.chrome;
         let assets_changed = prev.assets.sticker_dirs != s.assets.sticker_dirs;
         let device_changed = prev.sound.device != s.sound.device;
         let autostart_changed = prev.general.launch_at_login != s.general.launch_at_login;
@@ -844,8 +849,11 @@ impl App {
             Ordering::Relaxed,
         );
         self.sync_reduced_motion();
+        if chrome_changed {
+            self.refresh_theme();
+        }
         if locale_changed {
-            let locale = locale_of(s);
+            let locale = locale_of(&self.settings);
             self.ui.locale.set(locale);
             if let Some(tray) = &self.tray {
                 tray.relabel(&I18N, locale);

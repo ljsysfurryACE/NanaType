@@ -624,10 +624,7 @@ impl RuntimeProgram for Host {
                 self.app.system_dark =
                     matches!(appearance, nana_ui_platform::SystemAppearance::Dark);
                 if self.app.settings.skin.chrome == nanatype_settings::ChromeMode::System {
-                    self.app.update(Msg::AssetsChanged);
-                    let s = self.app.settings.clone();
-                    self.app.settings.skin.chrome = nanatype_settings::ChromeMode::Skin;
-                    self.app.edit(|x| *x = s);
+                    self.app.refresh_theme();
                 }
             }
             WindowEvent::ReducedMotionChanged { reduced, .. } => {

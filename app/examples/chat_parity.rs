@@ -73,10 +73,10 @@ impl Rig {
         status.blive = "blivechat · 21452505".into();
         status.blive_link = danmaku::Link::Connected;
         ui.status.set(Arc::new(status));
-        let theme = nanatype::skin_theme::compile(
-            &skin,
-            nanatype::skin_theme::dark_mode(&skin, settings.skin.chrome, false),
-        );
+        let theme = nanatype::skin_theme::compile(nanatype::skin_theme::dark_mode(
+            settings.skin.chrome,
+            false,
+        ));
         let mut p = document(1, theme.clone(), locale);
         let (_, toast) = p
             .context_mut()

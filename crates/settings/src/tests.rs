@@ -334,3 +334,28 @@ fn partner_settings_round_trip_and_sanitize() {
     assert!(!s.output.display.enabled);
     assert_eq!(s.overlays.display.size, None);
 }
+
+#[test]
+fn application_appearance_accepts_legacy_skin_and_round_trips() {
+    assert_eq!(Settings::default().skin.chrome, ChromeMode::System);
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("settings.json");
+    for (old, mode, saved) in [
+        ("skin", ChromeMode::System, "system"),
+        ("system", ChromeMode::System, "system"),
+        ("light", ChromeMode::Light, "light"),
+        ("dark", ChromeMode::Dark, "dark"),
+    ] {
+        let value = serde_json::json!({"schema": SETTINGS_SCHEMA, "skin": {"id": "nanatype.night", "chrome": old}});
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        let loaded = load_settings(&path, None);
+        assert!(matches!(loaded.note, LoadNote::Loaded));
+        assert_eq!(loaded.value.skin.chrome, mode);
+        assert_eq!(loaded.value.skin.id, "nanatype.night");
+        save_json(&path, &loaded.value).unwrap();
+        let saved_value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved_value["skin"]["chrome"], saved);
+        assert_eq!(load_settings(&path, None).value, loaded.value);
+    }
+}
