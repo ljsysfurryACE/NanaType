@@ -1,5 +1,5 @@
 //! Passive feedback shared by the windows: toasts in the corner of the
-//! settings and input windows, and the empty states of lists that have
+//! settings, input and chat windows, and the empty states of lists that have
 //! nothing in them yet (a ✦ glyph, one line, and a quiet way forward).
 
 use std::sync::Arc;
@@ -54,6 +54,7 @@ pub fn toast_stack(stack: EntityRef<ToastStack>, bottom: f32, max_visible: usize
         l.offset_right = Some(LengthSpec::Px(space::XL));
         l.offset_bottom = Some(LengthSpec::Px(bottom));
         l.width = Some(LengthSpec::Px(300.0));
+        l.max_width = Some(LengthSpec::Percent(90.0));
         l.max_height = Some(LengthSpec::Px(240.0));
         l.align_items = AlignSpec::End;
         l.z_index = Some(100);
@@ -65,12 +66,20 @@ pub fn toast_stack(stack: EntityRef<ToastStack>, bottom: f32, max_visible: usize
 
 /// Lay `view` out with a toast stack over it.
 pub fn with_toasts(view: impl IntoView, stack: EntityRef<ToastStack>) -> AnyView {
+    with_toasts_limit(view, stack, 3)
+}
+
+pub fn with_toasts_limit(
+    view: impl IntoView,
+    stack: EntityRef<ToastStack>,
+    max_visible: usize,
+) -> AnyView {
     widget(Stack::fill_column(0.0).with_layout(|l| {
         l.position = PositionSpec::Relative;
         l.width = Some(LengthSpec::Fill);
         l.height = Some(LengthSpec::Fill);
     }))
-    .children((view, toast_stack(stack, space::XXXL, 3)))
+    .children((view, toast_stack(stack, space::XXXL, max_visible)))
     .into_any()
 }
 

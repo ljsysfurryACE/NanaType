@@ -156,15 +156,17 @@ impl Spout {
     ) {
         // A retired pool needs nothing here: the sender reopens its handles
         // on the next frame.
-        if let Some(mut state) = crate::ui::link_text::spout(locale, status) {
+        if let Some(state) = crate::ui::link_text::spout(locale, status) {
             // NanaUI reports Active for the texture itself. A failed Syphon
             // publish has to stay on the badge.
             #[cfg(target_os = "macos")]
-            if let LinkState::Connected(_) = &state
+            let state = if let LinkState::Connected(_) = &state
                 && let Some(key) = self.syphon.failure(kind)
             {
-                state = crate::ui::link_text::spout_send(locale, key);
-            }
+                crate::ui::link_text::spout_send(locale, key)
+            } else {
+                state
+            };
             self.status.insert(kind, state);
         }
     }

@@ -402,7 +402,6 @@ err-spout = Spout output failed: { $message }
 err-syphon = Syphon output failed: { $message }
 # blivechat
 window-chat = Chat
-chat-mention = Mention
 chat-reply = Reply
 chat-replying = Replying to { $name }
 chat-reply-cancel = Cancel reply
@@ -559,3 +558,11 @@ err-tray = Tray icon unavailable: { $message }
 skins-export-failed = The skin could not be exported: { $message }
 skins-delete-failed = The skin could not be deleted: { $message }
 ## end round2-status
+
+## Chat interaction
+chat-at-action = Mention
+chat-latest = Back to latest
+chat-inserted = Inserted @{ $name }
+chat-queued = Queued · { $count }
+chat-room-owner = Room owner
+chat-moderator = Moderator

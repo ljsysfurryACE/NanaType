@@ -83,6 +83,7 @@ pub struct App {
     pub spout: crate::output::Spout,
     /// Editor commands for the host to apply to the input window's editor.
     pub rich_commands: Vec<nana_ui::runtime::RichEditCommand>,
+    pub focus_editor: bool,
     /// Fonts packaged with the active skin, registered while it is active.
     fonts: nana_ui::HostFontScope,
     /// Built-in (embedded) fonts the active skin names, each registered once.
@@ -91,7 +92,7 @@ pub struct App {
     skin_families: [Option<String>; 3],
     skin_watch: Option<crate::services::watch::Watch>,
     sticker_watch: Option<crate::services::watch::Watch>,
-    /// Toasts for the host to show in the settings and input windows.
+    /// Toasts for the host to show in the settings, input and chat windows.
     pub toasts: Vec<ToastRequest>,
     /// The latest notice, while it is an error: the tray tooltip shows it.
     tray_error: Option<(u64, String)>,
@@ -164,10 +165,17 @@ impl App {
             let post = post.clone();
             move |s| post(Msg::Bridge(s))
         });
-        let chat_assets = ChatAssets::start(paths.blobs(), {
-            let post = post.clone();
-            move |m| post(Msg::Chat(Arc::new(m)))
-        });
+        let chat_assets = ChatAssets::start(
+            paths.blobs(),
+            {
+                let post = post.clone();
+                move |m| post(Msg::Chat(Arc::new(m)))
+            },
+            {
+                let post = post.clone();
+                move |asset| post(Msg::ChatAssetReady(asset))
+            },
+        );
         let blive = {
             let to_assets = chat_assets.sender();
             let post = post.clone();
@@ -226,6 +234,7 @@ impl App {
             export_target: None,
             spout: crate::output::Spout::default(),
             rich_commands: Vec::new(),
+            focus_editor: false,
             fonts: nana_ui::HostFontScope::new(),
             builtin_fonts: Default::default(),
             skin_families: [None, None, None],
@@ -1400,8 +1409,15 @@ impl App {
                 let sent = fx.replace_draft.as_ref().is_some_and(Document::is_blank);
                 self.apply_effects(fx);
                 if sent {
+                    self.ui.chat_target.set(None);
+                    let count = self.core.queued();
+                    let feedback = if count > 0 {
+                        self.ui.tr("chat-queued", &[("count", count.into())])
+                    } else {
+                        format!("{} ✓", self.ui.now_t("status-sent"))
+                    };
                     self.toasts.push(ToastRequest::new(
-                        format!("{} ✓", self.ui.now_t("status-sent")),
+                        feedback,
                         nana_ui::ToastTone::Success,
                         feedback::SENT_MS,
                         false,
@@ -1595,10 +1611,20 @@ impl App {
             Msg::Bridge(status) => self.bridge_status(status),
             Msg::Chat(message) => self.chat_message(message),
             Msg::ChatStatus(status) => self.chat_status(status),
+            Msg::ChatAssetReady(asset) => {
+                let mut urls = (*self.ui.asset_urls.get_untracked()).clone();
+                urls.remove(&asset.to_string());
+                self.ui.asset_urls.set(Arc::new(urls));
+                self.ensure_urls([asset]);
+            }
             Msg::ChatMention { seq, reply } => self.mention(seq, reply),
-            Msg::ClearReply => self.run(Cmd::SetReply(None)),
+            Msg::ClearReply => {
+                self.run(Cmd::SetReply(None));
+                self.ui.chat_target.set(None);
+            }
             Msg::ClearChat => {
                 self.chat.clear();
+                self.ui.chat_target.set(None);
                 self.publish_chat();
             }
             Msg::AssetsChanged => self.refresh_assets(),
@@ -1783,25 +1809,41 @@ impl App {
         });
     }
 
-    /// Label the author of chat message `seq` at the editor's caret; a reply
-    /// also quotes the message above the next line.
+    /// Quote chat message `seq` for a reply, or insert its author at the caret.
     fn mention(&mut self, seq: u64, reply: bool) {
         let Some(message) = self.chat.iter().rev().find(|m| m.seq == seq).cloned() else {
             return;
         };
-        let mention = Inline::Mention(nanatype_model::Mention::new(message.user.clone()));
-        self.tool(crate::msg::Tool::Insert(mention));
-        // A space after the label, so typing goes on as text.
-        if self.ui.source_mode.get_untracked() {
-            self.markup(MarkupEdit::Insert(" ".into()));
-        } else {
-            self.rich_commands
-                .push(nana_ui::runtime::RichEditCommand::InsertText(" ".into()));
-        }
         if reply {
             let locale = self.ui.locale.get_untracked();
             self.run(Cmd::SetReply(Some(message.quote(locale))));
+        } else {
+            let mention = Inline::Mention(nanatype_model::Mention::new(message.user.clone()));
+            self.tool(crate::msg::Tool::Insert(mention));
+            // A space after the label, so typing goes on as text.
+            if self.ui.source_mode.get_untracked() {
+                self.markup(MarkupEdit::Insert(" ".into()));
+            } else {
+                self.rich_commands
+                    .push(nana_ui::runtime::RichEditCommand::InsertText(" ".into()));
+            }
         }
+        self.ui.chat_target.set(Some(seq));
+        self.focus_editor = true;
+        let text = self.ui.tr(
+            if reply {
+                "chat-replying"
+            } else {
+                "chat-inserted"
+            },
+            &[("name", message.user.name.as_str().into())],
+        );
+        self.toasts.push(ToastRequest::new(
+            text,
+            nana_ui::ToastTone::Success,
+            1600,
+            false,
+        ));
         self.update(Msg::ShowWindow(WindowKind::Input));
     }
 

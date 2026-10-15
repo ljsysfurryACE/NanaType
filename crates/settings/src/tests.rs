@@ -253,3 +253,20 @@ fn geometry_restores_per_layout_and_falls_back_to_a_connected_monitor() {
     let p = store.restore(&laptop, "history").unwrap();
     assert!(p.x + p.w <= 1920.0 && p.y + p.h <= 1040.0);
 }
+
+#[test]
+fn only_a_new_installation_enables_chat_history() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("settings.json");
+    assert!(load_settings(&path, None).value.history.chat.enabled);
+    for json in [
+        r#"{"schema":1}"#,
+        r#"{"schema":1,"history":{"chat":{"enabled":false}}}"#,
+        "broken json",
+    ] {
+        fs::write(&path, json).unwrap();
+        assert!(!load_settings(&path, None).value.history.chat.enabled);
+    }
+    fs::write(&path, r#"{"schema":1,"history":{"chat":{"enabled":true}}}"#).unwrap();
+    assert!(load_settings(&path, None).value.history.chat.enabled);
+}

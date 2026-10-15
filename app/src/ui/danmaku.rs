@@ -1,38 +1,60 @@
 //! The chat panel: live chat from blivechat for the streamer to read and
-//! answer. It is an ordinary window in the app's own look (never captured),
-//! so it follows the chrome theme rather than the skin.
+//! answer. The control window uses compact rows in the app's chrome; the
+//! captured history keeps its skin's bubbles, nameplates and animations.
 //!
 //! Each message has two buttons: **@** puts a label with the viewer's avatar
-//! and name at the editor's caret, **reply** does the same and quotes the
-//! message above the line that is sent next.
+//! and name at the editor's caret; **reply** only quotes the message above
+//! the line that is sent next, preserving the draft and caret.
 
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 use nana_ui::ControlSize;
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{AnyView, IntoView, computed, dynamic, each, signal, widget};
 use nana_ui::runtime::{
-    Activate, IconButton, NodeStyle, RichTextView, ScrollAxes, ScrollView, Stack, Text, UserScroll,
+    Activate, Button, FocusWithinChanged, IconButton, NodeStyle, PointerHoverChanged, RichTextView,
+    ScrollAxes, ScrollView, Stack, Text, UserScroll,
 };
 use nana_ui::theme::space;
 use nana_ui_core::{
     AlignSpec, BackgroundImage, BackgroundImageFit, JustifySpec, LengthSpec, OverflowSpec,
     SemanticColorRole,
 };
-use nanatype_blive::Guard;
 use nanatype_settings::{ChatFilter, Settings};
 
+use super::history;
 use super::rich::{Env, Look, MentionLook, to_rich};
 use super::{I18N, Ui, c};
-use crate::chat::{ChatKind, ChatMessage, guard_key, super_chat_color};
+use crate::chat::{ChatKind, ChatMessage, super_chat_color};
 use crate::msg::Msg;
 
-const AVATAR: f32 = 30.0;
-const TEXT: f32 = 14.0;
-/// The row's buttons.
-const ACTIONS: f32 = 60.0;
-/// Row padding, the row gap, and room for the scrollbar.
-const CHROME: f32 = 2.0 * space::XL + 2.0 * space::MD + 12.0;
+/// Disjoint identities keep live chat and local lines from colliding in this feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+enum RowSource {
+    Chat(u64),
+    History(u64),
+}
+impl RowSource {
+    fn get(self, ui: Ui) -> Option<nanatype_core::HistoryRow> {
+        match self {
+            Self::History(key) => ui
+                .history
+                .with_untracked(|rows| rows.iter().find(|r| r.key == key).cloned()),
+            Self::Chat(seq) => ui.chat.with_untracked(|rows| {
+                rows.iter().find(|m| m.seq == seq).map(|m| {
+                    let item = m.history_item(ui.locale.get_untracked());
+                    nanatype_core::HistoryRow {
+                        key: seq,
+                        doc: Arc::new(item.doc.clone()),
+                        item,
+                        reveal: None,
+                    }
+                })
+            }),
+        }
+    }
+}
 
 /// Connection state, for the dot in the header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,20 +74,17 @@ fn text_style(size: f32, weight: u16) -> NodeStyle {
     st
 }
 
-fn guard_color(guard: Guard) -> Option<[f32; 4]> {
-    match guard {
-        Guard::Governor => Some([0.91, 0.30, 0.24, 1.0]),
-        Guard::Admiral => Some([0.67, 0.36, 0.89, 1.0]),
-        Guard::Captain => Some([0.12, 0.62, 0.86, 1.0]),
-        Guard::None => None,
-    }
-}
-
 /// A round avatar: the name's first letter on the accent colour, with the
 /// picture (when there is one) laid over it, so a picture that is still
 /// loading, or cannot be read, leaves the initial rather than an empty
 /// circle.
-pub fn avatar(url: Option<String>, name: &str, size: f32, accent: [f32; 4]) -> AnyView {
+pub fn asset_avatar(
+    ui: Ui,
+    asset: Option<String>,
+    name: &str,
+    size: f32,
+    accent: [f32; 4],
+) -> AnyView {
     let mut st = text_style(size * 0.45, 700);
     Arc::make_mut(&mut st.layout).color = Some([1.0; 4]);
     let initial = name.chars().next().map(String::from).unwrap_or_default();
@@ -79,85 +98,45 @@ pub fn avatar(url: Option<String>, name: &str, size: f32, accent: [f32; 4]) -> A
                 l.position = nana_ui_core::PositionSpec::Relative;
                 l.border_radius = Some(size / 2.0);
                 l.flex_shrink = Some(0.0);
-                l.overflow_x = OverflowSpec::Hidden;
-                l.overflow_y = OverflowSpec::Hidden;
                 l.background = Some(accent);
             }),
     )
     .children((
         widget(Text::new(initial).decorative().style(st)),
-        url.map(|u| picture_over(u, size / 2.0)),
+        reactive_picture(ui, asset, size / 2.0),
     ))
     .into_any()
 }
 
-/// A picture covering its (relatively positioned) parent, rounded by
-/// `radius` like it.
-pub fn picture_over(url: String, radius: f32) -> AnyView {
+/// Updates only the image node; late downloads never remount a message.
+pub fn reactive_picture(ui: Ui, asset: Option<String>, radius: f32) -> AnyView {
     widget(Stack::row(0.0).with_layout(move |l| {
-        l.border_radius = Some(radius);
         l.position = nana_ui_core::PositionSpec::Absolute;
         l.offset_left = Some(LengthSpec::Px(0.0));
         l.offset_top = Some(LengthSpec::Px(0.0));
         l.offset_right = Some(LengthSpec::Px(0.0));
         l.offset_bottom = Some(LengthSpec::Px(0.0));
+        l.border_radius = Some(radius);
         l.pointer_events = Some(nana_ui_core::PointerEventsSpec::None);
-        l.paint.background_image = Some(BackgroundImage::url_with_fit(
-            url,
-            BackgroundImageFit::Cover,
-        ));
     }))
+    .bind(move |s: &mut Stack| {
+        let url = asset.as_ref().and_then(|a| {
+            ui.asset_urls.with(|u| u.get(a).cloned()).or_else(|| {
+                if a.starts_with("blob:") {
+                    None
+                } else if a.contains("://") || a.starts_with("data:") {
+                    Some(a.clone())
+                } else {
+                    crate::services::media::url(std::path::Path::new(a), None)
+                }
+            })
+        });
+        let image = url.map(|u| BackgroundImage::url_with_fit(u, BackgroundImageFit::Cover));
+        let mut next = std::mem::replace(s, Stack::row(0.0));
+        next = next.with_layout(|l| l.paint.background_image = image);
+        *s = next;
+    })
     .into_any()
-}
-
-/// A small coloured tag (guard level, medal).
-fn badge(text: String, color: [f32; 4]) -> AnyView {
-    let mut st = text_style(11.0, 700);
-    Arc::make_mut(&mut st.layout).color = Some([1.0; 4]);
-    widget(Stack::row(0.0).padding_xy(5.0, 1.0).with_layout(move |l| {
-        l.background = Some(color);
-        l.border_radius = Some(4.0);
-        l.flex_shrink = Some(0.0);
-    }))
-    .children(widget(Text::new(text).style(st)))
-    .into_any()
-}
-
-/// The message body as rich text in the panel's look (emoticons inline).
-fn body(ui: Ui, m: &ChatMessage, color: Option<[f32; 4]>) -> AnyView {
-    let skin = ui.skin.get_untracked();
-    let urls = ui.asset_urls.get_untracked();
-    let locale = ui.locale.get_untracked();
-    let look = Look {
-        size: TEXT,
-        color: skin.chrome.text,
-        weight: 400,
-        line_height: 1.4,
-        body: None,
-        name: None,
-        accent: None,
-        mention: MentionLook::from_skin(&skin),
-        ink: None,
-    };
-    let rich = to_rich(
-        &m.display_doc(locale),
-        &Env {
-            look: &look,
-            urls: &urls,
-            editor: false,
-            locale,
-        },
-    );
-    let mut st = text_style(TEXT, 400);
-    {
-        let l = Arc::make_mut(&mut st.layout);
-        l.line_height = Some(nana_ui_core::LineHeightSpec::Absolute(TEXT * 1.4));
-        l.color = color;
-    }
-    if color.is_none() {
-        st.foreground = Some(SemanticColorRole::Text);
-    }
-    widget(RichTextView::new(rich).style(st).width(LengthSpec::Fill)).into_any()
 }
 
 fn action(
@@ -175,131 +154,310 @@ fn action(
     .into_any()
 }
 
-fn row_view(ui: Ui, seq: u64, text_w: f32) -> AnyView {
-    let Some(m) = ui
-        .chat
-        .with_untracked(|rows| rows.iter().rev().find(|r| r.seq == seq).cloned())
-    else {
+fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
+    let hovered = signal(false);
+    let focused = signal(false);
+    let paid = match source {
+        RowSource::Chat(seq) => ui.chat.with_untracked(|rows| {
+            rows.iter()
+                .find(|m| m.seq == seq)
+                .and_then(|m| match m.kind {
+                    ChatKind::SuperChat { price } => Some(super_chat_color(price)),
+                    _ => None,
+                })
+        }),
+        _ => None,
+    };
+    let actions = if let RowSource::Chat(seq) = source {
+        let button = move |reply: bool| {
+            widget(
+                IconButton::new(
+                    if reply { ti::ARROW_BACK_UP } else { ti::AT },
+                    ui.now_t(if reply {
+                        "chat-reply"
+                    } else {
+                        "chat-at-action"
+                    }),
+                )
+                .size(ControlSize::Small)
+                .with_tooltip(ui.now_t(if reply {
+                    "chat-reply"
+                } else {
+                    "chat-at-action"
+                })),
+            )
+            .on_cx(move |_, _: &Activate, cx| {
+                super::motion::press(cx, ui.reduced_motion.get_untracked());
+                cx.dispatch_program_all(Msg::ChatMention { seq, reply });
+            })
+        };
+        Some(
+            widget(Stack::row(2.0).with_layout(|l| l.flex_shrink = Some(0.0)))
+                .children((button(true), button(false)))
+                .into_any(),
+        )
+    } else {
+        None
+    };
+    widget(
+        Stack::column(0.0)
+            .width(LengthSpec::Fill)
+            .padding_xy(6.0, 4.0)
+            .with_layout(|l| {
+                l.border_radius = Some(6.0);
+                l.border_width = Some(1.0);
+                l.border_style = Some(nana_ui_core::BorderStyle::Solid);
+            }),
+    )
+    .on(move |e: &PointerHoverChanged| hovered.set(e.hovered))
+    .on(move |e: &FocusWithinChanged| focused.set(e.focused))
+    .bind(move |s: &mut Stack| {
+        let selected = matches!(source, RowSource::Chat(seq) if ui.chat_target.get() == Some(seq));
+        let active = selected || hovered.get() || focused.get();
+        let skin = ui.skin.get();
+        let mut accent = c(skin.chrome.accent);
+        let border = if active { accent } else { [0.0; 4] };
+        accent[3] = if selected {
+            0.12
+        } else if active {
+            0.06
+        } else {
+            0.0
+        };
+        let mut next = std::mem::replace(s, Stack::row(0.0));
+        next = next.with_layout(|l| {
+            l.background = Some(if !active {
+                paid.map_or(accent, |mut p| {
+                    p[3] = 0.18;
+                    p
+                })
+            } else {
+                accent
+            });
+            l.border_color = Some(border);
+        });
+        *s = next;
+    })
+    .children(compact_message(ui, source, width, actions))
+    .into_any()
+}
+
+/// A small avatar and a single header above full-width, freely wrapping text.
+/// Controls occupy only the header, leaving the body available for reading.
+fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyView>) -> AnyView {
+    let Some(row) = source.get(ui) else {
         return widget(Stack::row(0.0)).into_any();
     };
     let skin = ui.skin.get_untracked();
-    let accent = c(skin.chrome.accent);
-    let locale = ui.locale.get_untracked();
-    let url = m.user.avatar.as_ref().and_then(|a| {
-        ui.asset_urls
-            .with_untracked(|u| u.get(&a.to_string()).cloned())
-    });
-
-    let name_color = if m.owner {
-        Some([0.96, 0.66, 0.0, 1.0])
-    } else if m.admin {
-        Some([0.12, 0.53, 0.90, 1.0])
+    let host = matches!(source, RowSource::History(_));
+    // List and row padding, scrollbar, 24px avatar and its 8px gap.
+    let col_w = (width - 74.0).max(100.0);
+    let show_time = width >= 360.0;
+    let name_w = (col_w
+        - if actions.is_some() { 62.0 } else { 0.0 }
+        - if show_time { 42.0 } else { 0.0 }
+        - if host { 32.0 } else { 0.0 }
+        - 8.0)
+        .max(24.0);
+    let mut name_style = text_style(13.0, 700);
+    name_style.foreground = Some(if host {
+        SemanticColorRole::Accent
     } else {
-        guard_color(m.guard)
-    };
-    let mut name_st = text_style(13.0, 700);
-    match name_color {
-        Some(col) => Arc::make_mut(&mut name_st.layout).color = Some(col),
-        None => name_st.foreground = Some(SemanticColorRole::Muted),
-    }
-    let mut badges: Vec<AnyView> = Vec::new();
-    if let Some(col) = guard_color(m.guard) {
-        badges.push(badge(I18N.t_in(locale, guard_key(m.guard)), col));
-    }
-    if m.medal_level > 0 && !m.medal_name.is_empty() {
-        badges.push(badge(
-            format!("{} {}", m.medal_name, m.medal_level),
-            [0.45, 0.50, 0.58, 0.9],
-        ));
-    }
-    let time = widget(
-        Text::new(super::history::local_time(m.at, true))
-            .style(text_style(11.0, 400))
-            .color(SemanticColorRole::Faint),
-    );
+        SemanticColorRole::Text
+    });
+    Arc::make_mut(&mut name_style.layout).max_width = Some(LengthSpec::Px(name_w));
     let header = widget(
-        Stack::row(6.0)
+        Stack::row(4.0)
             .align(AlignSpec::Center)
             .width(LengthSpec::Fill),
     )
     .children((
-        badges,
-        widget(Text::new(m.user.name.clone()).style(name_st).truncating()),
-        widget(Stack::spacer()),
-        time,
-    ));
-
-    let (band, content): (Option<[f32; 4]>, AnyView) = match &m.kind {
-        ChatKind::Text => (None, body(ui, &m, None)),
-        ChatKind::SuperChat { price } => {
-            let col = super_chat_color(*price);
-            (Some(col), body(ui, &m, Some([0.1, 0.1, 0.12, 1.0])))
-        }
-        ChatKind::Gift { .. } | ChatKind::Member { .. } => {
-            let icon_color = match m.kind {
-                ChatKind::Member { .. } => guard_color(m.guard).unwrap_or(accent),
-                _ => [0.95, 0.55, 0.20, 1.0],
-            };
-            let mut st = text_style(13.0, 500);
-            Arc::make_mut(&mut st.layout).color = Some(icon_color);
-            (
-                None,
-                widget(
-                    Text::new(m.event_text(locale).unwrap_or_default())
-                        .style(st)
-                        .truncating(),
-                )
-                .into_any(),
+        widget(
+            Stack::row(0.0)
+                .width(LengthSpec::Px(name_w))
+                .with_layout(|l| {
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.overflow_x = OverflowSpec::Hidden;
+                    l.flex_shrink = Some(1.0);
+                }),
+        )
+        .children(widget(
+            Text::new(row.item.author.clone())
+                .style(name_style)
+                .truncating(),
+        )),
+        host.then(|| {
+            widget(
+                Text::new(ui.now_t("history-role-host"))
+                    .style(text_style(11.0, 500))
+                    .color(SemanticColorRole::Muted),
             )
-        }
-    };
-
-    let seq = m.seq;
-    let actions = widget(
-        Stack::row(0.0)
-            .width(LengthSpec::Px(ACTIONS))
-            .justify(JustifySpec::End)
-            .with_layout(|l| {
-                l.flex_shrink = Some(0.0);
-                l.align_self = Some(AlignSpec::Center);
-            }),
-    )
-    .children((
-        action(ui, ti::AT, "chat-mention", move || Msg::ChatMention {
-            seq,
-            reply: false,
         }),
-        action(ui, ti::ARROW_BACK_UP, "chat-reply", move || {
-            Msg::ChatMention { seq, reply: true }
+        widget(Stack::spacer()),
+        show_time.then(|| {
+            widget(
+                Text::new(history::local_hm(row.item.at))
+                    .style(text_style(11.0, 400))
+                    .color(SemanticColorRole::Faint),
+            )
         }),
+        actions,
     ));
+    let metadata = match source {
+        RowSource::Chat(seq) => ui.chat.with_untracked(|rows| {
+            rows.iter().find(|m| m.seq == seq).and_then(|m| {
+                let mut labels = Vec::new();
+                if m.owner {
+                    labels.push(ui.now_t("chat-room-owner"));
+                } else if m.admin {
+                    labels.push(ui.now_t("chat-moderator"));
+                }
+                if m.guard != nanatype_blive::Guard::None {
+                    labels.push(ui.now_t(crate::chat::guard_key(m.guard)));
+                }
+                if m.medal_level > 0 && !m.medal_name.is_empty() {
+                    labels.push(format!("{} {}", m.medal_name, m.medal_level));
+                }
+                (!labels.is_empty()).then(|| {
+                    widget(
+                        Text::new(labels.join(" · "))
+                            .style(text_style(11.0, 500))
+                            .color(SemanticColorRole::Muted)
+                            .truncating(),
+                    )
+                })
+            })
+        }),
+        _ => None,
+    };
+    let quote = row.item.reply.as_ref().map(|r| {
+        let mut st = text_style(11.0, 400);
+        Arc::make_mut(&mut st.layout).max_width = Some(LengthSpec::Px(col_w));
+        widget(
+            Text::new(format!(
+                "↪ {}：{}",
+                r.user.name,
+                r.text.replace(['\r', '\n'], " ")
+            ))
+            .style(st)
+            .color(SemanticColorRole::Muted)
+            .truncating(),
+        )
+    });
+    let look = Look {
+        size: 14.0,
+        color: skin.chrome.text,
+        weight: 400,
+        line_height: 1.35,
+        body: None,
+        name: None,
+        accent: None,
+        mention: MentionLook::from_skin(&skin),
+        ink: None,
+    };
+    let mut body_style = text_style(14.0, 400);
+    body_style.foreground = Some(SemanticColorRole::Text);
+    Arc::make_mut(&mut body_style.layout).line_height =
+        Some(nana_ui_core::LineHeightSpec::Absolute(14.0 * 1.35));
+    let body = widget(
+        RichTextView::new("")
+            .style(body_style)
+            .width(LengthSpec::Fill),
+    )
+    .bind(move |v: &mut RichTextView| {
+        // Read only the matching stream; image completion updates this node in place.
+        match source {
+            RowSource::Chat(_) => {
+                ui.chat.get();
+            }
+            RowSource::History(_) => {
+                ui.history.get();
+            }
+        }
+        let Some(row) = source.get(ui) else {
+            return;
+        };
+        let rich = to_rich(
+            &row.doc,
+            &Env {
+                look: &look,
+                urls: &ui.asset_urls.get(),
+                editor: false,
+                locale: ui.locale.get(),
+            },
+        );
+        if v.value != rich {
+            v.value = rich;
+        }
+    });
     widget(
         Stack::row(space::MD)
             .align(AlignSpec::Start)
-            .width(LengthSpec::Fill)
-            .padding_xy(space::XL, space::SM)
-            .with_layout(move |l| {
-                if let Some(col) = band {
-                    l.background = Some([col[0], col[1], col[2], 0.85]);
-                    l.border_radius = Some(8.0);
-                }
-            }),
+            .width(LengthSpec::Fill),
     )
     .children((
-        avatar(url, &m.user.name, AVATAR, accent),
-        // The panel's width less the avatar and the buttons, so the text
-        // wraps at the panel's edge.
+        asset_avatar(
+            ui,
+            row.item.avatar.clone(),
+            &row.item.author,
+            24.0,
+            c(skin.chrome.accent),
+        ),
         widget(
             Stack::column(2.0)
-                .width(LengthSpec::Px(text_w))
-                .with_layout(|l| {
-                    l.flex_shrink = Some(0.0);
-                }),
+                .width(LengthSpec::Px(col_w))
+                .with_layout(|l| l.flex_shrink = Some(0.0)),
         )
-        .children((header, content)),
-        actions,
+        .children((header, metadata, quote, body)),
     ))
     .into_any()
+}
+
+/// Retains first-observed order across filtering, reveal updates and image loads.
+#[derive(Default)]
+struct Feed {
+    order: HashMap<RowSource, u64>,
+    next: u64,
+}
+impl Feed {
+    fn update(
+        &mut self,
+        chat: &[Arc<ChatMessage>],
+        history: &[nanatype_core::HistoryRow],
+        filter: &ChatFilter,
+    ) -> Vec<RowSource> {
+        let mut all: Vec<_> = chat
+            .iter()
+            .map(|m| (RowSource::Chat(m.seq), m.at))
+            .chain(
+                history
+                    .iter()
+                    .filter(|r| r.item.kind == nanatype_model::SourceKind::Typewriter)
+                    .map(|r| (RowSource::History(r.key), r.item.at)),
+            )
+            .collect();
+        let present: HashSet<_> = all.iter().map(|(k, _)| *k).collect();
+        self.order.retain(|k, _| present.contains(k));
+        all.sort_by_key(|(k, at)| (*at, *k));
+        for (key, _) in &all {
+            self.order.entry(*key).or_insert_with(|| {
+                let n = self.next;
+                self.next += 1;
+                n
+            });
+        }
+        let allowed: HashSet<_> = shown(chat, filter)
+            .into_iter()
+            .map(RowSource::Chat)
+            .collect();
+        let mut out: Vec<_> = all
+            .into_iter()
+            .map(|(k, _)| k)
+            .filter(|k| matches!(k, RowSource::History(_)) || allowed.contains(k))
+            .collect();
+        out.sort_by_key(|k| self.order[k]);
+        out
+    }
 }
 
 fn filter_toggle(
@@ -331,6 +489,13 @@ fn filter_toggle(
 }
 
 fn header(ui: Ui) -> AnyView {
+    dynamic(
+        move || ui.chat_width.get() < 360.0,
+        move |narrow| header_layout(ui, *narrow),
+    )
+    .into_any()
+}
+fn header_layout(ui: Ui, narrow: bool) -> AnyView {
     let dot = widget(
         Stack::row(0.0)
             .width(LengthSpec::Px(8.0))
@@ -363,22 +528,21 @@ fn header(ui: Ui) -> AnyView {
             t.value = v;
         }
     });
-    widget(
-        Stack::bar(space::XS)
-            .height(LengthSpec::Px(42.0))
-            .padding_xy(space::XL, space::XS)
-            .align(AlignSpec::Center),
-    )
-    .children(vec![
-        dot.into_any(),
+    let status = widget(Stack::row(6.0).align(AlignSpec::Center).with_layout(|l| {
+        l.flex_grow = Some(1.0);
+        l.flex_shrink = Some(1.0);
+        l.min_width = Some(LengthSpec::Px(0.0));
+    }))
+    .children((
+        dot,
         widget(Stack::row(0.0).with_layout(|l| {
             l.flex_grow = Some(1.0);
             l.flex_shrink = Some(1.0);
             l.min_width = Some(LengthSpec::Px(0.0));
-            l.margin_left = Some(LengthSpec::Px(space::SM));
         }))
-        .children(status)
-        .into_any(),
+        .children(status),
+    ));
+    let controls = vec![
         filter_toggle(
             ui,
             ti::MESSAGE_CIRCLE,
@@ -411,7 +575,30 @@ fn header(ui: Ui) -> AnyView {
         action(ui, ti::SETTINGS, "window-settings", || {
             Msg::SettingsPage(super::settings::Page::Integrations)
         }),
-    ])
+    ];
+    let bar = if narrow {
+        widget(Stack::column(4.0).width(LengthSpec::Fill))
+            .children((
+                status.into_any(),
+                widget(Stack::row(4.0)).children(controls).into_any(),
+            ))
+            .into_any()
+    } else {
+        widget(
+            Stack::row(4.0)
+                .align(AlignSpec::Center)
+                .width(LengthSpec::Fill),
+        )
+        .children((status.into_any(), controls))
+        .into_any()
+    };
+    widget(
+        Stack::column(0.0)
+            .height(LengthSpec::Px(if narrow { 76.0 } else { 42.0 }))
+            .padding_xy(12.0, 4.0)
+            .with_layout(|l| l.flex_shrink = Some(0.0)),
+    )
+    .children(bar)
     .into_any()
 }
 
@@ -459,41 +646,49 @@ pub fn shown(rows: &[Arc<ChatMessage>], filter: &ChatFilter) -> Vec<u64> {
 }
 
 pub fn chat_window(ui: Ui) -> impl IntoView {
+    let feed = Arc::new(Mutex::new(Feed::default()));
     let items = computed(move || {
         let filter = ui.settings.with(|s| s.integrations.blivechat.panel.clone());
-        ui.chat.with(|rows| shown(rows, &filter))
+        let chat = ui.chat.get();
+        let history = ui.history.get();
+        feed.lock().unwrap().update(&chat, &history, &filter)
     });
-    // Following the newest message until the user scrolls up to read.
     let follow = signal(true);
-    let list = widget(ScrollView::new(ScrollAxes::Vertical).follow_end(true))
-        .bind(move |v: &mut ScrollView| {
-            let on = follow.get();
-            if v.follow_end != on {
-                v.follow_end = on;
-            }
-        })
-        .on(move |e: &UserScroll| {
-            if follow.get_untracked() != e.at_end {
-                follow.set(e.at_end);
-            }
-        })
-        .children(dynamic(
-            move || ui.chat_width.get().round() as i32,
-            move |width| {
-                let text_w = (*width as f32 - AVATAR - ACTIONS - CHROME).max(120.0);
-                widget(
-                    Stack::column(space::XXS)
-                        .padding_xy(0.0, space::SM)
-                        .width(LengthSpec::Fill),
-                )
-                .children(each(
-                    items,
-                    |k: &u64| *k,
-                    move |k: u64| row_view(ui, k, text_w),
-                ))
-                .into_any()
-            },
-        ));
+    let list = widget(
+        ScrollView::new(ScrollAxes::Vertical)
+            .follow_end(true)
+            .with_layout(|l| {
+                l.flex_grow = Some(1.0);
+                l.flex_shrink = Some(1.0);
+                l.height = Some(LengthSpec::Px(0.0));
+                l.min_height = Some(LengthSpec::Px(0.0));
+            }),
+    )
+    .bind(move |v: &mut ScrollView| v.follow_end = follow.get())
+    .on(move |e: &UserScroll| follow.set(e.at_end))
+    .children(dynamic(
+        move || {
+            (
+                ui.chat_width.get().round() as i32,
+                Arc::as_ptr(&ui.skin.get()) as usize,
+                ui.locale.get(),
+                ui.reduced_motion.get(),
+            )
+        },
+        move |(width, _, _, _)| {
+            let width = *width as f32;
+            widget(
+                Stack::column(2.0)
+                    .padding_xy(6.0, 4.0)
+                    .width(LengthSpec::Fill),
+            )
+            .children(
+                each(items, |k: &RowSource| *k, move |k| row_view(ui, k, width))
+                    .transition(super::motion::enter()),
+            )
+            .into_any()
+        },
+    ));
     widget(
         Stack::fill_column(0.0)
             .surface(SemanticColorRole::Background)
@@ -504,24 +699,27 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
     )
     .children((
         header(ui),
+        list.visible(move || !items.with(|i| i.is_empty())),
         widget(Stack::fill_column(0.0).with_layout(|l| {
             l.flex_grow = Some(1.0);
             l.min_height = Some(LengthSpec::Px(0.0));
         }))
-        .children((
-            widget(Stack::fill_column(0.0))
-                .visible(move || !items.with(|i| i.is_empty()))
-                .children(list),
-            widget(Stack::fill_column(0.0))
-                .visible(move || items.with(|i| i.is_empty()))
-                .children(empty(ui)),
-        )),
+        .visible(move || items.with(|i| i.is_empty()))
+        .children(empty(ui)),
+        widget(
+            Button::new(ui.now_t("chat-latest"))
+                .icon(ti::ARROW_DOWN)
+                .size(ControlSize::Small),
+        )
+        .visible(move || !follow.get())
+        .on(move |_: &Activate| follow.set(true)),
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nanatype_blive::Guard;
     use nanatype_model::{ChatUser, Document};
 
     fn message(seq: u64, kind: ChatKind) -> Arc<ChatMessage> {
@@ -561,5 +759,60 @@ mod tests {
             ..ChatFilter::default()
         };
         assert_eq!(shown(&rows, &filter), [2]);
+    }
+    #[test]
+    fn feed_keeps_disjoint_ids_and_order_across_filtering_and_late_updates() {
+        use nanatype_model::{HistoryItem, SourceId, SourceKind};
+        let chat = vec![
+            message(1, ChatKind::Text),
+            message(2, ChatKind::SuperChat { price: 30 }),
+        ];
+        let history = vec![nanatype_core::HistoryRow {
+            key: 1,
+            item: HistoryItem {
+                source: SourceId::local(),
+                kind: SourceKind::Typewriter,
+                line: Some(nanatype_model::LineId(1)),
+                author: "主播".into(),
+                avatar: None,
+                doc: Document::plain("hello"),
+                at: 2,
+                uid: None,
+                reply: None,
+            },
+            doc: Arc::new(Document::plain("hello")),
+            reveal: None,
+        }];
+        let mut feed = Feed::default();
+        let all = feed.update(&chat, &history, &ChatFilter::default());
+        assert_eq!(
+            all,
+            [
+                RowSource::Chat(1),
+                RowSource::Chat(2),
+                RowSource::History(1)
+            ]
+        );
+        let hidden = ChatFilter {
+            text: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            feed.update(&chat, &history, &hidden),
+            [RowSource::Chat(2), RowSource::History(1)]
+        );
+        assert_eq!(feed.update(&chat, &history, &ChatFilter::default()), all);
+        let mut changed = history.clone();
+        changed[0].reveal = Some(nanatype_core::Reveal::full(5));
+        assert_eq!(feed.update(&chat, &changed, &ChatFilter::default()), all);
+        // Clearing the viewer buffer cannot re-add a row from the captured history.
+        let mut external = changed[0].clone();
+        external.key = 3;
+        external.item.kind = SourceKind::Chat;
+        changed.push(external);
+        assert_eq!(
+            feed.update(&[], &changed, &ChatFilter::default()),
+            [RowSource::History(1)]
+        );
     }
 }

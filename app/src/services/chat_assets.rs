@@ -1,105 +1,40 @@
-//! Saves the pictures of chat messages before they are shown.
-//!
-//! blivechat hands out avatar and emoticon URLs on Bilibili's CDN. Every
-//! window loads pictures from local files (the dialogue box and history also
-//! feed Spout and snapshots), so each message waits here, on one thread in
-//! arrival order, until its avatar and emoticon are saved into the blob
-//! folder. Avatars are kept per user (`bili-face-<uid>`), refreshed after a
-//! few days; a picture that fails to download is not tried again for a while
-//! and the message goes on without it.
+//! Publishes chat immediately; a bounded pool fills stable image references later.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
-use crossbeam_channel::{Sender, unbounded};
+use crate::chat::ChatMessage;
+use crossbeam_channel::{Sender, bounded, unbounded};
 use nanatype_blive::ChatEvent;
 use nanatype_model::AssetRef;
 
-use crate::chat::ChatMessage;
-
-/// Avatars older than this are fetched again (people change them).
 const AVATAR_TTL: Duration = Duration::from_secs(3 * 24 * 3600);
-/// A URL that failed is left alone this long.
 const RETRY_AFTER: Duration = Duration::from_secs(10 * 60);
 const TIMEOUT: Duration = Duration::from_secs(4);
 const MAX_BYTES: u64 = 4 * 1024 * 1024;
 const AVATAR_PX: u32 = 128;
 const EMOTE_PX: u32 = 160;
+const WORKERS: usize = 4;
 
-/// Feeds events to the saving thread. Dropping it ends the thread.
 pub struct ChatAssets {
     tx: Sender<ChatEvent>,
 }
 
-impl ChatAssets {
-    /// `deliver` receives each message once its pictures are saved.
-    pub fn start(blob_dir: PathBuf, deliver: impl Fn(ChatMessage) + Send + 'static) -> Self {
-        let (tx, rx) = unbounded::<ChatEvent>();
-        thread::Builder::new()
-            .name("nanatype-chat-assets".into())
-            .spawn(move || {
-                let mut saver = Saver::new(blob_dir);
-                let mut next = 1u64;
-                for event in rx {
-                    let (avatar_url, uid, emoticon_url) = match &event {
-                        ChatEvent::Text {
-                            author, emoticon, ..
-                        } => (
-                            author.avatar_url.clone(),
-                            author.uid.clone(),
-                            emoticon.clone(),
-                        ),
-                        ChatEvent::Gift { author, .. }
-                        | ChatEvent::Member { author, .. }
-                        | ChatEvent::SuperChat { author, .. } => {
-                            (author.avatar_url.clone(), author.uid.clone(), None)
-                        }
-                        _ => continue,
-                    };
-                    let avatar = saver.avatar(&uid, &avatar_url);
-                    let emoticon = emoticon_url.and_then(|url| saver.emoticon(&url));
-                    if let Some(message) = ChatMessage::from_event(event, avatar, emoticon, next) {
-                        next += 1;
-                        deliver(message);
-                    }
-                }
-            })
-            .expect("spawn chat asset thread");
-        Self { tx }
-    }
-
-    /// Where the blivechat thread hands its events.
-    pub fn sender(&self) -> Sender<ChatEvent> {
-        self.tx.clone()
-    }
+#[derive(Clone)]
+struct Job {
+    name: String,
+    url: String,
+    px: u32,
+    ttl: Option<Duration>,
 }
-
-struct Saver {
-    dir: PathBuf,
-    agent: ureq::Agent,
-    /// Blob name → when it was saved or found fresh this session.
-    fresh: HashMap<String, Instant>,
-    failed: HashMap<String, Instant>,
-}
-
-impl Saver {
-    fn new(dir: PathBuf) -> Self {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(TIMEOUT))
-            .user_agent(concat!("NanaType/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .into();
-        Self {
-            dir,
-            agent,
-            fresh: HashMap::new(),
-            failed: HashMap::new(),
-        }
+impl Job {
+    fn asset(&self) -> AssetRef {
+        AssetRef::Blob(self.name.clone())
     }
-
-    fn avatar(&mut self, uid: &str, url: &str) -> Option<AssetRef> {
+    fn avatar(uid: &str, url: &str) -> Option<Self> {
         if url.is_empty() {
             return None;
         }
@@ -108,46 +43,140 @@ impl Saver {
         } else {
             format!("bili-face-{uid}")
         };
-        self.save(&name, url, AVATAR_PX, Some(AVATAR_TTL))
+        Some(Self {
+            name,
+            url: url.into(),
+            px: AVATAR_PX,
+            ttl: Some(AVATAR_TTL),
+        })
     }
-
-    fn emoticon(&mut self, url: &str) -> Option<AssetRef> {
-        let name = format!("bili-emote-{:016x}", fnv(url));
-        self.save(&name, url, EMOTE_PX, None)
+    fn emote(url: &str) -> Self {
+        Self {
+            name: format!("bili-emote-{:016x}", fnv(url)),
+            url: url.into(),
+            px: EMOTE_PX,
+            ttl: None,
+        }
     }
+}
 
-    /// The blob `name`, downloading `url` into it when it is missing or
-    /// older than `ttl`. A stale file is still used when the download fails.
-    fn save(&mut self, name: &str, url: &str, px: u32, ttl: Option<Duration>) -> Option<AssetRef> {
-        let path = self.dir.join(format!("{name}.png"));
-        let asset = AssetRef::Blob(name.to_owned());
-        if self.fresh.contains_key(name) {
-            return Some(asset);
+#[derive(Default)]
+struct Requests {
+    pending: HashSet<String>,
+    failed: HashMap<String, Instant>,
+}
+impl Requests {
+    fn reserve(&mut self, job: &Job, dir: &Path) -> bool {
+        if self.pending.contains(&job.name)
+            || self
+                .failed
+                .get(&job.url)
+                .is_some_and(|at| at.elapsed() < RETRY_AFTER)
+            || file_age(&dir.join(format!("{}.png", job.name)))
+                .is_some_and(|age| job.ttl.is_none_or(|ttl| age < ttl))
+        {
+            return false;
         }
-        let age = file_age(&path);
-        if age.is_some_and(|age| ttl.is_none_or(|ttl| age < ttl)) {
-            self.fresh.insert(name.to_owned(), Instant::now());
-            return Some(asset);
+        self.pending.insert(job.name.clone());
+        true
+    }
+}
+
+impl ChatAssets {
+    pub fn start(
+        blob_dir: PathBuf,
+        deliver: impl Fn(ChatMessage) + Send + 'static,
+        ready: impl Fn(AssetRef) + Send + Sync + 'static,
+    ) -> Self {
+        let (tx, rx) = unbounded::<ChatEvent>();
+        let (jobs, work) = bounded::<Job>(512);
+        let requests = Arc::new(Mutex::new(Requests::default()));
+        let ready = Arc::new(ready);
+        for n in 0..WORKERS {
+            let work = work.clone();
+            let dir = blob_dir.clone();
+            let requests = requests.clone();
+            let ready = ready.clone();
+            thread::Builder::new()
+                .name(format!("nanatype-chat-image-{n}"))
+                .spawn(move || {
+                    let saver = Saver::new();
+                    for job in work {
+                        let path = dir.join(format!("{}.png", job.name));
+                        let result = saver.download(&job.url, &path, job.px);
+                        {
+                            let mut state = requests.lock().unwrap();
+                            state.pending.remove(&job.name);
+                            if result.is_err() {
+                                state.failed.insert(job.url.clone(), Instant::now());
+                            }
+                        }
+                        match result {
+                            Ok(()) => ready(job.asset()),
+                            Err(e) => crate::debug_log(&format!("chat picture {}: {e}", job.url)),
+                        }
+                    }
+                })
+                .expect("spawn chat image worker");
         }
-        let failed_recently = self
-            .failed
-            .get(url)
-            .is_some_and(|at| at.elapsed() < RETRY_AFTER);
-        if !failed_recently {
-            match self.download(url, &path, px) {
-                Ok(()) => {
-                    self.fresh.insert(name.to_owned(), Instant::now());
-                    return Some(asset);
+        thread::Builder::new()
+            .name("nanatype-chat-ingest".into())
+            .spawn(move || {
+                let mut next = 1u64;
+                for event in rx {
+                    let (avatar, emote) = match &event {
+                        ChatEvent::Text {
+                            author, emoticon, ..
+                        } => (
+                            Job::avatar(&author.uid, &author.avatar_url),
+                            emoticon.as_deref().map(Job::emote),
+                        ),
+                        ChatEvent::Gift { author, .. }
+                        | ChatEvent::Member { author, .. }
+                        | ChatEvent::SuperChat { author, .. } => {
+                            (Job::avatar(&author.uid, &author.avatar_url), None)
+                        }
+                        _ => continue,
+                    };
+                    if let Some(message) = ChatMessage::from_event(
+                        event,
+                        avatar.as_ref().map(Job::asset),
+                        emote.as_ref().map(Job::asset),
+                        next,
+                    ) {
+                        next += 1;
+                        // Deliver before scheduling any network work, preserving arrival order.
+                        deliver(message);
+                    }
+                    for job in [avatar, emote].into_iter().flatten() {
+                        let mut state = requests.lock().unwrap();
+                        if state.reserve(&job, &blob_dir) && jobs.try_send(job.clone()).is_err() {
+                            state.pending.remove(&job.name);
+                        }
+                    }
                 }
-                Err(e) => {
-                    crate::debug_log(&format!("chat picture {url}: {e}"));
-                    self.failed.insert(url.to_owned(), Instant::now());
-                }
-            }
-        }
-        age.map(|_| asset)
+            })
+            .expect("spawn chat ingest");
+        Self { tx }
     }
+    pub fn sender(&self) -> Sender<ChatEvent> {
+        self.tx.clone()
+    }
+}
 
+struct Saver {
+    agent: ureq::Agent,
+}
+impl Saver {
+    fn new() -> Self {
+        Self {
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(TIMEOUT))
+                .user_agent(concat!("NanaType/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .into(),
+        }
+    }
     fn download(&self, url: &str, path: &Path, px: u32) -> Result<(), String> {
         let mut response = self.agent.get(url).call().map_err(|e| e.to_string())?;
         let bytes = response
@@ -162,7 +191,8 @@ impl Saver {
         } else {
             image
         };
-        std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(path.parent().ok_or("image has no parent")?)
+            .map_err(|e| e.to_string())?;
         // Written aside and moved in, so a reader never sees half a file.
         let partial = path.with_extension("part");
         image
@@ -189,4 +219,149 @@ fn fnv(text: &str) -> u64 {
         hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nanatype_blive::Author;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn event(url: String, n: u64) -> ChatEvent {
+        ChatEvent::Text {
+            id: n.to_string(),
+            author: Author {
+                uid: "42".into(),
+                name: "观众".into(),
+                avatar_url: url,
+                ..Default::default()
+            },
+            content: format!("message {n}"),
+            emoticon: None,
+            at_ms: n,
+        }
+    }
+    fn scratch(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "nanatype-chat-{label}-{}-{}",
+            std::process::id(),
+            nanatype_model::unix_millis()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn slow_images_do_not_hold_messages_and_duplicate_requests_coalesce() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/face", listener.local_addr().unwrap());
+        let (accepted_tx, accepted) = bounded(1);
+        let (release, gate) = bounded(1);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.read(&mut [0; 2048]);
+            accepted_tx.send(()).unwrap();
+            gate.recv_timeout(Duration::from_secs(3)).unwrap();
+            stream
+                .write_all(
+                    b"HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+            listener.set_nonblocking(true).unwrap();
+            thread::sleep(Duration::from_millis(50));
+            assert!(listener.accept().is_err(), "duplicate avatar downloads");
+        });
+        let (messages, got) = unbounded();
+        let (ready, assets) = unbounded();
+        let service = ChatAssets::start(
+            scratch("slow"),
+            move |m| {
+                let _ = messages.send(m);
+            },
+            move |a| {
+                let _ = ready.send(a);
+            },
+        );
+        service.sender().send(event(url.clone(), 1)).unwrap();
+        accepted.recv_timeout(Duration::from_secs(2)).unwrap();
+        for n in 2..=20 {
+            service.sender().send(event(url.clone(), n)).unwrap();
+        }
+        for n in 1..=20 {
+            let m = got
+                .recv_timeout(Duration::from_millis(300))
+                .expect("message must not wait for image");
+            assert_eq!(m.seq, n);
+            assert_eq!(m.doc.plain_text(), format!("message {n}"));
+            assert_eq!(m.user.avatar, Some(AssetRef::Blob("bili-face-42".into())));
+        }
+        release.send(()).unwrap();
+        server.join().unwrap();
+        assert!(assets.try_recv().is_err());
+    }
+
+    #[test]
+    fn successful_images_fill_the_same_reference_without_delivering_another_message() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/face", listener.local_addr().unwrap());
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 20, 50, 255]))
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = stream.read(&mut [0; 2048]);
+            let bytes = png.into_inner();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                bytes.len()
+            )
+            .unwrap();
+            stream.write_all(&bytes).unwrap();
+        });
+        let dir = scratch("ready");
+        let (messages, got) = unbounded();
+        let (ready, assets) = unbounded();
+        let service = ChatAssets::start(
+            dir.clone(),
+            move |m| {
+                let _ = messages.send(m);
+            },
+            move |a| {
+                let _ = ready.send(a);
+            },
+        );
+        service.sender().send(event(url, 1)).unwrap();
+        let message = got.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(
+            Some(assets.recv_timeout(Duration::from_secs(2)).unwrap()),
+            message.user.avatar
+        );
+        assert!(dir.join("bili-face-42.png").is_file());
+        assert!(got.try_recv().is_err());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn cached_and_recently_failed_images_do_not_use_the_pool() {
+        let dir = scratch("cache");
+        let job = Job::avatar("42", "http://example.invalid/face").unwrap();
+        let mut state = Requests::default();
+        assert!(state.reserve(&job, &dir));
+        assert!(!state.reserve(&job, &dir));
+        state.pending.clear();
+        state.failed.insert(job.url.clone(), Instant::now());
+        assert!(!state.reserve(&job, &dir));
+        state.failed.insert(
+            job.url.clone(),
+            Instant::now() - RETRY_AFTER - Duration::from_secs(1),
+        );
+        assert!(state.reserve(&job, &dir));
+        state.pending.clear();
+        state.failed.clear();
+        std::fs::write(dir.join("bili-face-42.png"), b"cached").unwrap();
+        assert!(!state.reserve(&job, &dir));
+    }
 }

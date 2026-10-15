@@ -209,9 +209,26 @@ fn document_on(
         });
         view = view.presentation(effect_table(&base.effects, base.reduced_motion), schedule);
     }
+    let doc = doc.clone();
+    let look = look.clone();
+    let view = widget(view).bind(move |v: &mut RichTextView| {
+        let urls = ui.asset_urls.get();
+        let rich = to_rich(
+            &doc,
+            &Env {
+                look: &look,
+                urls: &urls,
+                editor: false,
+                locale: ui.locale.get(),
+            },
+        );
+        if v.value != rich {
+            v.value = rich;
+        }
+    });
     match follow {
-        Some(_) => widget(view).node_ref(ui.text_node).into_any(),
-        None => widget(view).into_any(),
+        Some(_) => view.node_ref(ui.text_node).into_any(),
+        None => view.into_any(),
     }
 }
 
@@ -531,8 +548,7 @@ fn reply_quote(ui: Ui) -> AnyView {
                     &skin,
                     &skin.dialogue.reply,
                     reply,
-                    skin.dialogue.text.size,
-                    skin.dialogue.text.color,
+                    &skin.dialogue.text,
                     super::quote::backdrop(
                         skin.dialogue.box_.color,
                         skin.dialogue.box_.frame.is_some(),

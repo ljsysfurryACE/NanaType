@@ -8,7 +8,7 @@ use nana_ui::runtime::view::{AnyView, IntoView, widget};
 use nana_ui::runtime::{NodeStyle, Stack, Text};
 use nana_ui_core::{AlignSpec, LengthSpec};
 use nanatype_model::{ChatRef, Rgba8};
-use nanatype_theme::{ReplySpec, Skin};
+use nanatype_theme::{ReplySpec, Skin, TextSpec, TextStrokeSpec};
 
 use super::{Ui, c};
 use crate::skin_theme::{contrast, on};
@@ -67,42 +67,65 @@ pub fn colors(
     }
 }
 
-/// `reply` as a quote line, sized from `text_size` and coloured from
-/// `text_color` unless the spec says otherwise, over `backdrop`.
+/// `reply` as a quote line, retaining the text's fonts, outline and shadow.
+/// Transparent overlays need a contrasting outline when no skin outline exists.
 pub fn quote_view(
     ui: Ui,
     skin: &Skin,
     spec: &ReplySpec,
     reply: &ChatRef,
-    text_size: f32,
-    text_color: Rgba8,
+    text: &TextSpec,
     backdrop: Option<Rgba8>,
 ) -> AnyView {
     let size = spec
         .size
         .filter(|s| s.is_finite() && *s > 0.0)
-        .unwrap_or((text_size * 0.62).max(10.0));
-    let (name_color, color) = colors(skin, spec, text_color, backdrop);
-    let style = |color: Rgba8, weight: u16| {
+        .unwrap_or((text.size * 0.62).max(10.0));
+    let (name_color, color) = colors(skin, spec, text.color, backdrop);
+    let style = |color: Rgba8, weight: u16, name: bool| {
         let mut st = NodeStyle::default();
         let l = Arc::make_mut(&mut st.layout);
         l.font_size = Some(size);
         l.font_weight = Some(weight);
+        l.font_family = if name {
+            &skin.fonts.name
+        } else {
+            &skin.fonts.body
+        }
+        .families
+        .first()
+        .cloned();
         l.color = Some(c(color));
         l.white_space_nowrap = true;
+        let stroke = text
+            .stroke
+            .as_ref()
+            .map(|s| TextStrokeSpec {
+                color: s.color,
+                width: s.width * (size / text.size.max(1.0)).clamp(0.5, 1.0),
+            })
+            .or_else(|| {
+                backdrop.is_none().then(|| TextStrokeSpec {
+                    color: on(color),
+                    width: 1.5,
+                })
+            });
+        if let Some(stroke) = stroke {
+            super::surface::text_stroke(l, &stroke);
+        }
+        if let Some(shadow) = &text.shadow {
+            super::surface::text_shadow(l, shadow);
+        }
         st
     };
-    let url = reply.user.avatar.as_ref().and_then(|a| {
-        ui.asset_urls
-            .with_untracked(|u| u.get(&a.to_string()).cloned())
-    });
     let opacity = spec.opacity.clamp(0.0, 1.0);
     let avatar = widget(Stack::row(0.0).with_layout(move |l| {
         l.opacity = Some(opacity);
         l.flex_shrink = Some(0.0);
     }))
-    .children(super::danmaku::avatar(
-        url,
+    .children(super::danmaku::asset_avatar(
+        ui,
+        reply.user.avatar.as_ref().map(ToString::to_string),
         &reply.user.name,
         (size * 1.4).round(),
         c(skin.chrome.accent),
@@ -129,18 +152,33 @@ pub fn quote_view(
     )
     .children((
         avatar,
-        widget(Text::new(format!("{}：", reply.user.name)).style({
-            let mut st = style(name_color, 700);
-            Arc::make_mut(&mut st.layout).flex_shrink = Some(0.0);
-            st
-        })),
+        widget(
+            Text::new(format!("{}：", reply.user.name))
+                .style({
+                    let mut st = style(name_color, 700, true);
+                    let l = Arc::make_mut(&mut st.layout);
+                    l.flex_shrink = Some(1.0);
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.max_width = Some(LengthSpec::Percent(40.0));
+                    st
+                })
+                .truncating(),
+        ),
         widget(Stack::row(0.0).width(LengthSpec::Fill).with_layout(|l| {
             l.flex_shrink = Some(1.0);
             l.min_width = Some(LengthSpec::Px(0.0));
+            l.overflow_x = nana_ui_core::OverflowSpec::Hidden;
         }))
         .children(widget(
             Text::new(reply.text.clone())
-                .style(style(color, 400))
+                .style({
+                    let mut st = style(color, 400, false);
+                    let l = Arc::make_mut(&mut st.layout);
+                    l.width = Some(LengthSpec::Fill);
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.max_width = Some(LengthSpec::Percent(100.0));
+                    st
+                })
                 .truncating(),
         )),
     ))

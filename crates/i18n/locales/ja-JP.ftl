@@ -396,7 +396,6 @@ err-spout = Spout 出力に失敗しました：{ $message }
 err-syphon = Syphon 出力に失敗しました：{ $message }
 # blivechat
 window-chat = コメント
-chat-mention = メンション
 chat-reply = 返信
 chat-replying = { $name } に返信
 chat-reply-cancel = 返信をやめる
@@ -553,3 +552,11 @@ err-tray = トレイアイコンを使用できません：{ $message }
 skins-export-failed = スキンを書き出せませんでした：{ $message }
 skins-delete-failed = スキンを削除できませんでした：{ $message }
 ## end round2-status
+
+## Chat interaction
+chat-at-action = メンション
+chat-latest = 最新へ
+chat-inserted = @{ $name } を挿入しました
+chat-queued = 待機中 · { $count } 件
+chat-room-owner = 配信者
+chat-moderator = モデレーター

@@ -181,12 +181,14 @@ pub enum Msg {
     },
     /// The input window's native handle (for the summon hotkey).
     InputHwnd(isize),
-    /// A chat message whose pictures are saved.
+    /// A chat message with stable references; pictures may still be loading.
     Chat(std::sync::Arc<crate::chat::ChatMessage>),
+    /// A referenced picture is now in the local cache. Never adds messages.
+    ChatAssetReady(nanatype_model::AssetRef),
     /// The blivechat connection changed.
     ChatStatus(BliveStatus),
-    /// Put a label for the chat message's author at the caret; `reply` also
-    /// quotes the message above the next line sent.
+    /// Quote the message when `reply` is true; otherwise insert its author
+    /// label at the caret.
     ChatMention {
         seq: u64,
         reply: bool,

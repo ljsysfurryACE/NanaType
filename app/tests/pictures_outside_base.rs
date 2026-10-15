@@ -8,6 +8,7 @@
 //! path → URL code and counts their pixels.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use nana_ui::runtime::view::widget;
 use nana_ui::runtime::{DocumentId, RuntimeDocument, Stack};
@@ -30,6 +31,11 @@ fn solid(path: &Path, rgb: [u8; 3]) {
 
 /// `urls` side by side, each as a chat avatar draws it, rendered offscreen.
 fn render(out: &Path, name: &str, urls: Vec<String>) -> image::RgbaImage {
+    let ui = nanatype::ui::Ui::new(
+        Arc::new(Default::default()),
+        Arc::new(Default::default()),
+        nanatype_i18n::Locale::ZhCn,
+    );
     let id = DocumentId::new(1).unwrap();
     let mut doc = RuntimeDocument::new(id);
     doc.context_mut()
@@ -43,7 +49,11 @@ fn render(out: &Path, name: &str, urls: Vec<String>) -> image::RgbaImage {
                                 .height(LengthSpec::Px(48.0))
                                 .with_layout(|l| l.position = nana_ui_core::PositionSpec::Relative),
                         )
-                        .children(nanatype::ui::danmaku::picture_over(url, 4.0))
+                        .children(nanatype::ui::danmaku::reactive_picture(
+                            ui,
+                            Some(url),
+                            4.0,
+                        ))
                     })
                     .collect::<Vec<_>>(),
             )

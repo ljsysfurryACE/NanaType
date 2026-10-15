@@ -46,7 +46,7 @@
 | `[sticker=cats/hello h=1.6]` | 插入贴纸库 `cats` 中的 `hello`，高度为 1.6 倍字号 |
 | `[emote=wave]` | 插入皮肤自带表情 `emotes/wave` |
 | `[img="file:C:/pic.png" alt="图"]` | 插入图片 |
-| `[at=1234 name="观众" avatar=blob:bili-face-1234]` | 提及直播间观众：显示为带头像和昵称的标签（样式见皮肤的 `[mention]`），整体算一个字；`at` 的值是 B 站 uid，可省略；`avatar` 可省略。通常由弹幕面板的「@」「回复」按钮插入 |
+| `[at=1234 name="观众" avatar=blob:bili-face-1234]` | 提及直播间观众：显示为带头像和昵称的标签（样式见皮肤的 `[mention]`），整体算一个字；`at` 的值是 B 站 uid，可省略；`avatar` 可省略。通常由弹幕面板的「@」按钮插入；「回复」只附带原消息引用 |
 
 ## VTube Studio
 

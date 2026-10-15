@@ -1394,17 +1394,15 @@ fn reply_bar(ui: Ui) -> AnyView {
                 return widget(Stack::row(0.0)).into_any();
             };
             let skin = ui.skin.get_untracked();
-            let url = reply.user.avatar.as_ref().and_then(|a| {
-                ui.asset_urls
-                    .with_untracked(|u| u.get(&a.to_string()).cloned())
-            });
             let mut label = NodeStyle::default();
             {
                 let l = Arc::make_mut(&mut label.layout);
                 l.font_size = Some(12.0);
                 l.font_weight = Some(700);
                 l.white_space_nowrap = true;
-                l.flex_shrink = Some(0.0);
+                l.flex_shrink = Some(1.0);
+                l.min_width = Some(LengthSpec::Px(0.0));
+                l.max_width = Some(LengthSpec::Percent(45.0));
             }
             // The accent, darkened where it would not read as text.
             label.foreground = Some(SemanticColorRole::AccentOnSoft);
@@ -1423,9 +1421,16 @@ fn reply_bar(ui: Ui) -> AnyView {
                         "chat-replying",
                         &[("name", reply.user.name.as_str().into())],
                     ))
-                    .style(label),
+                    .style(label)
+                    .truncating(),
                 ),
-                super::danmaku::avatar(url, &reply.user.name, 18.0, super::c(skin.chrome.accent)),
+                super::danmaku::asset_avatar(
+                    ui,
+                    reply.user.avatar.as_ref().map(ToString::to_string),
+                    &reply.user.name,
+                    18.0,
+                    super::c(skin.chrome.accent),
+                ),
                 widget(Stack::row(0.0).with_layout(|l| {
                     l.flex_grow = Some(1.0);
                     l.flex_shrink = Some(1.0);
@@ -1490,11 +1495,33 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
                 widget(RichTextEditor::new(ui.editor_value.get_untracked()))
                     .entity_ref(editor)
                     .bind(move |e: &mut RichTextEditor| {
-                        ui.editor_value.with(|v| {
-                            if e.value != *v {
-                                e.value = v.clone();
+                        // Rehydrate image objects in place. NanaUI preserves this
+                        // editor's selection and undo stack when its value updates.
+                        let urls = ui.asset_urls.get();
+                        let look = Base::editor(&ui.skin.get()).look();
+                        let value = super::rich::to_rich(
+                            &ui.draft.get(),
+                            &super::rich::Env {
+                                look: &look,
+                                urls: &urls,
+                                editor: true,
+                                locale: ui.locale.get(),
+                            },
+                        );
+                        if e.value != value {
+                            if e.value.text() != value.text() {
+                                // Binding directly to `value` bypasses NanaUI's
+                                // reconciliation: a cleared draft would retain an
+                                // out-of-bounds caret and crash the next @ insertion.
+                                let mut next = e.clone();
+                                next.value = value;
+                                nana_ui::runtime::ComponentView::reconcile(e, next);
+                            } else {
+                                // Image/style-only updates preserve IME preedit,
+                                // typing attributes, selection and undo history.
+                                e.value = value;
                             }
-                        });
+                        }
                         let st = style();
                         if e.style != st {
                             e.style = st;
@@ -1542,9 +1569,13 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
                 })
                 .entity_ref(source)
                 .bind(move |a: &mut TextArea| {
-                    let text = ui.source.with(|s| s.text.clone());
-                    if a.state.value.as_str() != text {
-                        a.state.replace_value(text);
+                    let source = ui.source.get();
+                    if a.state.value.as_str() != source.text {
+                        a.state.replace_value(source.text);
+                        a.state.selection = nana_ui::runtime::TextSelection::new(
+                            source.selection.0,
+                            source.selection.1,
+                        );
                     }
                 })
                 .on_cx(move |_, e: &TextChanged, cx| {
@@ -1635,6 +1666,27 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
         super::feedback::toast_stack(toasts, STATUS_H + 4.0, 2),
     ));
     with_refs(view, (editor, source, toasts))
+}
+
+/// Selection-only navigation in NanaUI's plain TextArea emits no TextChanged.
+/// Read its retained caret before a toolbar or another window inserts markup.
+pub fn capture_source_selection(
+    ui: Ui,
+    cx: &nana_ui::runtime::AppContext,
+    source: nana_ui::runtime::Entity<TextArea>,
+) {
+    if !ui.source_mode.get_untracked() {
+        return;
+    }
+    let Some(state) = cx.world().text_input(source.stable_id()) else {
+        return;
+    };
+    let mut current = ui.source.get_untracked();
+    let range = state.selection.range();
+    if current.text == state.value && current.selection != (range.start, range.end) {
+        current.selection = (range.start, range.end);
+        ui.source.set(current);
+    }
 }
 
 pub type EditorRef = EntityRef<RichTextEditor>;

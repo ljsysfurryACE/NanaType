@@ -12,10 +12,8 @@ use nana_ui_core::{
     OverflowSpec, PointerEventsSpec, PositionSpec,
 };
 use nanatype_core::HistoryRow;
-use nanatype_model::{Entrance, HistoryItem, LineId, Rgba8, SourceKind};
-use nanatype_theme::{
-    AvatarShape, DecorLayer, HistoryAnchor, HistoryEntrance, HistoryLayout, HistoryTitle, Skin,
-};
+use nanatype_model::{Document, Entrance, HistoryItem, Inline, LineId, Rgba8, SourceKind, Stroke};
+use nanatype_theme::{AvatarShape, DecorLayer, HistoryEntrance, HistoryLayout, HistoryTitle, Skin};
 
 use super::dialogue::{self, Base, Timing, document};
 use super::surface::{self, Surface};
@@ -43,6 +41,39 @@ const ROW_ENTER_MS: u64 = 220;
 /// Meta text (time, role) is a step below the name: 11px beside a 14px name.
 fn time_size(h: &nanatype_theme::History) -> f32 {
     h.time_size.unwrap_or((h.name_size - 3.0).max(9.0))
+}
+
+/// Keep enough room for a short phrase and an @ label in narrow inline logs.
+/// At the skin's normal width this leaves its requested name column unchanged.
+fn inline_name_width(h: &nanatype_theme::History, col_w: f32, show_time: bool) -> f32 {
+    let time = if show_time {
+        time_size(h) * if h.time_seconds { 4.6 } else { 2.9 } + 10.0
+    } else {
+        0.0
+    };
+    let body = (h.text.size * 6.0).max(80.0);
+    h.name_width.min((col_w - time - body - 10.0).max(32.0))
+}
+
+/// Outline only text runs, so @ labels retain their own fill and lettering.
+fn transparent_text(doc: &Document, color: Rgba8) -> Document {
+    let mut drawn = doc.clone();
+    for paragraph in &mut drawn.paragraphs {
+        for inline in &mut paragraph.inlines {
+            let run = match inline {
+                Inline::Text(run) => run,
+                Inline::Ruby(ruby) => &mut ruby.base,
+                _ => continue,
+            };
+            if run.style.stroke.is_none() {
+                run.style.stroke = Some(Stroke {
+                    color: crate::skin_theme::on(run.style.color.unwrap_or(color)),
+                    width_px: 1.5,
+                });
+            }
+        }
+    }
+    drawn
 }
 
 /// `col` mixed `t` of the way to white.
@@ -120,7 +151,19 @@ fn viewer_color(item: &HistoryItem) -> Rgba8 {
 /// Rows of one speaker this close together share a header.
 const GROUP_MS: u64 = 120_000;
 /// Space between the rows of a group.
-const GROUP_GAP: f32 = 4.0;
+const GROUP_GAP: f32 = 8.0;
+
+/// Positive spacing between entries: grouping never pulls one bubble into another.
+fn row_gap(skin: &Skin, follows: bool) -> f32 {
+    let h = &skin.history;
+    if h.layout == HistoryLayout::Inline {
+        h.gap.clamp(8.0, 14.0)
+    } else if follows {
+        (h.text.size * 0.45).round().clamp(GROUP_GAP, 12.0)
+    } else {
+        h.gap.max((h.text.size * 0.65).round()).clamp(12.0, 20.0)
+    }
+}
 
 /// Whether `row` continues `prev`'s group: same speaker, soon after.
 fn continues(prev: &HistoryItem, row: &HistoryItem) -> bool {
@@ -142,18 +185,67 @@ fn follow_ups(rows: &[HistoryRow], shown: &[u64]) -> Vec<u64> {
         .collect()
 }
 
-fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
-    let skin = ui.skin.get_untracked();
-    let settings = ui.settings.get_untracked();
-    let h = skin.history.clone();
-    let col_w = column_width(&skin, &settings);
-    let Some(row) = ui
-        .history
+fn find_row(ui: Ui, key: u64) -> Option<HistoryRow> {
+    ui.history
         .with_untracked(|rows| rows.iter().find(|r| r.key == key).cloned())
-    else {
+}
+
+/// Halo's presentation follows the approved interaction preview. Other skins
+/// retain their own log layout and speaker grouping. All histories start at the top.
+fn interaction_presentation(skin: &Skin) -> bool {
+    skin.meta.id == "nanatype.halo"
+}
+
+fn entry_view(ui: Ui, key: u64, first: bool, follows: bool) -> AnyView {
+    let gap = if first {
+        0.0
+    } else {
+        ui.skin.with_untracked(|s| row_gap(s, follows))
+    };
+    widget(
+        Stack::column(0.0)
+            .width(LengthSpec::Fill)
+            .with_layout(move |l| {
+                l.margin_top = Some(LengthSpec::Px(gap));
+            }),
+    )
+    .children(row_view(ui, key, follows))
+    .into_any()
+}
+
+fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
+    let mut skin = ui.skin.get_untracked();
+    let settings = ui.settings.get_untracked();
+    let fitted = interaction_presentation(&skin);
+    if fitted {
+        let k = Arc::make_mut(&mut skin);
+        k.history.avatar.size = k.history.avatar.size.min(36.0);
+        k.history.text.size = k.history.text.size.clamp(14.0, 17.0);
+    }
+    let h = skin.history.clone();
+    let exposed = h
+        .panel
+        .as_ref()
+        .and_then(|p| super::quote::backdrop(p.color, false))
+        .is_none();
+    let col_w = if fitted {
+        let (width, _) =
+            crate::windows::size_of(crate::windows::WindowKind::History, &skin, &settings);
+        (width
+            - 38.0
+            - if !settings.history.show_avatar || h.avatar.shape == AvatarShape::None {
+                0.0
+            } else {
+                h.avatar.size + 10.0
+            })
+        .max(60.0)
+    } else {
+        column_width(&skin, &settings)
+    };
+    let Some(row) = find_row(ui, key) else {
         return widget(Stack::row(0.0)).into_any();
     };
-    let inline = h.layout == HistoryLayout::Inline;
+    let inline = h.layout == HistoryLayout::Inline && !fitted;
     // Echo-Live's log names every line; bubble lists group.
     let follows = follows && !inline;
     let show_avatar = settings.history.show_avatar && h.avatar.shape != AvatarShape::None;
@@ -164,15 +256,6 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     };
     // Chat rows name a saved picture (`blob:…`); the local speaker's avatar
     // is a path or a URL.
-    let avatar_url = row.item.avatar.as_ref().and_then(|p| {
-        if let Some(url) = ui.asset_urls.with_untracked(|u| u.get(p).cloned()) {
-            Some(url)
-        } else if p.contains("://") {
-            Some(p.clone())
-        } else {
-            crate::services::media::url(std::path::Path::new(p), None)
-        }
-    });
     let chat = row.item.kind != SourceKind::Typewriter;
     // Chat rows are drawn a little lighter than the streamer's lines.
     let skin = if chat {
@@ -194,15 +277,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
                 .panel
                 .as_ref()
                 .and_then(|p| super::quote::backdrop(p.color, false));
-            super::quote::quote_view(
-                ui,
-                &skin,
-                &h.reply,
-                &reply,
-                h.text.size,
-                h.text.color,
-                backdrop,
-            )
+            super::quote::quote_view(ui, &skin, &h.reply, &reply, &h.text, backdrop)
         });
     let viewer = chat.then(|| viewer_color(&row.item));
     // A picture-less avatar: the viewer's colour, the skin's fill, or the
@@ -240,7 +315,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     } else if show_avatar {
         // The initial on its colour, with the picture laid over it: a
         // picture still loading (or unreadable) leaves the initial showing.
-        let url = avatar_url.clone();
+        let asset = row.item.avatar.clone();
         widget(
             Stack::row(0.0)
                 .width(LengthSpec::Px(size))
@@ -268,7 +343,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
                     .decorative()
                     .style(initial_style),
             ),
-            url.map(|u| super::danmaku::picture_over(u, radius)),
+            Some(super::danmaku::reactive_picture(ui, asset, radius)),
         ))
         .into_any()
     } else {
@@ -280,6 +355,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         let l = Arc::make_mut(&mut name_style.layout);
         l.font_size = Some(h.name_size);
         l.font_weight = Some(h.name_weight);
+        l.font_family = skin.fonts.name.families.first().cloned();
         l.color = Some(c(h.name_color));
         if let Some(p) = &h.name_plate {
             l.color = Some(c(skin.color(p.text_color)));
@@ -289,6 +365,14 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         }
         if let Some(stroke) = &h.name_stroke {
             surface::text_stroke(l, stroke);
+        } else if exposed && h.name_plate.is_none() {
+            surface::text_stroke(
+                l,
+                &nanatype_theme::TextStrokeSpec {
+                    color: crate::skin_theme::on(h.name_color),
+                    width: 1.0,
+                },
+            );
         }
     }
     let mut name_plate = Surface::history_name_plate(&skin);
@@ -301,12 +385,23 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     {
         let l = Arc::make_mut(&mut time_style.layout);
         l.font_size = Some(time_size(&h));
+        l.font_family = skin.fonts.body.families.first().cloned();
         l.color = Some(c(h.time_color));
+        if exposed {
+            surface::text_stroke(
+                l,
+                &nanatype_theme::TextStrokeSpec {
+                    color: crate::skin_theme::on(h.time_color),
+                    width: 1.0,
+                },
+            );
+        }
         l.white_space_nowrap = true;
         super::tnum(l);
     }
     let show_name = settings.history.show_name && !row.item.author.is_empty() && !follows;
     let show_time = settings.history.show_time && !follows;
+    let inline_name_w = inline_name_width(&h, col_w, show_time);
     // Who is talking, once live chat shares the list.
     let role = (show_name && !inline && (chat || settings.history.chat.enabled)).then(|| {
         let key = if chat {
@@ -318,6 +413,9 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     });
     let name = show_name.then(|| {
         let plate = name_plate.clone();
+        let max_name = if inline { inline_name_w } else { col_w - 64.0 }.max(32.0);
+        Arc::make_mut(&mut name_style.layout).max_width =
+            Some(LengthSpec::Px((max_name - plate_pad[0] * 2.0).max(12.0)));
         widget(
             Stack::row(0.0)
                 .padding_xy(plate_pad[0], plate_pad[1])
@@ -325,9 +423,17 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
                     if let Some(p) = &plate {
                         p.apply(l);
                     }
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.max_width = Some(LengthSpec::Px(max_name));
+                    l.overflow_x = OverflowSpec::Hidden;
+                    l.flex_shrink = Some(1.0);
                 }),
         )
-        .children(widget(Text::new(row.item.author.clone()).style(name_style)))
+        .children(widget(
+            Text::new(row.item.author.clone())
+                .style(name_style)
+                .truncating(),
+        ))
     });
     let time = show_time
         .then(|| widget(Text::new(local_time(row.item.at, h.time_seconds)).style(time_style)));
@@ -342,31 +448,28 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         // Only a group's first bubble points at the avatar.
         bubble_surface.radii[0] = bubble_surface.radii[0].max(h.bubble_radius);
     }
+    let body_skin = skin.clone();
     let body = dynamic(
         move || {
-            ui.history.with(|rows| {
-                rows.iter().find(|r| r.key == key).map(|r| {
-                    (
-                        r.reveal.is_some(),
-                        r.reveal.as_ref().map(|x| {
-                            (
-                                x.shown,
-                                x.hidden_from,
-                                x.segment.as_ref().map(|s| s.origin_ms),
-                            )
-                        }),
-                    )
-                })
+            ui.history.with(|_| ());
+            find_row(ui, key).map(|r| {
+                (
+                    r.reveal.is_some(),
+                    r.reveal.as_ref().map(|x| {
+                        (
+                            x.shown,
+                            x.hidden_from,
+                            x.segment.as_ref().map(|s| s.origin_ms),
+                        )
+                    }),
+                )
             })
         },
         move |_| {
-            let Some(row) = ui
-                .history
-                .with_untracked(|rows| rows.iter().find(|r| r.key == key).cloned())
-            else {
+            let Some(row) = find_row(ui, key) else {
                 return widget(Stack::row(0.0)).into_any();
             };
-            let skin = ui.skin.get_untracked();
+            let skin = body_skin.clone();
             let entrance = Entrance {
                 kind: skin.dialogue.reveal.entrance.kind,
                 ms: skin.dialogue.reveal.entrance.ms,
@@ -382,13 +485,17 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
                 Some(r) => Timing::Reveal(r.clone()),
                 None => Timing::Static,
             };
-            document(ui, &row.doc, &base, timing)
+            if exposed && skin.history.bubble_color.a < 128 && base.stroke.is_none() {
+                document(ui, &transparent_text(&row.doc, base.color), &base, timing)
+            } else {
+                document(ui, &row.doc, &base, timing)
+            }
         },
     );
     // Inline rows share the column with the name and the time; the time's
     // width is estimated from its digits.
     let bubble_max = if inline {
-        let name_w = if show_name { h.name_width + 10.0 } else { 0.0 };
+        let name_w = if show_name { inline_name_w + 10.0 } else { 0.0 };
         let digits = if h.time_seconds { 4.6 } else { 2.9 };
         let time_w = if show_time {
             time_size(&h) * digits + 10.0
@@ -427,95 +534,94 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         None => bubble.into_any(),
     };
 
-    let content = if inline {
-        let name_w = h.name_width;
-        let quote_indent = if show_name { name_w + 10.0 } else { 0.0 };
-        let quote_w = (col_w - quote_indent).max(40.0);
-        let quote_line = inline_quote.map(|q| {
-            widget(
-                Stack::column(0.0)
-                    .width(LengthSpec::Px(quote_w))
-                    .with_layout(move |l| {
-                        l.margin_left = Some(LengthSpec::Px(quote_indent));
+    let content =
+        if inline {
+            let name_w = inline_name_w;
+            let quote_indent = if show_name { name_w + 10.0 } else { 0.0 };
+            let quote_w = (col_w - quote_indent).max(40.0);
+            let quote_line = inline_quote.map(|q| {
+                widget(
+                    Stack::column(0.0)
+                        .width(LengthSpec::Px(quote_w))
+                        .with_layout(move |l| {
+                            l.margin_left = Some(LengthSpec::Px(quote_indent));
+                            l.min_width = Some(LengthSpec::Px(0.0));
+                            l.flex_shrink = Some(0.0);
+                        }),
+                )
+                .children(q)
+            });
+            let line = widget(
+                Stack::row(10.0)
+                    .width(LengthSpec::Px(col_w))
+                    .with_layout(|l| {
                         l.min_width = Some(LengthSpec::Px(0.0));
-                        l.flex_shrink = Some(0.0);
+                        // Name, first line and time share a baseline.
+                        l.align_items = AlignSpec::Baseline;
                     }),
             )
-            .children(q)
-        });
-        let line = widget(
-            Stack::row(10.0)
-                .width(LengthSpec::Px(col_w))
-                .with_layout(|l| {
-                    l.min_width = Some(LengthSpec::Px(0.0));
-                    // Name, first line and time share a baseline.
-                    l.align_items = AlignSpec::Baseline;
+            .children((
+                name.map(|n| {
+                    widget(
+                        Stack::row(0.0)
+                            .width(LengthSpec::Px(name_w))
+                            .with_layout(|l| l.flex_shrink = Some(0.0)),
+                    )
+                    .children(n)
                 }),
-        )
-        .children((
-            name.map(|n| {
-                widget(
-                    Stack::row(0.0)
-                        .width(LengthSpec::Px(name_w))
-                        .with_layout(|l| l.flex_shrink = Some(0.0)),
-                )
-                .children(n)
-            }),
-            // Takes the spare width, so the time sits at the right edge.
-            widget(Stack::row(0.0).with_layout(|l| {
-                l.flex_grow = Some(1.0);
-                l.flex_shrink = Some(1.0);
-                l.min_width = Some(LengthSpec::Px(0.0));
-            }))
-            .children(bubble),
-            time.map(|t| {
+                // Takes the spare width, so the time sits at the right edge.
                 widget(Stack::row(0.0).with_layout(|l| {
-                    l.flex_shrink = Some(0.0);
+                    l.flex_grow = Some(1.0);
+                    l.flex_shrink = Some(1.0);
+                    l.min_width = Some(LengthSpec::Px(0.0));
                 }))
-                .children(t)
-            }),
-        ));
-        match quote_line {
-            Some(q) => widget(
-                Stack::column(2.0)
+                .children(bubble),
+                time.map(|t| {
+                    widget(Stack::row(0.0).with_layout(|l| {
+                        l.flex_shrink = Some(0.0);
+                    }))
+                    .children(t)
+                }),
+            ));
+            match quote_line {
+                Some(q) => widget(Stack::column(2.0).width(LengthSpec::Px(col_w)).with_layout(
+                    |l| {
+                        l.min_width = Some(LengthSpec::Px(0.0));
+                        l.align_items = AlignSpec::Start;
+                    },
+                ))
+                .children((q, line))
+                .into_any(),
+                None => line.into_any(),
+            }
+        } else {
+            let header = (name.is_some() || time.is_some()).then(|| {
+                widget(
+                    Stack::row(6.0)
+                        .align(AlignSpec::Center)
+                        .width(LengthSpec::Fill),
+                )
+                .children((name, role, time))
+                .into_any()
+            });
+            widget(
+                Stack::column(6.0)
                     .width(LengthSpec::Px(col_w))
                     .with_layout(|l| {
                         l.min_width = Some(LengthSpec::Px(0.0));
                         l.align_items = AlignSpec::Start;
                     }),
             )
-            .children((q, line))
-            .into_any(),
-            None => line.into_any(),
-        }
-    } else {
-        let header = (name.is_some() || time.is_some())
-            .then(|| widget(Stack::row(6.0).align(AlignSpec::Center)).children((name, role, time)));
-        widget(
-            Stack::column(6.0)
-                .width(LengthSpec::Px(col_w))
-                .with_layout(|l| {
-                    l.min_width = Some(LengthSpec::Px(0.0));
-                    l.align_items = AlignSpec::Start;
-                }),
-        )
-        .children((header, bubble))
-        .into_any()
-    };
+            .children((header, bubble))
+            .into_any()
+        };
 
     let fade_after = settings.history.fade_after_s;
     let at = row.item.at;
-    // A group's later rows sit closer to the one above.
-    let pull = if follows { GROUP_GAP - h.gap } else { 0.0 };
-    widget(
+    let view = widget(
         Stack::row(10.0)
             .align(AlignSpec::Start)
-            .width(LengthSpec::Fill)
-            .with_layout(move |l| {
-                if pull != 0.0 {
-                    l.margin_top = Some(LengthSpec::Px(pull));
-                }
-            }),
+            .width(LengthSpec::Fill),
     )
     .bind(move |s: &mut Stack| {
         let Some(after) = fade_after else {
@@ -530,7 +636,18 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     })
     // Inline rows drop the empty avatar slot, so the name sits at the edge.
     .children(((show_avatar || !inline).then_some(avatar), content))
-    .into_any()
+    .into_any();
+    if fitted {
+        widget(
+            Stack::column(0.0)
+                .width(LengthSpec::Fill)
+                .padding_xy(8.0, 0.0),
+        )
+        .children(view)
+        .into_any()
+    } else {
+        view
+    }
 }
 
 /// The newest `visible` rows, leaving out the line `on_screen`.
@@ -569,6 +686,9 @@ pub fn history_window(ui: Ui) -> impl IntoView {
         })
     });
     let follows = computed(move || {
+        if ui.skin.with(|s| interaction_presentation(s)) {
+            return Vec::new();
+        }
         let shown = items.get();
         ui.history.with(|rows| follow_ups(rows, &shown))
     });
@@ -579,7 +699,7 @@ pub fn history_window(ui: Ui) -> impl IntoView {
     };
     dynamic(key, move |_| {
         let skin = ui.skin.get_untracked();
-        let gap = skin.history.gap;
+        let presentation = interaction_presentation(&skin);
         let ms = std::time::Duration::from_millis(ROW_ENTER_MS);
         // Reduced motion keeps the fade and drops the travel.
         let reduced = ui.reduced_motion.get_untracked();
@@ -596,8 +716,13 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             |k: &u64| *k,
             move |k: u64| {
                 dynamic(
-                    move || follows.with(|f| f.contains(&k)),
-                    move |f| row_view(ui, k, *f),
+                    move || {
+                        (
+                            items.with(|i| i.first() == Some(&k)),
+                            follows.with(|f| f.contains(&k)),
+                        )
+                    },
+                    move |(first, f)| entry_view(ui, k, *first, *f),
                 )
             },
         );
@@ -606,8 +731,18 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             None => list,
         };
         let h = &skin.history;
-        let [mt, mr, mb, ml] = h.panel.as_ref().map_or([8.0; 4], |p| p.margin);
-        let [pl, pt, pr, pb] = h.panel.as_ref().map_or([4.0; 4], |p| p.padding);
+        let [mt, mr, mb, ml] = h
+            .panel
+            .as_ref()
+            .map_or(if presentation { [0.0; 4] } else { [8.0; 4] }, |p| p.margin);
+        let [pl, pt, pr, pb] = h.panel.as_ref().map_or(
+            if presentation {
+                [6.0, 16.0, 6.0, 16.0]
+            } else {
+                [4.0, 8.0, 4.0, 8.0]
+            },
+            |p| p.padding,
+        );
         let panel_surface = Surface::history_panel(&skin);
         let decor = |layer: DecorLayer| -> Vec<AnyView> {
             h.decor
@@ -618,10 +753,6 @@ pub fn history_window(ui: Ui) -> impl IntoView {
         };
         let (below, above) = (decor(DecorLayer::Below), decor(DecorLayer::Above));
         let title = h.title.as_ref().map(|t| title_view(&skin, t));
-        let justify = match h.anchor {
-            HistoryAnchor::Bottom => nana_ui_core::JustifySpec::End,
-            HistoryAnchor::Top => nana_ui_core::JustifySpec::Start,
-        };
         widget(Stack::fill_column(0.0).with_layout(move |l| {
             l.padding_top = Some(LengthSpec::Px(mt));
             l.padding_right = Some(LengthSpec::Px(mr));
@@ -667,15 +798,15 @@ pub fn history_window(ui: Ui) -> impl IntoView {
                         }),
                 )
                 .children(
-                    widget(Stack::column(gap).with_layout(move |l| {
+                    widget(Stack::column(0.0).with_layout(move |l| {
                         l.padding_left = Some(LengthSpec::Px(pl));
                         l.padding_top = Some(LengthSpec::Px(pt));
                         l.padding_right = Some(LengthSpec::Px(pr));
                         l.padding_bottom = Some(LengthSpec::Px(pb));
-                        // At least the viewport tall, so `justify_content`
-                        // has spare room to anchor the rows in.
+                        // A short log always starts at its content area's top;
+                        // follow_end still scrolls overflowing logs to the newest row.
                         l.min_height = Some(LengthSpec::Percent(100.0));
-                        l.justify_content = justify;
+                        l.justify_content = nana_ui_core::JustifySpec::Start;
                     }))
                     .children(list),
                 ),

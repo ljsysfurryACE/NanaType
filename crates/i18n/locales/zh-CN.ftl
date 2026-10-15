@@ -396,7 +396,6 @@ err-spout = Spout 输出失败：{ $message }
 err-syphon = Syphon 输出失败：{ $message }
 # blivechat
 window-chat = 弹幕
-chat-mention = @ 提及
 chat-reply = 回复
 chat-replying = 回复 { $name }
 chat-reply-cancel = 取消回复
@@ -553,3 +552,11 @@ err-tray = 托盘图标不可用：{ $message }
 skins-export-failed = 皮肤导出失败：{ $message }
 skins-delete-failed = 皮肤删除失败：{ $message }
 ## end round2-status
+
+## Chat interaction
+chat-at-action = 艾特
+chat-latest = 回到最新
+chat-inserted = 已插入 @{ $name }
+chat-queued = 已排队 · { $count } 条
+chat-room-owner = 房主
+chat-moderator = 房管

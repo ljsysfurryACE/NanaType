@@ -202,17 +202,17 @@ bubble_gradient = { angle = 135, stops = [[0, "#fff0f5"], [1, "#ffe1ec"]] }
 bubble_shadows = [{ color = "#00000020", dy = 2, blur = 8 }]
 bubble_padding = [12, 8]          # 气泡内边距：水平 垂直
 bubble_frame = { image = "images/bubble.png", slice = [12, 12, 12, 12] }
-gap = 10
+gap = 10                         # 间距参考：stack 按字号控制在 12–20px；同作者连续消息 8–12px；inline 8–14px
 entrance = "slide_up"             # none | slide_up | fade | slide_left
 layout = "stack"                  # stack：名字和时间在气泡上方 | inline：名字、台词、时间同一行（聊天记录式）
                                   # stack 下同一人 2 分钟内的连续消息合并：只有第一条显示头像、名字和时间
-name_width = 96                   # inline 时名字栏宽度
+name_width = 96                   # inline 时名字栏宽度；窄窗自动缩短，保留正文和 @ 标签空间
 name_weight = 700
 time_size = 11                    # 默认比名字小 3（也用于“主播/观众”角色标签）
 time_color = "#8aa0b4"            # 时间与角色标签的颜色
 show_time = false                 # 保留；是否显示时间由 设置 › 历史记录 决定
 time_seconds = false              # true 显示 HH:MM:SS
-anchor = "bottom"                 # 行不足一屏时靠哪一端："bottom"（默认，新行贴底）或 "top"
+anchor = "top"                    # 保留兼容字段；应用历史统一从内容区顶部排列，不再随皮肤切换锚点
 hide_latest = false               # true：展示框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）
 # 整个列表背后的面板（可选）；也支持 gradient / radii / border_widths / border_style / shadows
 panel = { color = "#edeef0", border_color = "#888888", border_width = 0, radius = 0, padding = [18, 18, 18, 18], margin = [0, 0, 0, 0] }   # padding 左上右下，margin 上右下左
@@ -237,6 +237,10 @@ visible = true
 size = 12                         # 默认是正文的 62%
 color = "#7a6070"                 # 原文颜色，默认同正文，可写颜色角色；昵称用 accent
 opacity = 0.8
+
+# 引用昵称使用 fonts.name，原文使用 fonts.body；继承当前展示区域 text 的描边和阴影。
+# 透明底且未指定描边时，引用文字补一层细对比描边，避免直播背景吞掉文字。
+# 透明历史中未设描边的浮空昵称、时间和无底板正文也采用细对比描边，保留原配色。
 
 [dialogue.reply]                  # 对话框上的回复引用，字段同 [history.reply]
 visible = true                    # 用户也可在 设置 › 联动 › blivechat 里关闭

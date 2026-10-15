@@ -33,13 +33,14 @@ pub struct Host {
     docs: HashMap<WindowId, RuntimeDocument>,
     /// The input window's rich editor.
     editor: Option<Entity<RichTextEditor>>,
+    source: Option<Entity<nana_ui::runtime::TextArea>>,
     /// Skin and reduced-motion the editor's effect preview was built for.
     editor_fx: Option<(usize, bool)>,
     /// The typewriter's scroll through long text.
     follow: overflow::Follow,
     /// The typewriter's automatic page breaks.
     pager: overflow::Pager,
-    /// The toast stack of each window that has one (settings, input).
+    /// The toast stack of each control window (settings, input, chat).
     toasts: HashMap<WindowId, Entity<ToastStack>>,
 }
 
@@ -100,7 +101,18 @@ impl Host {
         else {
             return;
         };
+        let document_id = doc.document();
         let cx = doc.context_mut();
+        if std::mem::take(&mut self.app.focus_editor) {
+            let target = if self.app.ui.source_mode.get_untracked() {
+                self.source.map(|s| s.stable_id())
+            } else {
+                Some(editor.stable_id())
+            };
+            if let Some(target) = target {
+                let _ = cx.focus_node(document_id, target);
+            }
+        }
         for command in commands {
             if let Err(e) = cx.rich_edit(editor, command) {
                 crate::debug_log(&format!("rich edit: {e}"));
@@ -130,9 +142,10 @@ impl Host {
         let input_visible = self.app.input_visible();
         for request in requests {
             let mut shown = false;
-            for kind in [WindowKind::Settings, WindowKind::Input] {
+            for kind in [WindowKind::Settings, WindowKind::Input, WindowKind::Chat] {
                 let wanted = match kind {
                     WindowKind::Input => input_visible,
+                    WindowKind::Chat => true,
                     _ => request.settings,
                 };
                 let id = kind.id();
@@ -204,9 +217,20 @@ impl Host {
                 self.toasts.insert(id, stack);
             }
             WindowKind::Chat => {
-                context
-                    .mount_view_root(doc_id, move || danmaku::chat_window(ui))
+                let (_, stack) = context
+                    .mount_view_root(doc_id, move || {
+                        let stack = entity_ref::<ToastStack>();
+                        with_refs(
+                            crate::ui::feedback::with_toasts_limit(
+                                danmaku::chat_window(ui),
+                                stack,
+                                1,
+                            ),
+                            stack,
+                        )
+                    })
                     .map_err(err)?;
+                self.toasts.insert(id, stack);
             }
             WindowKind::Input => {
                 let (_, (editor, source, stack)) = context
@@ -219,6 +243,7 @@ impl Host {
                     .on_key(source, key_policy(self.app.ctx.clone(), true))
                     .map_err(err)?;
                 self.editor = Some(editor);
+                self.source = Some(source);
                 self.editor_fx = None;
                 self.toasts.insert(id, stack);
             }
@@ -386,6 +411,7 @@ impl RuntimeProgram for Host {
             app,
             docs: HashMap::new(),
             editor: None,
+            source: None,
             editor_fx: None,
             follow: overflow::Follow::default(),
             pager: overflow::Pager::default(),
@@ -414,6 +440,9 @@ impl RuntimeProgram for Host {
     }
 
     fn update(&mut self, message: Msg, _: &RuntimeProgramContext<Msg>) -> RuntimeProgramUpdate {
+        if let (Some(source), Some(doc)) = (self.source, self.docs.get(&WindowKind::Input.id())) {
+            input::capture_source_selection(self.app.ui, doc.context(), source);
+        }
         match message {
             Msg::ToastDismissed(kind, toast) => self.dismiss_toast(kind, toast),
             message => self.app.update(message),
