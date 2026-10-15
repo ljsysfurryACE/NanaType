@@ -50,16 +50,20 @@ pub fn is_image(path: &Path) -> bool {
         .is_some_and(|e| IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
-/// `skin:<path>` → URL for every file of a skin with a folder on disk.
+/// `skin:<path>` → URL for local, embedded and inherited skin artwork.
 pub fn skin_urls(files: &dyn nanatype_theme::SkinFiles) -> HashMap<String, String> {
-    let Some(root) = files.root() else {
-        return HashMap::new();
-    };
     files
         .list()
         .into_iter()
+        .filter(|path| is_image(Path::new(path)))
         .filter_map(|path| {
-            let url = skin_file_url(root, &path)?;
+            let url = if let Some(root) = files.root().filter(|root| root.join(&path).exists()) {
+                // Do not bypass the root check for existing symlinks/junctions.
+                skin_file_url(root, &path)?
+            } else {
+                let bytes = files.read(&path).ok()?;
+                media::global()?.bytes_url(&path, &bytes)?
+            };
             Some((format!("skin:{path}"), url))
         })
         .collect()

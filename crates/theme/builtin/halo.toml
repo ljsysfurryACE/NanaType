@@ -12,6 +12,7 @@ description = { zh-CN = "柔光白卡片配天蓝渐变名牌，清爽百搭", e
 padding = [28, 26, 24, 14]
 
 [dialogue.box]
+contour = "orbit"
 color = "#fffffff2"
 border_color = "#ffffff"
 border_width = 1
@@ -30,7 +31,26 @@ size = [3, 40]
 radius = 2
 gradient = { stops = [[0, "accent"], [1, "#8fd3ff"]] }
 
+[[dialogue.decor]]
+motif = "orbit"
+color = "#7ebceba6"
+anchor = "top_right"
+offset = [-6, -3]
+size = [46, 28]
+radius = 23
+border_color = "#7ebceba6"
+border_widths = [0, 0, 0, 0]
+rotate = -8
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-68, 13]
+size = [5, 5]
+radius = 3
+color = "#e99ab38c"
+
 [dialogue.nameplate]
+contour = "orbit"
 radius = 999
 padding = [16, 5]
 offset = [24, -15]
@@ -38,11 +58,12 @@ gradient = { angle = 90, stops = [[0, "#0876d0"], [1, "#3aa6f0"]] }
 shadows = [{ color = "#0876d055", dy = 3, blur = 8 }]
 
 [history]
+bubble_contour = "orbit"
 bubble_radii = [4, 14, 14, 14]
 bubble_gradient = { angle = 160, stops = [[0, "#fffffff5"], [1, "#eef6fdf0"]] }
-bubble_shadows = [{ color = "#1b2f4b1f", dy = 3, blur = 10 }]
+bubble_shadows = [{ color = "#1b2f4b1a", dy = 3, blur = 10 }, { color = "#b7def580", dy = 1, inset = true }]
 avatar = { shape = "circle", size = 40, ring_color = "#ffffff", ring_width = 2 }
-name_plate = { color = "name", gradient = { angle = 90, stops = [[0, "#0876d0"], [1, "#3aa6f0"]] }, text_color = "name_text", radius = 9, padding = [9, 2] }
+name_plate = { contour = "orbit", color = "name", gradient = { angle = 90, stops = [[0, "#0876d0"], [1, "#3aa6f0"]] }, text_color = "name_text", radius = 9, padding = [9, 2] }
 
 [effects]
 # Coloured runs under 3:1 on the box get a 1.5px outline in the darkest ink.

@@ -4,9 +4,10 @@
 //! so every shape supports the same fills, gradients, borders and shadows.
 
 use nana_ui_core::{
-    BackgroundImage, BorderImageSlice, BorderImageSpec, BorderStyle, BoxShadowSpec, ClipPath,
-    ClipPoint, CssGradient, GradientStop, LayoutStyle, LengthSpec, LinearGradient, PaintTransform,
-    RadialGradient, TextShadowSpec, TextStrokeSpec,
+    BackgroundImage, BackgroundImageFit, BackgroundPosition, BackgroundRepeat, BorderImageSlice,
+    BorderImageSpec, BorderStyle, BoxShadowSpec, ClipPath, ClipPoint, CssGradient, GradientStop,
+    LayoutStyle, LengthSpec, LinearGradient, PaintTransform, RadialGradient, TextShadowSpec,
+    TextStrokeSpec,
 };
 use nanatype_theme::{
     BorderStyleSpec, ColorRef, DecorSpec, GradientKind, GradientSpec, NineSlice, ShadowSpec,
@@ -14,6 +15,9 @@ use nanatype_theme::{
 };
 
 use super::c;
+#[path = "surface_painter.rs"]
+mod painter;
+pub use painter::SurfacePainter;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Border {
@@ -26,6 +30,9 @@ pub struct Border {
 /// Everything a skin can paint on one node.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Surface {
+    pub contour: Option<nanatype_theme::ContourPreset>,
+    pub motif: Option<nanatype_theme::MotifPreset>,
+    pub tail: Option<nanatype_theme::TailSpec>,
     pub fill: Option<[f32; 4]>,
     pub gradient: Option<BackgroundImage>,
     /// `[top_left, top_right, bottom_right, bottom_left]`.
@@ -134,6 +141,7 @@ impl Surface {
     ) -> Self {
         let widths = shape.border_widths(border_width);
         Self {
+            contour: shape.contour,
             fill: fill.map(|f| c(skin.color(f))),
             gradient: shape.gradient.as_ref().map(|g| gradient(skin, g)),
             radii: shape.radii(radius),
@@ -153,6 +161,7 @@ impl Surface {
     pub fn dialogue_box(skin: &Skin, frame_url: Option<String>) -> Self {
         let b = &skin.dialogue.box_;
         Self::framed(b.frame.as_ref(), frame_url).unwrap_or_else(|| Self {
+            tail: skin.dialogue.tail.clone(),
             shadows: shadows(skin, &b.shadow_layers()),
             ..Self::shaped(
                 skin,
@@ -188,6 +197,7 @@ impl Surface {
         let h = &skin.history;
         Self::framed(h.bubble_frame.as_ref(), frame_url).unwrap_or_else(|| {
             let shape = ShapeSpec {
+                contour: h.bubble_contour,
                 gradient: h.bubble_gradient.clone(),
                 radii: h.bubble_radii,
                 shadows: h.bubble_shadows.clone(),
@@ -208,6 +218,7 @@ impl Surface {
     pub fn history_name_plate(skin: &Skin) -> Option<Self> {
         let p = skin.history.name_plate.as_ref()?;
         Some(Self {
+            contour: p.contour,
             fill: Some(c(skin.color(p.color))),
             gradient: p.gradient.as_ref().map(|g| gradient(skin, g)),
             radii: [p.radius; 4],
@@ -230,6 +241,7 @@ impl Surface {
 
     pub fn decor(skin: &Skin, d: &DecorSpec) -> Self {
         Self {
+            motif: d.motif,
             polygon: (d.polygon.len() >= 3).then(|| d.polygon.clone()),
             rotate_deg: d.rotate,
             opacity: (d.opacity < 1.0).then_some(d.opacity),
@@ -242,6 +254,27 @@ impl Surface {
                 d.border_width,
             )
         }
+    }
+
+    /// Artwork uses the same placement and transforms as vector decorations.
+    pub fn decor_image(skin: &Skin, d: &DecorSpec, image_url: Option<String>) -> Self {
+        let mut surface = Self::decor(skin, d);
+        if let Some(url) = image_url {
+            surface.fill = None;
+            surface.motif = None;
+            surface.contour = None;
+            surface.polygon = None;
+            let mut image = BackgroundImage::url_with_fit(url, BackgroundImageFit::Contain);
+            if let BackgroundImage::Url {
+                repeat, position, ..
+            } = &mut image
+            {
+                *repeat = BackgroundRepeat::NoRepeat;
+                *position = BackgroundPosition::center();
+            }
+            surface.gradient = Some(image);
+        }
+        surface
     }
 
     /// One triangle of a tail.
@@ -275,21 +308,97 @@ impl Surface {
             }
             l.paint.box_shadows = self.shadows.clone();
         }
-        l.paint.clip_path = self.polygon.as_ref().map(|pts| {
-            ClipPath::Polygon(
-                pts.iter()
-                    .map(|p| ClipPoint {
-                        x: LengthSpec::Percent(p[0]),
-                        y: LengthSpec::Percent(p[1]),
-                    })
-                    .collect(),
-            )
-        });
+        l.paint.clip_path = self
+            .polygon
+            .as_ref()
+            .filter(|_| !self.is_vector())
+            .map(|pts| {
+                ClipPath::Polygon(
+                    pts.iter()
+                        .map(|p| ClipPoint {
+                            x: LengthSpec::Percent(p[0]),
+                            y: LengthSpec::Percent(p[1]),
+                        })
+                        .collect(),
+                )
+            });
         if self.rotate_deg != 0.0 {
             l.transform = Some(affine(0.0, 0.0, self.rotate_deg, 1.0));
         }
         if let Some(o) = self.opacity {
             l.opacity = Some(o);
+        }
+    }
+
+    pub fn contour_radius(&self) -> f32 {
+        self.radii.into_iter().fold(0.0_f32, f32::max)
+    }
+
+    pub fn is_vector(&self) -> bool {
+        self.frame.is_none() && (self.contour.is_some() || self.motif.is_some())
+    }
+
+    pub fn integrates_tail(&self) -> bool {
+        self.is_vector() && self.motif.is_none() && self.tail.is_some()
+    }
+
+    /// The one attachment path for live views, history, and thumbnails.
+    /// Keeping layout border widths preserves the legacy text viewport.
+    pub fn stack(&self, stack: nana_ui::runtime::Stack) -> nana_ui::runtime::Stack {
+        let stack = stack.with_layout(|l| self.apply(l));
+        let mut style = stack.node_style();
+        // A retained node can return to a legacy or image skin on hot reload.
+        style.painter = self
+            .is_vector()
+            .then(|| SurfacePainter::new(self.clone()).into());
+        stack.style(style)
+    }
+
+    pub fn optional_stack(
+        surface: Option<&Self>,
+        stack: nana_ui::runtime::Stack,
+    ) -> nana_ui::runtime::Stack {
+        match surface {
+            Some(s) => s.stack(stack),
+            None => stack,
+        }
+    }
+
+    /// Actual path bounds, including an integrated tail, before rotation.
+    pub fn paint_bounds(&self, size: [f32; 2]) -> [f32; 4] {
+        if !self.is_vector() {
+            return [0.0, 0.0, size[0], size[1]];
+        }
+        if let Some(motif) = self.motif {
+            let paths = nanatype_theme::motif_paths(motif, size);
+            let mut bounds = [0.0, 0.0, size[0], size[1]];
+            for p in paths {
+                if let Some([x, y, w, h]) = p.path.bounds() {
+                    let pad = p.stroke_width * 0.5;
+                    let right = (bounds[0] + bounds[2]).max(x + w + pad);
+                    let bottom = (bounds[1] + bounds[3]).max(y + h + pad);
+                    bounds[0] = bounds[0].min(x - pad);
+                    bounds[1] = bounds[1].min(y - pad);
+                    bounds[2] = right - bounds[0];
+                    bounds[3] = bottom - bounds[1];
+                }
+            }
+            bounds
+        } else {
+            let width = self
+                .border
+                .as_ref()
+                .map_or(0.0, |b| b.widths.into_iter().fold(0.0_f32, f32::max));
+            let p = nanatype_theme::contour_path(
+                self.contour.unwrap(),
+                size,
+                self.contour_radius(),
+                width * 0.5,
+                self.tail.as_ref(),
+            );
+            p.bounds()
+                .map(|[x, y, w, h]| [x - width * 0.5, y - width * 0.5, w + width, h + width])
+                .unwrap_or([0.0; 4])
         }
     }
 }
@@ -334,6 +443,93 @@ mod tests {
     use super::*;
     use nanatype_model::Rgba8;
     use nanatype_theme::{GradientSpec, NineSlice, ShadowSpec};
+
+    #[test]
+    fn builtin_vector_frames_contain_their_text_viewports() {
+        let registry = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+        for entry in registry.entries() {
+            let skin = entry.skin.as_ref().unwrap();
+            let d = &skin.dialogue;
+            let surface = Surface::dialogue_box(skin, None);
+            let Some(contour) = surface.contour else {
+                continue;
+            };
+            let [mt, mr, mb, ml] = d.box_.margin;
+            let size = [
+                (d.region[0] - ml - mr) * d.box_.width_fraction,
+                d.region[1] - mt - mb,
+            ];
+            let path = painter::paint_path(&nanatype_theme::contour_path(
+                contour,
+                size,
+                surface.contour_radius(),
+                0.0,
+                surface.tail.as_ref(),
+            ));
+            let [l, t, r, b] = d.padding;
+            for point in [
+                [l, t],
+                [size[0] - r, t],
+                [l, size[1] - b],
+                [size[0] - r, size[1] - b],
+                [size[0] * 0.5, size[1] * 0.5],
+            ] {
+                assert!(
+                    path.contains(point),
+                    "{}: text corner {point:?} is outside its frame",
+                    entry.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn painter_cache_tracks_the_entire_resolved_surface() {
+        use nana_ui::runtime::Painter;
+        let base = Surface {
+            contour: Some(nanatype_theme::ContourPreset::Cloud),
+            fill: Some([1.0, 0.8, 0.9, 0.95]),
+            radii: [24.0; 4],
+            ..Default::default()
+        };
+        let key = SurfacePainter::new(base.clone()).paint_key();
+        assert_eq!(key, SurfacePainter::new(base.clone()).paint_key());
+        let mut changes = vec![base.clone(); 5];
+        changes[0].contour = Some(nanatype_theme::ContourPreset::Comic);
+        changes[1].fill = Some([1.0, 0.7, 0.9, 0.95]);
+        changes[2].motif = Some(nanatype_theme::MotifPreset::Petal);
+        changes[3].tail = Some(nanatype_theme::TailSpec::default());
+        changes[4].shadows = vec![shadow(
+            &Skin::default(),
+            &ShadowSpec {
+                color: Rgba8::BLACK.into(),
+                dx: 4.0,
+                dy: 0.0,
+                blur: 0.0,
+                spread: 0.0,
+                inset: false,
+            },
+        )];
+        for changed in changes {
+            assert_ne!(key, SurfacePainter::new(changed).paint_key());
+        }
+    }
+
+    #[test]
+    fn nine_slice_frames_keep_precedence_and_do_not_integrate_a_second_tail() {
+        let registry = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+        let mut skin = (*registry.load("nanatype.bubble").unwrap().skin).clone();
+        skin.dialogue.box_.frame = Some(NineSlice {
+            image: "frame.png".into(),
+            slice: [8; 4],
+            scale: 1.0,
+            repeat: false,
+        });
+        let framed = Surface::dialogue_box(&skin, Some("file:///frame.png".into()));
+        assert!(!framed.is_vector() && !framed.integrates_tail());
+        let fallback = Surface::dialogue_box(&skin, None);
+        assert!(fallback.is_vector() && fallback.integrates_tail());
+    }
 
     #[test]
     fn box_surface_carries_gradient_radii_and_every_shadow_layer() {

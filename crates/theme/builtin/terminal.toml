@@ -35,6 +35,7 @@ weight = 400
 padding = [22, 40, 22, 14]
 
 [dialogue.box]
+contour = "terminal"
 color = "#0a0f0af2"
 border_color = "#1f5f2a"
 border_width = 1
@@ -43,6 +44,7 @@ shadows = [{ color = "#33ff6626", blur = 16 }]
 
 # Title bar with window dots.
 [[dialogue.decor]]
+contour = "terminal"
 anchor = "top"
 size = ["100%", 24]
 radii = [4, 4, 0, 0]
@@ -71,6 +73,24 @@ offset = [40, 8]
 size = [8, 8]
 radius = 4
 color = "#33ff6644"
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-104, 7]
+size = [1, 10]
+color = "#33ff6640"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [9, -8]
+size = [18, 1]
+color = "#33ff6680"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [31, -8]
+size = [6, 1]
+color = "#33ff6640"
 
 [dialogue.text]
 color = "#33ff66"
@@ -104,10 +124,11 @@ kind = "none"
 ms = 0
 
 [history]
+bubble_contour = "terminal"
 name_color = "#33ff66"
 bubble_color = "#0a0f0ae6"
-bubble_border = "#1f5f2a"
-bubble_radius = 3
+bubble_border = "#286637"
+bubble_radius = 2
 time_color = "#4f8f5e"
 avatar = { shape = "square", size = 32, ring_color = "#33ff66", ring_width = 1 }
 

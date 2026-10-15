@@ -1,0 +1,26 @@
+Ink bamboo artwork used by NanaType's Ink Wash skin
+
+Artist: Zheng Xie (Chinese, 1693-1765)
+Work: Bamboo and Poem
+Collection: The Metropolitan Museum of Art
+Accession number: 1985.214.150
+Credit: Gift of Ernest Erickson Foundation, 1985
+Medium: Hanging scroll; ink on paper
+Rights: Public Domain, The Met Open Access
+Source: https://www.metmuseum.org/art/collection/search/52946
+Image: https://collectionapi.metmuseum.org/api/collection/v1/iiif/52946/117149/main-image
+Rights checked: 2026-10-15
+
+bamboo.png is a detail of the lower-right bamboo shoot. The downloaded
+image is 358 x 1200; the detail is the rectangle (145, 890, 339, 1175).
+No lines, leaves or texture have been redrawn. RGB pixels are retained
+exactly from the source crop, without recoloring or shape reconstruction.
+Only the old paper background is made transparent to allow an overlay:
+alpha = clamp((GaussianBlur(luminance, radius=20) - luminance - 7) * 3.8).
+The separate collector seal in the bottom-right paper margin is excluded
+from alpha in rectangle (160, 220, 194, 285); no bamboo pixels are redrawn.
+
+The application fits this PNG without stretching or tiling in the right
+margin, away from the dialogue text. It replaces the previous decorative
+brush textures. This notice is retained when exporting or inheriting the
+skin so the artwork's origin remains reviewable.

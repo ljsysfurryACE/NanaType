@@ -23,7 +23,8 @@ use nanatype_model::{Document, Entrance, EntranceKind, Inline, Overflow, Rgba8};
 use nanatype_theme::{
     Anchor, ColorRef, ColorRole, ContinueMotion, DecorLayer, DecorSpec, DecorWhen, Edge,
     EffectDefaults, Side, Skin, TextAlign, TextShadowSpec as SkinShadow,
-    TextStrokeSpec as SkinStroke, anchor_frac, continue_motion, place, sprite_frame, tail_geometry,
+    TextStrokeSpec as SkinStroke, anchor_frac, continue_motion, decor_motion, place, sprite_frame,
+    tail_geometry,
 };
 
 use super::overflow;
@@ -535,13 +536,16 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         });
     }
 
-    let the_box = widget(Stack::fill_column(0.0).with_layout(move |l| {
-        box_surface.apply(l);
-        l.padding_left = Some(LengthSpec::Px(padding[0]));
-        l.padding_top = Some(LengthSpec::Px(padding[1]));
-        l.padding_right = Some(LengthSpec::Px(padding[2]));
-        l.padding_bottom = Some(LengthSpec::Px(padding[3]));
-    }))
+    let the_box = widget(
+        box_surface
+            .stack(Stack::fill_column(0.0))
+            .with_layout(move |l| {
+                l.padding_left = Some(LengthSpec::Px(padding[0]));
+                l.padding_top = Some(LengthSpec::Px(padding[1]));
+                l.padding_right = Some(LengthSpec::Px(padding[2]));
+                l.padding_bottom = Some(LengthSpec::Px(padding[3]));
+            }),
+    )
     .children((
         (source == Source::Display).then(|| reply_quote(ui)),
         text_port(ui, source, content),
@@ -681,6 +685,21 @@ fn has_speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> bool + Send + 'static {
 fn nameplate(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
     let skin = ctx.skin.clone();
     let p = skin.dialogue.nameplate.clone();
+    // Reserve the corner ornaments' strip for long names. Ordinary names
+    // keep their content width; only an overflowing label is ellipsized.
+    let right_clearance = if p.anchor == Anchor::TopLeft {
+        skin.dialogue
+            .decor
+            .iter()
+            .filter(|d| d.anchor == Anchor::TopRight && d.offset[1] <= 24.0 && d.opacity > 0.0)
+            .filter_map(|d| match d.size[0] {
+                nanatype_theme::Len::Px(w) => Some((w - d.offset[0]).max(0.0) + 8.0),
+                _ => None,
+            })
+            .fold(0.0_f32, f32::max)
+    } else {
+        0.0
+    };
     let plate = Surface::nameplate(&skin, p.frame.as_ref().and_then(|f| ctx.url(&f.image)));
     let mut st = NodeStyle::default();
     {
@@ -690,6 +709,10 @@ fn nameplate(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
         l.font_family = skin.fonts.name.families.first().cloned();
         l.color = Some(c(p.text_color));
         l.white_space_nowrap = true;
+        if right_clearance > 0.0 {
+            l.min_width = Some(LengthSpec::Px(0.0));
+            l.text_overflow_ellipsis = true;
+        }
         if let Some(stroke) = &p.stroke {
             surface::text_stroke(l, stroke);
         }
@@ -706,11 +729,13 @@ fn nameplate(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
         .visible(move || visible && named())
         .children(
             widget(
-                Stack::row(0.0)
-                    .padding_xy(p.padding[0], p.padding[1])
+                plate
+                    .stack(Stack::row(0.0).padding_xy(p.padding[0], p.padding[1]))
                     .with_layout(move |l| {
-                        plate.apply(l);
                         l.transform = Some(affine(ox, oy, rotate, 1.0));
+                        if right_clearance > 0.0 {
+                            l.max_width = Some(calc(100.0, -ox.max(0.0) - right_clearance));
+                        }
                     }),
             )
             .children(widget(Text::new("").style(st)).bind(move |t: &mut Text| {
@@ -763,7 +788,13 @@ fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
 
 fn decor_view(ui: Ui, ctx: &BoxCtx, dec: &DecorSpec) -> AnyView {
     let speaker = (dec.when == DecorWhen::Speaker).then(|| has_speaker(ui, ctx));
-    decor(&ctx.skin, dec, speaker)
+    decor_on(
+        &ctx.skin,
+        dec,
+        speaker,
+        dec.image.as_ref().and_then(|path| ctx.url(path)),
+        (ctx.source == Source::Display).then_some(ui),
+    )
 }
 
 /// Whether a decor belongs on a box of `source` at all.
@@ -772,18 +803,39 @@ fn decor_shown(dec: &DecorSpec, source: Source) -> bool {
 }
 
 /// One decoration, absolutely placed on its parent; `visible` hides it.
-pub(super) fn decor<F>(skin: &Skin, dec: &DecorSpec, visible: Option<F>) -> AnyView
+pub(super) fn decor<F>(
+    skin: &Skin,
+    dec: &DecorSpec,
+    visible: Option<F>,
+    image_url: Option<String>,
+) -> AnyView
 where
     F: Fn() -> bool + Send + 'static,
 {
-    let shape = Surface::decor(skin, dec);
+    decor_on(skin, dec, visible, image_url, None)
+}
+
+fn decor_on<F>(
+    skin: &Skin,
+    dec: &DecorSpec,
+    visible: Option<F>,
+    image_url: Option<String>,
+    animation: Option<Ui>,
+) -> AnyView
+where
+    F: Fn() -> bool + Send + 'static,
+{
+    let shape = Surface::decor_image(skin, dec, image_url);
     let placement = place(dec.anchor, dec.offset, dec.size);
     let [width, height] = dec.size.map(len);
     let inset = dec.inset;
     let mut el = widget(
-        Stack::row(0.0)
-            .align(AlignSpec::Center)
-            .justify(JustifySpec::Center)
+        shape
+            .stack(
+                Stack::row(0.0)
+                    .align(AlignSpec::Center)
+                    .justify(JustifySpec::Center),
+            )
             .with_layout(move |l| {
                 overlay(l);
                 match inset {
@@ -800,11 +852,27 @@ where
                         l.height = Some(height);
                     }
                 }
-                shape.apply(l);
             }),
     );
     if let Some(visible) = visible {
         el = el.visible(visible);
+    }
+    if let Some(ui) = animation
+        && let Some(motion) = dec.motion
+    {
+        let rotate = dec.rotate;
+        let opacity = dec.opacity;
+        el = el.bind(move |node: &mut Stack| {
+            let reduced = ui.reduced_motion.get() || drawn(ui).empty;
+            let t = if reduced {
+                0.0
+            } else {
+                ui.now.get() as f64 / 1000.0
+            };
+            restyle(node, |l| {
+                apply_decor_motion(l, &motion, rotate, opacity, t, reduced);
+            });
+        });
     }
     if dec.text.is_empty() {
         return el.into_any();
@@ -822,6 +890,19 @@ where
     }
     el.children(widget(Text::new(dec.text.clone()).decorative().style(st)))
         .into_any()
+}
+
+fn apply_decor_motion(
+    l: &mut LayoutStyle,
+    motion: &nanatype_theme::DecorMotionSpec,
+    rotate: f32,
+    opacity: f32,
+    t: f64,
+    reduced: bool,
+) {
+    let (dy, alpha) = decor_motion(motion, t, reduced);
+    l.transform = Some(affine(0.0, dy, rotate, 1.0));
+    l.opacity = Some(opacity * alpha);
 }
 
 fn decor_views(ui: Ui, ctx: &BoxCtx, layer: DecorLayer) -> Vec<AnyView> {
@@ -842,6 +923,11 @@ fn tail(ctx: &BoxCtx) -> (Vec<AnyView>, Vec<AnyView>) {
         return (Vec::new(), Vec::new());
     };
     let b = &skin.dialogue.box_;
+    if Surface::dialogue_box(skin, b.frame.as_ref().and_then(|f| ctx.url(&f.image)))
+        .integrates_tail()
+    {
+        return (Vec::new(), Vec::new());
+    }
     let edge = t.side;
     let border = b.border_widths()[edge.index()];
     let g = tail_geometry(t, border);
@@ -850,9 +936,12 @@ fn tail(ctx: &BoxCtx) -> (Vec<AnyView>, Vec<AnyView>) {
     let [x, y, w, h] = g.rect;
     let node = move |dx: f32, dy: f32, shape: Surface| -> AnyView {
         widget(
-            Stack::row(0.0)
-                .width(LengthSpec::Px(w))
-                .height(LengthSpec::Px(h))
+            shape
+                .stack(
+                    Stack::row(0.0)
+                        .width(LengthSpec::Px(w))
+                        .height(LengthSpec::Px(h)),
+                )
                 .with_layout(move |l| {
                     overlay(l);
                     let (left, top) = match edge {
@@ -863,7 +952,6 @@ fn tail(ctx: &BoxCtx) -> (Vec<AnyView>, Vec<AnyView>) {
                     };
                     l.offset_left = Some(left);
                     l.offset_top = Some(top);
-                    shape.apply(l);
                 }),
         )
         .into_any()
@@ -992,6 +1080,13 @@ pub fn display_animating(ui: Ui, now: u64) -> bool {
     if view.empty {
         return false;
     }
+    if decor_animating(
+        &ui.skin.get_untracked(),
+        &view,
+        ui.reduced_motion.get_untracked(),
+    ) {
+        return true;
+    }
     if let Some((at, ms)) = view.fade
         && now <= at + u64::from(ms) + 50
     {
@@ -1009,6 +1104,18 @@ pub fn display_animating(ui: Ui, now: u64) -> bool {
     view.continue_indicator && moves && !ui.reduced_motion.get_untracked()
 }
 
+/// Demand frames only for visible, moving ornaments. The remote Ui uses
+/// its own display track, so a partner never borrows the local empty state.
+fn decor_animating(skin: &Skin, view: &DisplayView, reduced: bool) -> bool {
+    !reduced
+        && !view.empty
+        && skin.dialogue.decor.iter().any(|d| {
+            d.opacity > 0.0
+                && d.motion.is_some_and(|m| m.amplitude > 0.0)
+                && (d.when != DecorWhen::Speaker || !view.speaker.name.trim().is_empty())
+        })
+}
+
 pub fn has_effects(doc: &Document) -> bool {
     doc.paragraphs.iter().any(|p| {
         p.inlines.iter().any(|i| match i {
@@ -1019,4 +1126,71 @@ pub fn has_effects(doc: &Document) -> bool {
             Inline::Marker(_) => false,
         })
     })
+}
+
+#[cfg(test)]
+mod decor_tests {
+    use super::*;
+    use nanatype_theme::{DecorMotionKind, DecorMotionSpec};
+
+    #[test]
+    fn paint_motion_keeps_rotation_and_multiplies_existing_opacity() {
+        let mut layout = LayoutStyle::default();
+        let mut motion = DecorMotionSpec {
+            kind: DecorMotionKind::Float,
+            amplitude: 2.0,
+            period_s: 8.0,
+            phase: 0.0,
+        };
+        apply_decor_motion(&mut layout, &motion, -25.0, 0.6, 2.0, false);
+        assert_eq!(layout.transform, Some(affine(0.0, 2.0, -25.0, 1.0)));
+        assert_eq!(layout.opacity, Some(0.6));
+        motion.kind = DecorMotionKind::Breathe;
+        motion.amplitude = 0.12;
+        apply_decor_motion(&mut layout, &motion, -25.0, 0.6, 4.0, false);
+        assert!((layout.opacity.unwrap() - 0.6 * 0.88).abs() < 1e-6);
+        apply_decor_motion(&mut layout, &motion, -25.0, 0.6, 4.0, true);
+        assert_eq!(layout.opacity, Some(0.6));
+        assert_eq!(layout.transform, Some(affine(0.0, 0.0, -25.0, 1.0)));
+    }
+
+    #[test]
+    fn decoration_frame_demand_tracks_content_visibility_and_motion_preference() {
+        let mut skin = Skin::default();
+        skin.dialogue.decor = vec![DecorSpec {
+            motion: Some(DecorMotionSpec::default()),
+            ..DecorSpec::default()
+        }];
+        let mut view = DisplayView::empty(Entrance {
+            kind: EntranceKind::None,
+            ms: 0,
+        });
+        assert!(!decor_animating(&skin, &view, false));
+        view.empty = false;
+        assert!(decor_animating(&skin, &view, false));
+        assert!(!decor_animating(&skin, &view, true));
+        skin.dialogue.decor[0].when = DecorWhen::Speaker;
+        assert!(!decor_animating(&skin, &view, false));
+        view.speaker.name = "Nana".into();
+        assert!(decor_animating(&skin, &view, false));
+        skin.dialogue.decor[0].opacity = 0.0;
+        assert!(!decor_animating(&skin, &view, false));
+    }
+
+    #[test]
+    fn partner_decoration_demand_does_not_follow_the_local_empty_track() {
+        let registry = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+        let ui = Ui::new(
+            Arc::new(nanatype_settings::Settings::default()),
+            registry.load("nanatype.sakura").unwrap().skin,
+            nanatype_i18n::Locale::ZhCn,
+        );
+        let mut remote = (*ui.peer_display.get_untracked()).clone();
+        remote.empty = false;
+        ui.peer_display.set(Arc::new(remote));
+        assert!(!display_animating(ui, 100_000));
+        assert!(display_animating(ui.remote(), 100_000));
+        ui.reduced_motion.set(true);
+        assert!(!display_animating(ui.remote(), 100_000));
+    }
 }

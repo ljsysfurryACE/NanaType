@@ -115,7 +115,7 @@ text_color = "#000000"
 size = 27
 radius = 0
 padding = [0, 0]
-offset = [146, 13]
+offset = [146, 14]
 
 [dialogue.continue]
 glyph = ""
@@ -137,9 +137,9 @@ ms = 0
 width = 640
 height = 480
 layout = "inline"
-name_width = 120
-name_size = 18
-time_size = 16
+name_width = 124
+name_size = 17
+time_size = 15
 time_seconds = true
 show_time = true
 gap = 9

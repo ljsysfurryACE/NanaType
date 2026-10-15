@@ -24,6 +24,7 @@ region = [760, 210]
 padding = [30, 28, 28, 16]
 
 [dialogue.box]
+contour = "rounded"
 color = "#ffeef5f2"
 border_color = "#f7a8c4"
 border_width = 2
@@ -43,47 +44,58 @@ shadow = false
 
 # Drifting petals: leaf shapes with two rounded corners.
 [[dialogue.decor]]
+motif = "blossom"
 anchor = "top_right"
-offset = [-22, -12]
-size = [24, 15]
-radii = [15, 1, 15, 1]
-rotate = -25
+offset = [-24, -10]
+size = [32, 32]
+rotate = -12
+motion = { kind = "float", period_s = 6, amplitude = 1.5, phase = 0 }
 gradient = { angle = 135, stops = [[0, "#ffd1e1"], [1, "#f490b5"]] }
 shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
 
 [[dialogue.decor]]
+motif = "petal"
 anchor = "top_right"
 offset = [-48, -4]
 size = [17, 11]
-radii = [11, 1, 11, 1]
 rotate = 20
+motion = { kind = "float", period_s = 8, amplitude = 2, phase = 0.35 }
 gradient = { angle = 135, stops = [[0, "#ffe0ea"], [1, "#ffaecb"]] }
 shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
 
 [[dialogue.decor]]
+motif = "petal"
 anchor = "top_right"
 offset = [-8, 14]
 size = [13, 8]
-radii = [8, 1, 8, 1]
 rotate = 60
 gradient = { angle = 135, stops = [[0, "#ffe0ea"], [1, "#ffaecb"]] }
 shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
 
 [[dialogue.decor]]
+motif = "petal"
 anchor = "bottom_left"
 offset = [20, 6]
 size = [18, 11]
-radii = [11, 1, 11, 1]
 rotate = 35
 gradient = { angle = 135, stops = [[0, "#ffe0ea"], [1, "#f7a8c4"]] }
 shadows = [{ color = "#f490b555", dy = 2, blur = 4 }]
+
+[[dialogue.decor]]
+motif = "petal"
+anchor = "top_right"
+offset = [-70, 5]
+size = [14, 9]
+rotate = -12
+border_color = "#f490b580"
+border_width = 1
 
 [dialogue.text]
 color = "#7a3050"
 
 [dialogue.nameplate]
 color = "#ff8fb8"
-text_color = "#ffffff"
+text_color = "#7a3050"
 radius = 999
 padding = [14, 3]
 offset = [24, -14]
@@ -99,14 +111,15 @@ period_s = 1.0
 offset = [-24, -10]
 
 [history]
+bubble_contour = "rounded"
 name_color = "#f06a9c"
 bubble_color = "#fff0f5f2"
 bubble_border = "#f7a8c4"
 bubble_border_width = 1.5
 bubble_radius = 16
 bubble_gradient = { angle = 135, stops = [[0, "#fff0f5f5"], [1, "#ffe1ecf2"]] }
-bubble_shadows = [{ color = "#f7a8c44d", dy = 3, blur = 10 }]
-name_plate = { color = "#ff8fb8", gradient = { angle = 90, stops = [[0, "#ff8fb8"], [1, "#ffb3cf"]] }, text_color = "#ffffff", radius = 9, padding = [8, 1] }
+bubble_shadows = [{ color = "#f7a8c433", dy = 3, blur = 10 }]
+name_plate = { color = "#ff8fb8", gradient = { angle = 90, stops = [[0, "#ff8fb8"], [1, "#ffb3cf"]] }, text_color = "#7a3050", radius = 9, padding = [8, 1] }
 avatar = { shape = "circle", size = 40, ring_color = "#ffb3cf", ring_width = 2 }
 time_color = "#c48aa2"
 

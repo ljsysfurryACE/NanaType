@@ -24,6 +24,7 @@ region = [800, 176]
 padding = [20, 42, 22, 14]
 
 [dialogue.box]
+contour = "rounded"
 color = "#ffffff"
 border_width = 0
 radius = 18
@@ -36,7 +37,7 @@ shadows = [{ color = "#1f2a3633", dy = 4, blur = 14 }]
 [[dialogue.decor]]
 anchor = "top_left"
 offset = [-56, -2]
-size = [44, 44]
+size = [42, 42]
 radius = 22
 gradient = { angle = 135, stops = [[0, "#7ed0ff"], [1, "#ff9ec4"]] }
 border_color = "#ffffff"
@@ -50,12 +51,19 @@ text_size = 20
 [[dialogue.decor]]
 anchor = "top_right"
 offset = [-14, 12]
-size = [50, 22]
-radius = 11
+size = [44, 20]
+radius = 10
 gradient = { angle = 90, stops = [[0, "#ff5c7a"], [1, "#ff8a5c"]] }
 text = "LIVE"
 text_color = "#ffffff"
-text_size = 12
+text_size = 10
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-65, 19]
+size = [5, 5]
+radius = 3
+color = "#ff5c7a"
 
 [dialogue.text]
 color = "#1f2a36"
@@ -74,13 +82,14 @@ color = "#23ade5"
 size = 14
 
 [history]
+bubble_contour = "rounded"
 name_color = "#23ade5"
 name_size = 13
 bubble_color = "#ffffff"
 bubble_radius = 14
 bubble_radii = [4, 14, 14, 14]
 bubble_border_width = 0
-bubble_shadows = [{ color = "#1f2a3626", dy = 2, blur = 8 }]
+bubble_shadows = [{ color = "#1f2a361f", dy = 2, blur = 8 }]
 name_plate = { color = "#23ade5", text_color = "#ffffff", radius = 9, padding = [9, 2] }
 avatar = { shape = "circle", size = 40, ring_color = "#ffffff", ring_width = 2 }
 show_time = true

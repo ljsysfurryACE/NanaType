@@ -37,12 +37,12 @@ padding = [173, 52, 173, 50]
 color = "#00000000"
 border_width = 0
 radius = 0
-gradient = { angle = 0, stops = [[0, "#00000099"], [0.5, "#00000099"], [1, "#00000000"]] }
+gradient = { angle = 0, stops = [[0, "#00000099"], [0.45, "#00000080"], [1, "#00000000"]] }
 
 # The menu row's own darker fade.
 [[dialogue.decor]]
 anchor = "bottom"
-size = ["100%", 75]
+size = ["100%", 70]
 gradient = { angle = 0, stops = [[0, "#000000"], [1, "#00000000"]] }
 
 # SAVE LOAD Q.SAVE Q.LOAD ⭰ ⯬ 🡄 🡆 ⯮ ⭲ HISTORY ╳, flush right.
@@ -120,7 +120,7 @@ font = "body"
 color = "#ffffff"
 size = 27
 stroke = { color = "#000000", width = 1.5 }
-shadow = { color = "#000000", blur = 3 }
+shadow = { color = "#000000", blur = 2.5 }
 
 [dialogue.nameplate]
 color = "#00000000"
@@ -130,7 +130,7 @@ radius = 0
 padding = [0, 0]
 offset = [146, 13]
 stroke = { color = "#000000", width = 1.5 }
-text_shadow = { color = "#000000", blur = 3 }
+text_shadow = { color = "#000000", blur = 2.5 }
 
 [dialogue.continue]
 glyph = ""
@@ -152,7 +152,7 @@ ms = 0
 width = 640
 height = 480
 layout = "inline"
-name_width = 120
+name_width = 124
 name_size = 18
 time_size = 16
 time_seconds = true

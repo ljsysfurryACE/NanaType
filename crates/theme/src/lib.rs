@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+mod contour;
 mod files;
 mod fonts;
 mod geometry;
@@ -19,6 +20,7 @@ mod registry;
 #[cfg(test)]
 mod tests;
 
+pub use contour::*;
 pub use files::{
     DirFiles, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, MemoryFiles, SkinFiles, ZipFiles,
     clean_path,

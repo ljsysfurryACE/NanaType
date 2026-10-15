@@ -23,12 +23,13 @@ danger = "#ff7a96"
 padding = [26, 26, 26, 16]
 
 [dialogue.box]
+contour = "hud"
 color = "#0b1220f0"
 border_color = "#5cb8ff"
 border_width = 1.5
 radius = 16
-glow = "#5cb8ff80"
-glow_blur = 14
+glow = "#5cb8ff59"
+glow_blur = 12
 gradient = { stops = [[0, "#101c2cf2"], [1, "#0b1220f2"]] }
 shadows = [{ color = "#5cb8ff30", blur = 14, inset = true }]
 
@@ -38,45 +39,40 @@ anchor = "bottom"
 offset = [0, 1]
 size = ["70%", 2]
 gradient = { angle = 90, stops = [[0, "#55ccff00"], [0.3, "#55ccff"], [0.7, "#a07cff"], [1, "#a07cff00"]] }
-shadows = [{ color = "#5cb8ff99", blur = 8 }]
+shadows = [{ color = "#5cb8ff80", blur = 6 }]
+motion = { kind = "breathe", period_s = 6, amplitude = 0.12 }
 
 [[dialogue.decor]]
+color = "#7acbff99"
+motif = "circuit"
 anchor = "top_left"
-offset = [7, 7]
-size = [16, 16]
-border_color = "#9fdcff"
-border_width = 0
-border_widths = [2, 0, 0, 2]
+offset = [-22, 6]
+size = [64, 14]
 
 [[dialogue.decor]]
 anchor = "top_right"
-offset = [-7, 7]
-size = [16, 16]
-border_color = "#9fdcff"
-border_width = 0
-border_widths = [2, 2, 0, 0]
+offset = [-38, 9]
+size = [28, 2]
+color = "#5cb8ff80"
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-72, 9]
+size = [10, 2]
+color = "#a07cff80"
 
 [[dialogue.decor]]
 anchor = "bottom_left"
-offset = [7, -7]
-size = [16, 16]
-border_color = "#9fdcff"
-border_width = 0
-border_widths = [0, 0, 2, 2]
-
-[[dialogue.decor]]
-anchor = "bottom_right"
-offset = [-7, -7]
-size = [16, 16]
-border_color = "#9fdcff"
-border_width = 0
-border_widths = [0, 2, 2, 0]
+offset = [30, -9]
+size = [24, 2]
+color = "#5cb8ff59"
 
 [dialogue.text]
 color = "#bae0ff"
 shadow = { color = "#5cb8ff88", blur = 6 }
 
 [dialogue.nameplate]
+contour = "hud"
 color = "#0b1220"
 text_color = "#e4f4ff"
 radius = 6
@@ -93,9 +89,10 @@ motion = "blink"
 period_s = 1.0
 
 [history]
+bubble_contour = "hud"
 name_color = "#5cb8ff"
 bubble_color = "#0b1220e6"
-bubble_border = "#5cb8ff66"
+bubble_border = "#5cb8ff59"
 bubble_radius = 12
 bubble_shadows = [{ color = "#5cb8ff33", blur = 10 }]
 time_color = "#84a0bc"

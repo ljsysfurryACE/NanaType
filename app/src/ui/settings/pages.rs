@@ -1899,10 +1899,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                         locale.tag(),
                     )
                 });
-                let urls = row.folder.as_ref().map_or_else(HashMap::new, |f| {
-                    crate::assets::skin_urls(&nanatype_theme::DirFiles::new(f))
-                });
-                (Arc::new(skin), Arc::new(urls))
+                (Arc::new(skin), row.image_urls.clone())
             }
         };
         let d = &skin.dialogue;

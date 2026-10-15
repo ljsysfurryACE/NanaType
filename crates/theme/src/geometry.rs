@@ -5,7 +5,24 @@
 
 use std::f32::consts::PI;
 
-use crate::manifest::{Anchor, ContinueMotion, Edge, Len, TailSpec};
+use crate::manifest::{
+    Anchor, ContinueMotion, DecorMotionKind, DecorMotionSpec, Edge, Len, TailSpec,
+};
+
+/// Vertical paint offset and opacity multiplier. Reduced motion lands on
+/// the original pose, regardless of phase (the same pose as a preview).
+pub fn decor_motion(motion: &DecorMotionSpec, t_s: f64, reduced: bool) -> (f32, f32) {
+    if reduced || motion.amplitude == 0.0 {
+        return (0.0, 1.0);
+    }
+    let phase = (t_s / f64::from(motion.period_s.max(0.5)) + f64::from(motion.phase))
+        .rem_euclid(1.0) as f32;
+    let angle = phase * 2.0 * PI;
+    match motion.kind {
+        DecorMotionKind::Float => (angle.sin() * motion.amplitude, 1.0),
+        DecorMotionKind::Breathe => (0.0, 1.0 - motion.amplitude * (1.0 - angle.cos()) * 0.5),
+    }
+}
 
 /// 0, ½ or 1 along each axis.
 pub fn anchor_frac(anchor: Anchor) -> [f32; 2] {

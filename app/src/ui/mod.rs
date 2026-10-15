@@ -102,6 +102,7 @@ pub struct SkinRow {
     pub builtin: bool,
     pub error: Option<String>,
     pub folder: Option<std::path::PathBuf>,
+    pub image_urls: Arc<HashMap<String, String>>,
     pub accent: [f32; 4],
     pub box_color: [f32; 4],
     pub text_color: [f32; 4],
@@ -307,6 +308,13 @@ pub fn skin_rows(registry: &nanatype_theme::SkinRegistry, locale: Locale) -> Vec
                     nanatype_theme::SkinOrigin::Directory(p) => Some(p.clone()),
                     _ => None,
                 },
+                image_urls: Arc::new(
+                    registry
+                        .load(&e.id)
+                        .ok()
+                        .map(|loaded| crate::assets::skin_urls(&*loaded.files))
+                        .unwrap_or_default(),
+                ),
                 accent: [0.5; 4],
                 box_color: [0.5; 4],
                 text_color: [0.5; 4],

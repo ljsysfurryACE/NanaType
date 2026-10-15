@@ -8,20 +8,20 @@
 
 | id | 名称 | 标签 | 特点 |
 |---|---|---|---|
-| `nanatype.halo` | 光环 | classic, minimal | 默认。柔光白卡片、左侧强调条、渐变胶囊名牌 |
-| `nanatype.night` | 夜色 | classic | 深蓝玻璃、霓虹描边与流光下划线 |
-| `nanatype.parchment` | 羊皮纸 | classic, elegant | 纸张渐变、双线框、花饰徽章、宋体 |
-| `nanatype.adv` | ADV 经典 | game | 1280×240 全宽深色玻璃条、金色描边名字 |
-| `nanatype.rpg` | RPG 窗口 | game, retro | 蓝色渐变窗口、白色双线框 |
-| `nanatype.vanilla` | 香草 | streaming, minimal | 极简白条、左侧强调线、名字在框内 |
-| `nanatype.bubble` | 气泡 | streaming, cute | 粗描边气泡、尾巴、倾斜名牌 |
+| `nanatype.halo` | 光环 | classic, minimal | 默认。柔光白卡片、偏心轨道弧线、渐变名牌 |
+| `nanatype.night` | 夜色 | classic | 深蓝玻璃、切角仪表框、霓虹描边与呼吸光带 |
+| `nanatype.parchment` | 羊皮纸 | classic, elegant | 平直双线框、暖色纸张、折角与卷叶花饰、宋体 |
+| `nanatype.adv` | ADV 经典 | game | 1280×240 宽幅剧情框、端部缺口、金色姓名层级 |
+| `nanatype.rpg` | RPG 窗口 | game, retro | 蓝色渐变窗口、阶梯切角、白色嵌套框线 |
+| `nanatype.vanilla` | 香草 | streaming, minimal | 斜切收尾白条、左侧强调线、名字在框内 |
+| `nanatype.bubble` | 气泡 | streaming, cute | 平滑圆角气泡、连续曲线尾巴、胶囊名牌与圆润星芒 |
 | `nanatype.subtitle` | 字幕 | streaming, minimal | 无框，居中粗描边白字 |
-| `nanatype.livechat` | 直播弹幕 | streaming | 评论栏风格：圆形头像、名字胶囊、白色气泡 |
-| `nanatype.comic` | 漫画 | game, cute | 黑色粗线、硬投影、带影子的尾巴 |
-| `nanatype.terminal` | 终端 | retro, minimal | 黑底绿字、标题栏、闪烁光标 |
-| `nanatype.pixel` | 掌机像素 | game, retro | 四阶绿色、方角粗框、像素字 |
-| `nanatype.sakura` | 樱花 | cute | 粉色渐变、花瓣点缀、爱心提示 |
-| `nanatype.ink` | 水墨 | elegant | 宣纸、浓淡笔触、朱红印章、楷体 |
+| `nanatype.livechat` | 直播弹幕 | streaming | 圆形头像、名字胶囊、连续圆角评论气泡与 LIVE 标识 |
+| `nanatype.comic` | 漫画 | game, cute | 不规则分镜框、尖角尾巴、网点与放射线、黑色硬投影 |
+| `nanatype.terminal` | 终端 | retro, minimal | 黑底绿字、机壳切角、分隔标题栏、闪烁光标 |
+| `nanatype.pixel` | 掌机像素 | game, retro | 四阶绿色、阶梯框与像素凹槽、像素字 |
+| `nanatype.sakura` | 樱花 | cute | 柔和圆角框、带缺口的五瓣樱花、粉色渐变与爱心提示 |
+| `nanatype.ink` | 水墨 | elegant | 平整宣纸底色、墨竹画作与朱印、楷体 |
 | `nanatype.echo_vanilla` | Echo-Live 原版 | streaming, minimal | 还原 Echo-Live 原版：白底、顶部灰线、右上角三角、名字左凸、底部菜单栏 |
 | `nanatype.echo_glass` | Echo-Live 玻璃 | streaming | 还原 Echo-Live 玻璃：自下而上黑色渐变、黑边白字、菜单栏靠右 |
 | `nanatype.echo_bubble` | Echo-Live 气泡 | streaming, cute | 还原 Echo-Live 气泡：白色圆角框、灰色粗边、右下硬投影 |
@@ -29,7 +29,11 @@
 
 ![内置皮肤一览](skins-preview.png)
 
-设置 › 皮肤 顶部的预览卡会用示例台词实时画出所选皮肤（含个性化设置），点击某一行即可预览而不切换（行尾的“⋯”菜单里有复制、导出等操作）；标签和浅色 / 深色可用来筛选列表。内置皮肤都不带图片，想改造它们时用「复制为可编辑」。
+设置 › 皮肤 顶部的预览卡会用示例台词实时画出所选皮肤（含个性化设置），点击某一行即可预览而不切换（行尾的“⋯”菜单里有复制、导出等操作）；标签和浅色 / 深色可用来筛选列表。水墨内置开放授权墨竹素材，其余内置皮肤不带图片；想改造它们时用「复制为可编辑」。缩略图使用与展示框相同的静态装饰、尾巴与表面绘制，并为外扩装饰和阴影留出空间；无继续提示的皮肤不显示占位圆点。
+
+夜色底部光带以 6 秒周期轻微呼吸，气泡的一颗星以 5 秒周期轻微呼吸；樱花的两片花瓣分别以 6／8 秒周期上下漂浮。其余新增细节保持静态。右上角有装饰时，左侧名牌会为角饰预留空间，超长姓名在名牌内省略，原始姓名不变。
+
+水墨直接叠加大都会博物馆开放图像中郑燮 [Bamboo and Poem](https://www.metmuseum.org/art/collection/search/52946) 的墨竹局部（Public Domain）。只裁切并去掉纸底，不重绘线条或改色；来源与处理记录随皮肤附在 `ink/ART-LICENSE.txt` 中。
 
 ## 清单
 
@@ -79,6 +83,7 @@ overflow = "scroll"               # 长文本：clip 裁掉 / scroll 跟随滚�
 overflow_auto_ms = 1500           # page 模式下满页自动翻页的等待时间；省略则等继续键
 
 [dialogue.box]
+# contour = "rounded"             # 可选：用 Painter 绘制连续圆角与曲线尾巴
 color = "#ffffffee"
 border_color = "#f0cfdc"
 border_width = 2
@@ -110,6 +115,8 @@ shadow = true                     # 为尾巴复制框的硬阴影（blur = 0 �
 # color = "#ffe6ef"               # 填充，默认是框的颜色
 
 [[dialogue.decor]]                # 装饰，可写多个（最多 16 个）
+# image = "ink/stroke.png"        # 可选：透明图片素材，按原始比例完整放入 size
+# motif = "blossom"               # 可选：曲线图形，代替 polygon 和普通矩形填充
 anchor = "top_right"              # 装饰自己的这个点对齐框的同名点，再加 offset
 offset = [-18, -14]
 size = [26, 26]                   # 像素，或框尺寸的百分比如 "56%"
@@ -123,6 +130,7 @@ layer = "above"                   # above：画在框上；below：画在框下
 when = "always"                   # always | speaker（仅在有名牌时显示）
                                   # | display（只在展示框与皮肤预览中画，输入窗不画；
                                   #   用于仿菜单栏这类看起来能点的装饰）
+# motion = { kind = "float", period_s = 6, amplitude = 1.5, phase = 0 }
 # 也可以有 color、gradient、radius、radii、border_color、border_width、
 # border_widths、border_style、shadows、opacity，
 # 以及 polygon = [[0, 0], [100, 0], [50, 100]]（按装饰尺寸的百分比裁成多边形，3–8 点）
@@ -218,7 +226,7 @@ hide_latest = false               # true：展示框上还显示着的那句先�
 panel = { color = "#edeef0", border_color = "#888888", border_width = 0, radius = 0, padding = [18, 18, 18, 18], margin = [0, 0, 0, 0] }   # padding 左上右下，margin 上右下左
 title = { text = "HISTORY", color = "#606266", size = 21, weight = 600, background = "#ffffff", height = 42, padding = 18 }   # 面板顶部标题栏（可选）
 
-[[history.decor]]                 # 面板上的装饰，字段同 [[dialogue.decor]]（when 不适用）
+[[history.decor]]                 # 面板上的装饰，字段同 [[dialogue.decor]]（when 和 motion 不适用；历史装饰保持静态）
 anchor = "top_right"
 size = [11, 11]
 polygon = [[0, 0], [100, 0], [100, 100]]
@@ -298,6 +306,12 @@ contrast_guard = 3.0              # 自带颜色的文字与框色对比低于 3
 | `text` | `dialogue.text.color` |
 | `name` | `dialogue.nameplate.color` |
 | `name_text` | `dialogue.nameplate.text_color` |
+
+框体、名牌、历史面板和装饰支持可选 `contour`；历史气泡使用 `bubble_contour`，历史名字胶囊也可在 `name_plate` 中写 `contour`。预设有 `rounded`（平滑圆角与连续曲线尾巴）、`orbit`（偏心圆角）、`hud`（仪表切角）、`parchment`（纸边）、`cinema`（宽幅切角）、`rpg`（阶梯框）、`slant`（斜切）、`cloud`（云朵）、`chat`（评论气泡）、`comic`（漫画分镜）、`terminal`（机壳）、`pixel`（像素凹槽）、`sakura`（花瓣边缘）、`ink`（不规则纸张）、`ribbon`（丝带）、`seal`（印章）。不写时保持原来的矩形、圆角和分边边框。异形框体的填充、描边与阴影共用同一路径；`dialogue.tail` 的位置、宽度、长度与倾斜会合入轮廓，尾巴共用框体填充与阴影，`tail.color` / `tail.shadow` 仅用于原来的独立三角尾巴。内容区域仍是矩形，轮廓不裁剪正文；在较小的历史气泡与名牌上，边缘起伏自动减小。
+
+装饰可选 `motif`：`orbit`（轨道弧线）、`sparkle`（曲线星芒）、`blossom`（五瓣缺口樱花）、`petal`（花瓣）、`flourish`（卷叶）、`rays`（放射线）、`halftone`（网点）、`fold`（折角）、`circuit`（电路线）。图形使用装饰已有的颜色、渐变和边框色。装饰也可用 `image` 引用包内 PNG、JPEG、WebP 或 GIF，按原始比例完整显示在 `size` 中；图片沿用 `opacity`、`rotate` 和动效，成功加载时覆盖该装饰的填充、渐变、`motif`、`contour` 和 `polygon`。图片随皮肤导出，继承皮肤也可直接使用原图。其余表面的优先级为可用的九宫格贴图、`motif`、`contour`、原有矩形／`polygon`；图片皮肤沿用原有绘制。预览、缩略图、历史和展示共用 Surface 表面绘制与 Painter，不加载外部脚本或 SVG。自定义轮廓和图形也遵循已有 `rotate`、`opacity`、装饰层级与颜色角色。
+
+装饰可选 `motion = { kind, period_s, amplitude, phase }`：`kind` 为 `float`（上下漂浮，`amplitude` 为像素，0–32）或 `breathe`（透明度呼吸，`amplitude` 为最多降低的透明度比例，0–1）。周期 `period_s` 为 0.5–120 秒；`phase` 为 0–1 的周期偏移。默认值为 `float`、6 秒、0.1px、0；不写 `motion` 时完全静止。推荐漂浮不超过 2px、呼吸不超过 0.15、周期至少 5 秒。运动叠加原来的旋转和透明度，只改变绘制，不改变布局或换行。仅自己的展示框与联机伙伴展示框播放；编辑区、历史、皮肤预览和缩略图使用原始姿态。系统或应用启用减弱动效时也使用原始姿态。空展示框不因装饰持续请求帧；隐藏窗口仍有 OBS 输出时照常绘制。
 
 渐变 `gradient = { kind, angle, center, circle, stops }`：`kind` 为 `linear`（默认，`angle` 与 CSS 相同，0 = 向上，90 = 向右，默认 180）或 `radial`（`center` 为百分比，默认 `[50, 50]`）；`stops` 为 2–8 个 `[位置 0–1, 颜色]`，位置不能递减。渐变不能画在边框上，需要渐变边框时可用一个 `layer = "below"`、`inset` 为负值的装饰垫在框下。
 

@@ -20,6 +20,7 @@ region = [760, 170]
 padding = [26, 46, 26, 14]
 
 [dialogue.box]
+contour = "slant"
 color = "#fffffff2"
 border_color = "#4a7dff"
 border_width = 0
@@ -28,6 +29,18 @@ radius = 0
 radii = [0, 6, 6, 0]
 gradient = { angle = 90, stops = [[0, "#eef3fff2"], [0.35, "#fffffff2"]] }
 shadows = [{ color = "#22263a26", dy = 4, blur = 14 }]
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-14, -10]
+size = [30, 1]
+color = "#4a7dff40"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-49, -10]
+size = [6, 1]
+color = "#4a7dff80"
 
 [dialogue.text]
 color = "#22263a"
@@ -41,7 +54,7 @@ radius = 0
 padding = [0, 1]
 offset = [26, 14]
 border_color = "#4a7dff"
-border_widths = [0, 0, 2, 0]
+border_widths = [0, 0, 1, 0]
 
 [dialogue.continue]
 glyph = "●"
@@ -51,13 +64,14 @@ motion = "pulse"
 period_s = 1.0
 
 [history]
+bubble_contour = "slant"
 name_color = "#4a7dff"
 bubble_color = "#fffffff2"
 bubble_border = "#4a7dff"
 bubble_radius = 0
 bubble_radii = [0, 6, 6, 0]
 bubble_border_width = 0
-bubble_shadows = [{ color = "#22263a1f", dy = 2, blur = 8 }, { color = "#4a7dff", dx = 3, inset = true }]
+bubble_shadows = [{ color = "#22263a14", dy = 2, blur = 8 }, { color = "#4a7dff", dx = 3, inset = true }]
 avatar = { shape = "square", size = 36 }
 
 [history.text]

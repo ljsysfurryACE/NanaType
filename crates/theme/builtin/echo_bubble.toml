@@ -26,14 +26,14 @@ weight = 400
 # Echo-Live draws on a 1920-wide page; every length here is two thirds of it.
 [dialogue]
 region = [1280, 180]
-padding = [66, 50, 50, 40]
+padding = [66, 50, 54, 40]
 
 # The box gives up 16px (here 11) on the right and bottom for its shadow.
 [dialogue.box]
 color = "#ffffff"
 border_color = "#888888"
 border_width = 5
-radius = 21
+radius = 20
 margin = [0, 11, 11, 0]
 shadows = [{ color = "#888888", dx = 11, dy = 11 }]
 
@@ -152,13 +152,13 @@ hide_latest = true
 bubble_color = "#00000000"
 bubble_border_width = 0
 bubble_radius = 0
-bubble_padding = [0, 0]
+bubble_padding = [0, 1]
 avatar = { shape = "none" }
 name_weight = 400
 name_color = "#000000"
 time_color = "#888888"
 # The panel gives up 16px (here 8) on the right and bottom for its shadow.
-panel = { color = "#ffffff", border_color = "#888888", border_width = 4, radius = 16, padding = [18, 18, 18, 18], margin = [0, 8, 8, 0], shadows = [{ color = "#888888", dx = 8, dy = 8 }] }
+panel = { color = "#ffffff", border_color = "#888888", border_width = 4, radius = 15, padding = [18, 18, 18, 18], margin = [0, 8, 8, 0], shadows = [{ color = "#888888", dx = 8, dy = 8 }] }
 
 [history.text]
 color = "#000000"

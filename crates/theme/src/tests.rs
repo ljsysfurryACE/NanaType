@@ -104,7 +104,7 @@ fn every_builtin_loads_without_warnings() {
     let bubble = registry.load("nanatype.bubble").unwrap();
     assert!(bubble.skin.dialogue.tail.is_some());
     let ink = registry.load("nanatype.ink").unwrap();
-    assert!(ink.skin.dialogue.decor.len() > 2);
+    assert!(ink.skin.dialogue.decor.iter().any(|d| d.image.is_some()));
     let echo = registry.load("nanatype.echo_vanilla").unwrap();
     assert_eq!(echo.skin.dialogue.decor.len(), 8);
     assert!(echo.skin.dialogue.continue_.glyph.is_empty());
@@ -117,6 +117,55 @@ fn every_builtin_loads_without_warnings() {
     assert_eq!(night.skin.history.layout, HistoryLayout::Stack);
     assert!(night.skin.history.panel.is_none());
     assert!(!night.skin.history.hide_latest);
+}
+
+#[test]
+fn decoration_images_validate_packaged_paths_and_bytes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let manifest = "[meta]\nid='image-decor'\n[[dialogue.decor]]\nimage='stroke.png'\n[[history.decor]]\nimage='stroke.png'\n";
+    write_skin(tmp.path(), manifest, &[("stroke.png", png(64, 16))]);
+    let loaded = load_dir(tmp.path()).unwrap();
+    assert!(loaded.warnings.is_empty());
+    assert_eq!(
+        loaded
+            .skin
+            .referenced_files()
+            .iter()
+            .filter(|(_, path, _)| *path == "stroke.png")
+            .count(),
+        2
+    );
+    fs::remove_file(tmp.path().join("stroke.png")).unwrap();
+    let fields = errors(load_dir(tmp.path()));
+    assert!(fields.contains(&"dialogue.decor.image".to_owned()));
+    assert!(fields.contains(&"history.decor.image".to_owned()));
+    fs::write(
+        tmp.path().join(MANIFEST),
+        "[meta]\nid='unsafe-decor'\n[[dialogue.decor]]\nimage='../escape.png'\n",
+    )
+    .unwrap();
+    assert!(errors(load_dir(tmp.path())).contains(&"dialogue.decor.image".to_owned()));
+}
+
+#[test]
+fn builtin_ink_artwork_and_provenance_survive_export_and_inheritance() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut registry = SkinRegistry::new(Some(tmp.path().join("skins")), APP);
+    let original = registry.load("nanatype.ink").unwrap();
+    let archive = tmp.path().join("ink.ntskin");
+    registry.export("nanatype.ink", &archive).unwrap();
+    let exported = registry.inspect_archive(&archive).unwrap();
+    let names = Localized::from([("en-US".to_owned(), "My Ink".to_owned())]);
+    registry
+        .duplicate("nanatype.ink", "my-ink", &names, &TomlTable::new())
+        .unwrap();
+    let inherited = registry.load("my-ink").unwrap();
+    for path in ["ink/bamboo.png", "ink/ART-LICENSE.txt"] {
+        let bytes = original.files.read(path).unwrap();
+        assert_eq!(exported.files.read(path).unwrap(), bytes);
+        assert_eq!(inherited.files.read(path).unwrap(), bytes);
+    }
+    assert!(exported.warnings.is_empty());
 }
 
 #[test]
@@ -251,6 +300,188 @@ sparkle = true
     let skin = load_dir(tmp.path()).unwrap();
     assert_eq!(skin.warnings.len(), 1, "{:?}", skin.warnings);
     assert_eq!(skin.warnings[0].field, "dialogue.decor.1.sparkle");
+}
+
+#[test]
+fn decor_motion_loads_and_validates_nested_fields() {
+    let tmp = tempfile::tempdir().unwrap();
+    let manifest = |motion: &str| {
+        format!("[meta]\nid = \"motion-test\"\n[[dialogue.decor]]\nmotion = {{ {motion} }}\n")
+    };
+    write_skin(
+        tmp.path(),
+        &manifest("kind = \"breathe\", period_s = 6, amplitude = 0.12, phase = 0.25"),
+        &[],
+    );
+    let loaded = load_dir(tmp.path()).unwrap();
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    let motion = loaded.skin.dialogue.decor[0].motion.unwrap();
+    assert_eq!(motion.kind, DecorMotionKind::Breathe);
+    assert_eq!(motion.phase, 0.25);
+    for (config, field) in [
+        ("kind = \"float\", period_s = 0", "period_s"),
+        ("kind = \"float\", amplitude = nan", "amplitude"),
+        ("kind = \"float\", amplitude = 33", "amplitude"),
+        ("kind = \"breathe\", amplitude = 1.1", "amplitude"),
+        ("kind = \"float\", phase = -0.1", "phase"),
+    ] {
+        write_skin(tmp.path(), &manifest(config), &[]);
+        assert!(
+            errors(load_dir(tmp.path())).contains(&format!("dialogue.decor.0.motion.{field}")),
+            "{config}"
+        );
+    }
+    write_skin(tmp.path(), &manifest("kind = \"float\", typo = 1"), &[]);
+    let loaded = load_dir(tmp.path()).unwrap();
+    assert_eq!(loaded.warnings[0].field, "dialogue.decor.0.motion.typo");
+    write_skin(
+        tmp.path(),
+        "[meta]\nid = \"old-skin\"\n[[dialogue.decor]]\nrotate = 15\n",
+        &[],
+    );
+    assert!(
+        load_dir(tmp.path()).unwrap().skin.dialogue.decor[0]
+            .motion
+            .is_none()
+    );
+}
+
+#[test]
+fn decoration_loops_are_periodic_bounded_and_rest_under_reduced_motion() {
+    for (kind, amplitude) in [
+        (DecorMotionKind::Float, 2.0),
+        (DecorMotionKind::Breathe, 0.15),
+    ] {
+        let motion = DecorMotionSpec {
+            kind,
+            amplitude,
+            period_s: 8.0,
+            phase: 0.35,
+        };
+        let start = decor_motion(&motion, 0.0, false);
+        for i in 0..=96 {
+            let t = f64::from(i) / 12.0;
+            let (dy, alpha) = decor_motion(&motion, t, false);
+            assert!(dy.abs() <= 2.0 && (0.85..=1.0).contains(&alpha));
+            assert_eq!(decor_motion(&motion, t, true), (0.0, 1.0));
+        }
+        let end = decor_motion(&motion, 8.0, false);
+        assert!((start.0 - end.0).abs() < 1e-5 && (start.1 - end.1).abs() < 1e-5);
+    }
+}
+
+#[test]
+fn vector_presets_are_opt_in_and_unknown_presets_are_rejected() {
+    let old: Skin = toml::from_str("[meta]\nid = 'old'").unwrap();
+    assert!(old.dialogue.box_.shape.contour.is_none());
+    assert!(old.history.bubble_contour.is_none());
+    let tmp = tempfile::tempdir().unwrap();
+    write_skin(
+        tmp.path(),
+        "[meta]\nid='vector'\n[dialogue.box]\ncontour='cloud'\n[[dialogue.decor]]\nmotif='blossom'\n[history]\nbubble_contour='chat'\nname_plate={contour='ribbon'}\n",
+        &[],
+    );
+    let loaded = load_dir(tmp.path()).unwrap();
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    assert_eq!(
+        loaded.skin.dialogue.box_.shape.contour,
+        Some(ContourPreset::Cloud)
+    );
+    assert_eq!(
+        loaded.skin.dialogue.decor[0].motif,
+        Some(MotifPreset::Blossom)
+    );
+    assert_eq!(
+        loaded.skin.history.name_plate.as_ref().unwrap().contour,
+        Some(ContourPreset::Ribbon)
+    );
+    for invalid in [
+        "[dialogue.box]\ncontour='missing'",
+        "[[dialogue.decor]]\nmotif='script()'",
+        "[history]\nbubble_contour='missing'",
+    ] {
+        write_skin(tmp.path(), &format!("[meta]\nid='bad'\n{invalid}"), &[]);
+        assert!(load_dir(tmp.path()).is_err());
+    }
+}
+
+#[test]
+fn contours_are_finite_closed_and_each_tail_is_part_of_the_outline() {
+    for preset in ContourPreset::ALL {
+        assert!(
+            contour_path(preset, [0.0, 0.0], 20.0, 2.0, None)
+                .commands
+                .is_empty()
+        );
+        for size in [[1.0, 1.0], [24.0, 18.0], [760.0, 150.0], [1280.0, 180.0]] {
+            let path = contour_path(preset, size, 20.0, 1.5, None);
+            let [x, y, w, h] = path.bounds().unwrap();
+            assert!(
+                [x, y, w, h].into_iter().all(f32::is_finite),
+                "{preset:?} {size:?}"
+            );
+            assert!(
+                x >= 0.0 && y >= 0.0 && x + w <= size[0] + 0.01 && y + h <= size[1] + 0.01,
+                "{preset:?} {size:?}: {:?}",
+                path.bounds()
+            );
+            assert!(matches!(path.commands.last(), Some(ShapeCommand::Close)));
+        }
+        for side in [Edge::Top, Edge::Right, Edge::Bottom, Edge::Left] {
+            let tail = TailSpec {
+                side,
+                width: 32.0,
+                length: 22.0,
+                lean: -8.0,
+                ..Default::default()
+            };
+            let path = contour_path(preset, [760.0, 150.0], 20.0, 0.0, Some(&tail));
+            assert_eq!(
+                path.commands
+                    .iter()
+                    .filter(|c| matches!(c, ShapeCommand::Move(_)))
+                    .count(),
+                1
+            );
+            assert_eq!(
+                path.commands
+                    .iter()
+                    .filter(|c| matches!(c, ShapeCommand::Close))
+                    .count(),
+                1
+            );
+            let [x, y, w, h] = path.bounds().unwrap();
+            match side {
+                Edge::Top => assert!(y <= -22.0),
+                Edge::Right => assert!(x + w >= 782.0),
+                Edge::Bottom => assert!(y + h >= 172.0),
+                Edge::Left => assert!(x <= -22.0),
+            }
+        }
+    }
+}
+
+#[test]
+fn motifs_are_deterministic_bounded_and_have_no_external_resources() {
+    for motif in MotifPreset::ALL {
+        for size in [[1.0, 1.0], [32.0, 24.0], [700.0, 9.0]] {
+            let parts = motif_paths(motif, size);
+            assert_eq!(parts, motif_paths(motif, size));
+            assert!(!parts.is_empty());
+            for part in parts {
+                let [x, y, w, h] = part.path.bounds().unwrap();
+                assert!([x, y, w, h].into_iter().all(f32::is_finite));
+                assert!(
+                    x >= -size[0] * 0.1
+                        && y >= -size[1] * 0.1
+                        && x + w <= size[0] * 1.2
+                        && y + h <= size[1] * 1.2,
+                    "{motif:?}: {:?}",
+                    part.path.bounds()
+                );
+            }
+        }
+    }
 }
 
 #[test]

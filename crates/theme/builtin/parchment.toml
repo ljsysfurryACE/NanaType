@@ -50,16 +50,38 @@ border_width = 1
 
 # Fleuron medallion sitting on the top border.
 [[dialogue.decor]]
+motif = "flourish"
 anchor = "top"
 offset = [0, -12]
-size = [44, 24]
-radius = 12
-color = "#f6e6c6"
-border_color = "#7a5430"
-border_width = 2
-text = "❦"
-text_color = "#7a5430"
-text_size = 18
+size = [58, 26]
+color = "#7a5430"
+
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [10, 10]
+size = [18, 18]
+border_color = "#7a5430b3"
+border_widths = [2, 0, 0, 2]
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-10, -10]
+size = [18, 18]
+border_color = "#7a5430b3"
+border_widths = [0, 2, 2, 0]
+
+[[dialogue.decor]]
+anchor = "bottom"
+offset = [0, -6]
+size = [42, 2]
+color = "#7a543066"
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-10, 9]
+size = [24, 18]
+motif = "fold"
+color = "#9c754866"
 
 [dialogue.text]
 color = "#3e2a1c"
@@ -80,7 +102,7 @@ color = "#7a4824"
 [history]
 name_color = "#7a4824"
 bubble_color = "#f4e4c4f0"
-bubble_border = "#7a543080"
+bubble_border = "#7a543099"
 bubble_radius = 6
 bubble_gradient = { kind = "radial", stops = [[0, "#fbf1dcf5"], [1, "#ecd6aef0"]] }
 bubble_shadows = [{ color = "#3c1e0a26", dy = 2, blur = 6 }]

@@ -10,7 +10,8 @@ use toml::{Table, Value};
 use crate::files::{FileError, SkinFiles, clean_path};
 use crate::fonts::{BuiltinFonts, builtin_path, is_builtin_font};
 use crate::manifest::{
-    DecorSpec, FileKind, GradientSpec, Len, SKIN_SCHEMA, ShadowSpec, ShapeSpec, Skin,
+    DecorMotionKind, DecorSpec, FileKind, GradientSpec, Len, SKIN_SCHEMA, ShadowSpec, ShapeSpec,
+    Skin,
 };
 
 pub const MANIFEST: &str = "skin.toml";
@@ -567,6 +568,30 @@ fn check_decor(field: &str, decor: &[DecorSpec], out: &mut Vec<SkinDiagnostic>) 
     for (i, dec) in decor.iter().enumerate() {
         let prefix = format!("{field}.{i}");
         let f = |k: &str| format!("{prefix}.{k}");
+        if let Some(m) = dec.motion {
+            if !in_range(m.period_s, 0.5, 120.0) {
+                out.push(SkinDiagnostic::error(
+                    f("motion.period_s"),
+                    "must be 0.5–120 seconds",
+                ));
+            }
+            let max = match m.kind {
+                DecorMotionKind::Float => 32.0,
+                DecorMotionKind::Breathe => 1.0,
+            };
+            if !in_range(m.amplitude, 0.0, max) {
+                out.push(SkinDiagnostic::error(
+                    f("motion.amplitude"),
+                    format!("must be 0–{max}"),
+                ));
+            }
+            if !in_range(m.phase, 0.0, 1.0) {
+                out.push(SkinDiagnostic::error(
+                    f("motion.phase"),
+                    "must be 0–1 cycles",
+                ));
+            }
+        }
         let size_ok = dec.size.iter().all(|s| match s {
             Len::Px(v) => in_range(*v, 0.0, 4096.0),
             Len::Percent(v) => in_range(*v, 0.0, 400.0),

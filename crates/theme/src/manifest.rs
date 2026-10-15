@@ -275,6 +275,8 @@ pub enum BorderStyleSpec {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShapeSpec {
+    /// Opt-in vector outline; absent keeps the original box or image frame.
+    pub contour: Option<ContourPreset>,
     /// Painted over the fill colour.
     pub gradient: Option<GradientSpec>,
     /// `[top_left, top_right, bottom_right, bottom_left]`; replaces `radius`.
@@ -283,6 +285,42 @@ pub struct ShapeSpec {
     pub border_widths: Option<[f32; 4]>,
     pub border_style: BorderStyleSpec,
     pub shadows: Vec<ShadowSpec>,
+}
+
+/// Bounded vector outlines. Paint changes without moving the text viewport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContourPreset {
+    Rounded,
+    Orbit,
+    Hud,
+    Parchment,
+    Cinema,
+    Rpg,
+    Slant,
+    Cloud,
+    Chat,
+    Comic,
+    Terminal,
+    Pixel,
+    Sakura,
+    Ink,
+    Ribbon,
+    Seal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MotifPreset {
+    Orbit,
+    Sparkle,
+    Blossom,
+    Petal,
+    Flourish,
+    Rays,
+    Halftone,
+    Fold,
+    Circuit,
 }
 
 impl ShapeSpec {
@@ -376,11 +414,46 @@ pub enum FontRole {
     Accent,
 }
 
+/// Small, paint-only loops. Only live dialogue boxes run these; editors,
+/// history and previews use the decoration's original pose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecorMotionKind {
+    Float,
+    Breathe,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecorMotionSpec {
+    pub kind: DecorMotionKind,
+    pub period_s: f32,
+    /// Float: vertical pixels either side of rest. Breathe: opacity lost
+    /// at the dimmest point, multiplied by the decoration's own opacity.
+    pub amplitude: f32,
+    /// Fraction of a cycle, 0–1.
+    pub phase: f32,
+}
+
+impl Default for DecorMotionSpec {
+    fn default() -> Self {
+        Self {
+            kind: DecorMotionKind::Float,
+            period_s: 6.0,
+            amplitude: 0.1,
+            phase: 0.0,
+        }
+    }
+}
+
 /// A decorative shape placed relative to the dialogue box: accent bars,
 /// inner rules, ornaments, seals, title bars.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DecorSpec {
+    /// Transparent packaged artwork, fitted without stretching.
+    pub image: Option<String>,
+    pub motif: Option<MotifPreset>,
     pub layer: DecorLayer,
     /// The decor's own point of this name lands on the box's.
     pub anchor: Anchor,
@@ -406,11 +479,14 @@ pub struct DecorSpec {
     pub text_size: f32,
     pub font: FontRole,
     pub when: DecorWhen,
+    pub motion: Option<DecorMotionSpec>,
 }
 
 impl Default for DecorSpec {
     fn default() -> Self {
         Self {
+            image: None,
+            motif: None,
             layer: DecorLayer::Above,
             anchor: Anchor::TopLeft,
             offset: [0.0, 0.0],
@@ -429,6 +505,7 @@ impl Default for DecorSpec {
             text_size: 16.0,
             font: FontRole::Accent,
             when: DecorWhen::Always,
+            motion: None,
         }
     }
 }
@@ -1129,6 +1206,7 @@ pub enum HistoryEntrance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HistoryNamePlate {
+    pub contour: Option<ContourPreset>,
     pub color: ColorRef,
     pub gradient: Option<GradientSpec>,
     pub text_color: ColorRef,
@@ -1139,6 +1217,7 @@ pub struct HistoryNamePlate {
 impl Default for HistoryNamePlate {
     fn default() -> Self {
         Self {
+            contour: None,
             color: ColorRef::Role(ColorRole::Name),
             gradient: None,
             text_color: ColorRef::Role(ColorRole::NameText),
@@ -1242,6 +1321,7 @@ pub struct History {
     pub bubble_radius: f32,
     pub bubble_padding: [f32; 2],
     pub bubble_frame: Option<NineSlice>,
+    pub bubble_contour: Option<ContourPreset>,
     pub text: TextSpec,
     pub gap: f32,
     pub entrance: HistoryEntrance,
@@ -1289,6 +1369,7 @@ impl Default for History {
             bubble_radius: 14.0,
             bubble_padding: [12.0, 8.0],
             bubble_frame: None,
+            bubble_contour: None,
             text: TextSpec {
                 size: 18.0,
                 line_height: 1.45,
@@ -1477,6 +1558,16 @@ impl Skin {
         ] {
             if let Some(s) = slice {
                 out.push((field, s.image.as_str(), FileKind::NineSlice(s.slice)));
+            }
+        }
+        for (field, decor) in [
+            ("dialogue.decor.image", &self.dialogue.decor),
+            ("history.decor.image", &self.history.decor),
+        ] {
+            for d in decor {
+                if let Some(image) = &d.image {
+                    out.push((field, image.as_str(), FileKind::Image));
+                }
             }
         }
         for path in self.dialogue.portrait.variants.values() {

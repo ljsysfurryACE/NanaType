@@ -417,17 +417,16 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         Arc::make_mut(&mut name_style.layout).max_width =
             Some(LengthSpec::Px((max_name - plate_pad[0] * 2.0).max(12.0)));
         widget(
-            Stack::row(0.0)
-                .padding_xy(plate_pad[0], plate_pad[1])
-                .with_layout(move |l| {
-                    if let Some(p) = &plate {
-                        p.apply(l);
-                    }
-                    l.min_width = Some(LengthSpec::Px(0.0));
-                    l.max_width = Some(LengthSpec::Px(max_name));
-                    l.overflow_x = OverflowSpec::Hidden;
-                    l.flex_shrink = Some(1.0);
-                }),
+            Surface::optional_stack(
+                plate.as_ref(),
+                Stack::row(0.0).padding_xy(plate_pad[0], plate_pad[1]),
+            )
+            .with_layout(move |l| {
+                l.min_width = Some(LengthSpec::Px(0.0));
+                l.max_width = Some(LengthSpec::Px(max_name));
+                l.overflow_x = OverflowSpec::Hidden;
+                l.flex_shrink = Some(1.0);
+            }),
         )
         .children(widget(
             Text::new(row.item.author.clone())
@@ -507,12 +506,14 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         col_w
     };
     let bubble = widget(
-        Stack::column(0.0)
-            .width(LengthSpec::Shrink)
-            .padding_xy(pad[0], pad[1])
+        bubble_surface
+            .stack(
+                Stack::column(0.0)
+                    .width(LengthSpec::Shrink)
+                    .padding_xy(pad[0], pad[1]),
+            )
             .with_layout(move |l| {
                 l.max_width = Some(LengthSpec::Px(bubble_max));
-                bubble_surface.apply(l);
             }),
     )
     .children(body);
@@ -759,7 +760,13 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             h.decor
                 .iter()
                 .filter(|d| d.layer == layer)
-                .map(|d| dialogue::decor(&skin, d, None::<fn() -> bool>))
+                .map(|d| {
+                    let image = d.image.as_ref().and_then(|path| {
+                        ui.asset_urls
+                            .with_untracked(|urls| urls.get(&format!("skin:{path}")).cloned())
+                    });
+                    dialogue::decor(&skin, d, None::<fn() -> bool>, image)
+                })
                 .collect()
         };
         let (below, above) = (decor(DecorLayer::Below), decor(DecorLayer::Above));
@@ -780,19 +787,19 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             *s = taken;
         })
         .children(
-            widget(Stack::fill_column(0.0).with_layout(move |l| {
-                l.position = PositionSpec::Relative;
-                if let Some(s) = &panel_surface {
-                    s.apply(l);
-                }
-                // The list would scroll under the press. Layout mode moves
-                // the window; this view is rebuilt when the lock changes.
-                if ui.settings.with_untracked(|x| {
-                    x.overlays.history.lock == nanatype_settings::Lock::EditLayout
-                }) {
-                    l.pointer_events = Some(PointerEventsSpec::None);
-                }
-            }))
+            widget(
+                Surface::optional_stack(panel_surface.as_ref(), Stack::fill_column(0.0))
+                    .with_layout(move |l| {
+                        l.position = PositionSpec::Relative;
+                        // The list would scroll under the press. Layout mode moves
+                        // the window; this view is rebuilt when the lock changes.
+                        if ui.settings.with_untracked(|x| {
+                            x.overlays.history.lock == nanatype_settings::Lock::EditLayout
+                        }) {
+                            l.pointer_events = Some(PointerEventsSpec::None);
+                        }
+                    }),
+            )
             .children((
                 below,
                 title,

@@ -33,13 +33,13 @@ padding = [226, 52, 333, 44]
 color = "#ffffff"
 border_color = "#cccccc"
 border_width = 0
-border_widths = [2, 0, 0, 0]
+border_widths = [1.5, 0, 0, 0]
 radius = 0
 
 # The grey notch in the top-right corner.
 [[dialogue.decor]]
 anchor = "top_right"
-size = [14, 14]
+size = [13, 13]
 polygon = [[0, 0], [100, 0], [100, 100]]
 color = "#cccccc"
 
@@ -125,7 +125,7 @@ text_color = "#000000"
 size = 27
 radius = 0
 padding = [0, 0]
-offset = [200, 13]
+offset = [200, 14]
 
 [dialogue.continue]
 glyph = ""
@@ -178,7 +178,7 @@ color = "#00000026"
 [[history.decor]]
 anchor = "top_left"
 offset = [0, 42]
-size = ["100%", 15]
+size = ["100%", 12]
 gradient = { stops = [[0, "#0000001a"], [1, "#00000000"]] }
 
 [history.text]

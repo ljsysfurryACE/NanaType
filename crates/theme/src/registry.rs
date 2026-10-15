@@ -96,7 +96,20 @@ const BUILTINS: &[Builtin] = &[
 ];
 
 fn builtin_files(b: &Builtin) -> Arc<dyn SkinFiles> {
-    Arc::new(MemoryFiles::new(&[(MANIFEST, b.manifest.as_bytes())]))
+    let mut files: Vec<(&'static str, &'static [u8])> = vec![(MANIFEST, b.manifest.as_bytes())];
+    if b.id == "nanatype.ink" {
+        files.extend_from_slice(&[
+            (
+                "ink/bamboo.png",
+                include_bytes!("../builtin/ink/bamboo.png"),
+            ),
+            (
+                "ink/ART-LICENSE.txt",
+                include_bytes!("../builtin/ink/ART-LICENSE.txt"),
+            ),
+        ]);
+    }
+    Arc::new(MemoryFiles::new(&files))
 }
 
 /// One row of the skin picker.
@@ -348,7 +361,7 @@ impl SkinRegistry {
         })
     }
 
-    /// Write a `.ntskin` archive of `id` (built-ins export their manifest).
+    /// Write a `.ntskin` archive, including built-in artwork and its notices.
     pub fn export(&self, id: &str, dest: &Path) -> Result<(), FileError> {
         let files = self
             .files_for(id)

@@ -5,7 +5,7 @@ author = "NanaType"
 license = "CC0-1.0"
 tags = ["elegant"]
 name = { zh-CN = "水墨", en-US = "Ink Wash", ja-JP = "水墨" }
-description = { zh-CN = "宣纸底色、浓淡笔触与朱红印章，配楷书", en-US = "Rice paper, brush strokes and a red seal, set in a brush-script face", ja-JP = "和紙の地に筆の線と朱の落款、楷書体で" }
+description = { zh-CN = "宣纸底色、墨竹画作与朱红印章，配楷书", en-US = "Rice paper, an ink bamboo painting and a red seal, set in a brush-script face", ja-JP = "和紙の地に墨竹と朱の落款、楷書体で" }
 
 [chrome]
 accent = "#b0302a"
@@ -34,39 +34,33 @@ weight = 700
 padding = [28, 40, 64, 18]
 
 [dialogue.box]
-color = "#f6f0e2f5"
-border_width = 0
+color = "#faf7effa"
+border_color = "#86775e52"
+border_width = 0.8
 radius = 4
-gradient = { kind = "radial", stops = [[0, "#faf6eef7"], [1, "#ece4d4f2"]] }
+gradient = { kind = "radial", stops = [[0, "#fffdf8fa"], [1, "#e8dfccf5"]] }
 shadows = [{ color = "#2222221f", dy = 4, blur = 16 }]
 
-# Upper brush stroke, thin and tapering.
+# A public-domain Zheng Xie bamboo detail, overlaid without redrawing.
 [[dialogue.decor]]
-anchor = "top"
-offset = [0, 5]
-size = ["92%", 3]
-radius = 2
-gradient = { angle = 90, stops = [[0, "#22222200"], [0.12, "#222222"], [0.7, "#333333e6"], [1, "#22222200"]] }
-
-# Lower brush stroke, heavier.
-[[dialogue.decor]]
-anchor = "bottom"
-offset = [10, -6]
-size = ["86%", 5]
-radius = 3
-gradient = { angle = 90, stops = [[0, "#11111100"], [0.2, "#333333d9"], [0.85, "#111111"], [1, "#11111100"]] }
+image = "ink/bamboo.png"
+anchor = "bottom_right"
+offset = [12, 14]
+size = [76, 138]
+opacity = 0.95
 
 # Red seal.
 [[dialogue.decor]]
+contour = "seal"
 anchor = "top_right"
 offset = [-20, 16]
-size = [32, 32]
+size = [30, 34]
 radius = 4
 color = "#b0302a"
 rotate = -6
 text = "印"
 text_color = "#fff3ea"
-text_size = 18
+text_size = 19
 
 [dialogue.text]
 color = "#222222"
@@ -96,9 +90,10 @@ ms = 220
 name_color = "#222222"
 bubble_color = "#f6f0e2f2"
 bubble_radius = 4
-bubble_border_width = 0
+bubble_border = "#86775e52"
+bubble_border_width = 0.8
 bubble_gradient = { kind = "radial", stops = [[0, "#faf6eef5"], [1, "#ece4d4f0"]] }
-bubble_shadows = [{ color = "#2222221a", dy = 2, blur = 8 }, { color = "#b0302a", dx = 3, inset = true }]
+bubble_shadows = [{ color = "#2222221a", dy = 2, blur = 8 }]
 avatar = { shape = "square", size = 40, ring_color = "#b0302a", ring_width = 2 }
 time_color = "#8a8070"
 

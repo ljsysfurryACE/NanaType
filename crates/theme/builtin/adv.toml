@@ -25,6 +25,7 @@ padding = [52, 54, 52, 22]
 overflow = "page"
 
 [dialogue.box]
+contour = "cinema"
 color = "#0a0a10e6"
 border_color = "#ffffff26"
 border_width = 1
@@ -37,9 +38,23 @@ shadows = [{ color = "#ffffff33", dy = 1, inset = true }]
 [[dialogue.decor]]
 anchor = "top_left"
 offset = [44, 46]
-size = ["40%", 1]
+size = ["48%", 1]
 gradient = { angle = 90, stops = [[0, "#ffd27fcc"], [1, "#ffd27f00"]] }
 when = "speaker"
+
+[[dialogue.decor]]
+anchor = "top_left"
+offset = [40, 44]
+size = [5, 5]
+color = "#ffd27fcc"
+rotate = 45
+when = "speaker"
+
+[[dialogue.decor]]
+anchor = "bottom_right"
+offset = [-16, -14]
+size = [42, 1]
+gradient = { angle = 90, stops = [[0, "#ffd27f00"], [1, "#ffd27f80"]] }
 
 [dialogue.text]
 color = "#ffffff"
@@ -67,9 +82,10 @@ kind = "fade"
 ms = 180
 
 [history]
+bubble_contour = "cinema"
 name_color = "#ffd27f"
 bubble_color = "#0a0a10cc"
-bubble_border = "#ffffff26"
+bubble_border = "#ffd27f33"
 bubble_radius = 8
 bubble_gradient = { stops = [[0, "#1a1a24cc"], [1, "#0a0a10e6"]] }
 time_color = "#a0a0a8"

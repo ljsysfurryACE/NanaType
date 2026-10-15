@@ -34,6 +34,7 @@ padding = [26, 28, 26, 18]
 overflow = "page"
 
 [dialogue.box]
+contour = "rpg"
 color = "#10206ee6"
 border_color = "#ffffff"
 border_width = 3
@@ -43,6 +44,7 @@ shadow = { color = "#000000aa", dy = 3 }
 
 # The inner rule of the window frame.
 [[dialogue.decor]]
+contour = "rpg"
 inset = [4, 4, 4, 4]
 radius = 3
 border_color = "#8fa8ff"
@@ -50,6 +52,30 @@ border_width = 1
 
 # Fusion Pixel is drawn on a 12 px grid: sizes and line heights in whole
 # multiples of 12 keep every stroke on a pixel (24 px text, 36 px lines).
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-7, 7]
+size = [12, 4]
+color = "#d8e1ff"
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-7, 11]
+size = [4, 8]
+color = "#8fa8ff"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [7, -7]
+size = [12, 4]
+color = "#8fa8ff"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [7, -11]
+size = [4, 8]
+color = "#d8e1ff"
+
 [dialogue.text]
 color = "#ffffff"
 size = 24
@@ -57,6 +83,7 @@ line_height = 1.5
 shadow = { color = "#000000", dx = 2, dy = 2 }
 
 [dialogue.nameplate]
+contour = "rpg"
 size = 24
 color = "#10206e"
 text_color = "#ffffff"
@@ -86,9 +113,10 @@ shake_px = 2
 jump_px = 4
 
 [history]
+bubble_contour = "rpg"
 name_color = "#ffffff"
 bubble_color = "#10206ee0"
-bubble_border = "#ffffff"
+bubble_border = "#d8e1ff"
 bubble_border_width = 2
 bubble_radius = 4
 bubble_gradient = { stops = [[0, "#2840a8e6"], [1, "#0c1450e6"]] }

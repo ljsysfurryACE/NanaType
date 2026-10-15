@@ -40,15 +40,15 @@ size = 34
 line_height = 1.35
 align = "center"
 stroke = { color = "#000000", width = 5 }
-shadow = { color = "#00000099", dy = 2, blur = 4 }
+shadow = { color = "#000000b3", dy = 2, blur = 3 }
 
 [dialogue.nameplate]
 color = "#00000000"
 text_color = "#ffd27f"
-size = 20
+size = 19
 padding = [0, 0]
 anchor = "top"
-offset = [0, 6]
+offset = [0, 7]
 stroke = { color = "#000000", width = 4 }
 
 [dialogue.continue]
@@ -60,7 +60,7 @@ ms = 120
 
 [history]
 name_color = "#ffd27f"
-name_stroke = { color = "#000000", width = 3 }
+name_stroke = { color = "#000000", width = 2.5 }
 # Like the dialogue: no box, outlined text.
 bubble_color = "#00000000"
 bubble_radius = 0

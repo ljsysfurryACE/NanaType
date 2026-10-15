@@ -22,15 +22,16 @@ weight = 800
 weight = 900
 
 [dialogue]
-region = [760, 170]
+region = [760, 202]
 padding = [28, 30, 28, 18]
 
 [dialogue.box]
+contour = "comic"
 color = "#ffffff"
 border_color = "#000000"
 border_width = 4
 radius = 14
-margin = [0, 8, 30, 0]
+margin = [32, 8, 30, 0]
 shadows = [{ color = "#000000", dx = 8, dy = 8 }]
 
 [dialogue.tail]
@@ -40,10 +41,39 @@ width = 36
 length = 28
 lean = -12
 
+[[dialogue.decor]]
+motif = "halftone"
+anchor = "top_right"
+offset = [-18, 9]
+size = [42, 26]
+color = "#11111159"
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [18, -10]
+size = [14, 2]
+color = "#ffd400"
+rotate = -25
+
+[[dialogue.decor]]
+anchor = "bottom_left"
+offset = [36, -10]
+size = [7, 2]
+color = "#111111"
+rotate = -25
+
+[[dialogue.decor]]
+anchor = "top_right"
+offset = [-26, -12]
+size = [40, 24]
+motif = "rays"
+color = "#111111b3"
+
 [dialogue.text]
 color = "#111111"
 
 [dialogue.nameplate]
+contour = "ribbon"
 color = "#ffd400"
 text_color = "#111111"
 radius = 4
@@ -69,13 +99,14 @@ jump_px = 8
 screen_shake_px = 10
 
 [history]
+bubble_contour = "comic"
 name_color = "#111111"
 bubble_color = "#ffffff"
 bubble_border = "#000000"
 bubble_border_width = 3
-bubble_radius = 10
-bubble_shadows = [{ color = "#000000", dx = 4, dy = 4 }]
-name_plate = { color = "#ffd400", text_color = "#111111", radius = 3, padding = [9, 2] }
+bubble_radius = 8
+bubble_shadows = [{ color = "#000000", dx = 4, dy = 3 }]
+name_plate = { contour = "ribbon", color = "#ffd400", text_color = "#111111", radius = 3, padding = [9, 2] }
 avatar = { shape = "circle", size = 40, ring_color = "#000000", ring_width = 3 }
 
 [history.text]

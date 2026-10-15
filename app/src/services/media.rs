@@ -101,6 +101,25 @@ impl Media {
         self.path(path, root).map(|p| file_url(&p))
     }
 
+    /// Materialize packaged artwork inside NanaUI's allowed image base.
+    /// Content keys keep hot reloads and application updates out of stale caches.
+    pub fn bytes_url(&self, path: &str, bytes: &[u8]) -> Option<String> {
+        let ext = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+        if !PICTURE_EXTS.contains(&ext.as_str())
+            || bytes.is_empty()
+            || bytes.len() as u64 > self.limits.max_file
+        {
+            return None;
+        }
+        let name = format!(
+            "embedded-{:016x}{:016x}.{ext}",
+            fnv64(bytes, 0xcbf2_9ce4_8422_2325),
+            fnv64(bytes, 0x6c62_272e_07bb_0142)
+        );
+        self.cache(&name, bytes.len() as u64, || Some(bytes.to_vec()))
+            .map(|path| file_url(&path))
+    }
+
     /// The file NanaUI should read for `path`: itself when it is under the
     /// base, else its copy in the mirror.
     pub fn path(&self, path: &Path, root: Option<&Path>) -> Option<PathBuf> {
@@ -133,10 +152,24 @@ impl Media {
             "{}.{ext}",
             mirror_key(&canonical, meta.len(), modified(&meta))
         );
-        self.copy(&canonical, meta.len(), &name)
+        self.cache(&name, meta.len(), || {
+            let mut bytes = Vec::with_capacity(meta.len() as usize);
+            fs::File::open(&canonical)
+                .ok()?
+                .take(self.limits.max_file + 1)
+                .read_to_end(&mut bytes)
+                .ok()?;
+            // Reject files changed since the cache key was computed.
+            (bytes.len() as u64 == meta.len()).then_some(bytes)
+        })
     }
 
-    fn copy(&self, source: &Path, len: u64, name: &str) -> Option<PathBuf> {
+    fn cache(
+        &self,
+        name: &str,
+        len: u64,
+        read: impl FnOnce() -> Option<Vec<u8>>,
+    ) -> Option<PathBuf> {
         let target = self.dir.join(name);
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if fs::metadata(&target).is_ok_and(|m| m.is_file() && m.len() == len) {
@@ -145,24 +178,14 @@ impl Media {
             }
             return Some(plain(&target));
         }
-        let mut bytes = Vec::with_capacity(len as usize);
-        fs::File::open(source)
-            .ok()?
-            .take(self.limits.max_file + 1)
-            .read_to_end(&mut bytes)
-            .ok()?;
-        // Changed between the look and the read: the name no longer
-        // describes it; the next refresh copies the new one.
-        if bytes.len() as u64 != len {
-            return None;
-        }
+        let bytes = read()?;
         let partial = self.dir.join(format!("{name}.part"));
         let written = fs::create_dir_all(&self.dir)
             .and_then(|()| fs::write(&partial, &bytes))
             .and_then(|()| fs::rename(&partial, &target));
         if let Err(e) = written {
             let _ = fs::remove_file(&partial);
-            crate::debug_log(&format!("media copy {}: {e}", source.display()));
+            crate::debug_log(&format!("media cache {name}: {e}"));
             return None;
         }
         state.used.insert(name.to_owned());
@@ -377,6 +400,33 @@ mod tests {
         assert_ne!(key, mirror_key(Path::new("/stickers/b.png"), 42, 7));
         assert_eq!(fnv64(b"", 0xcbf2_9ce4_8422_2325), 0xcbf2_9ce4_8422_2325);
         assert_eq!(fnv64(b"a", 0xcbf2_9ce4_8422_2325), 0xaf63_dc4c_8601_ec8c);
+    }
+
+    #[test]
+    fn embedded_images_cache_by_content_and_obey_media_limits() {
+        let s = Scratch::new("embedded-images");
+        let media = mirror(
+            &s,
+            Limits {
+                max_file: 32,
+                ..Default::default()
+            },
+        );
+        let first = media.bytes_url("ink/stroke.png", b"first image").unwrap();
+        assert!(first.starts_with(&file_url(&media.dir())));
+        assert_eq!(
+            first,
+            media.bytes_url("renamed.png", b"first image").unwrap()
+        );
+        let changed = media.bytes_url("ink/stroke.png", b"other image").unwrap();
+        assert_ne!(
+            first, changed,
+            "same-length changes invalidate the image cache"
+        );
+        assert_eq!(fs::read_dir(media.dir()).unwrap().count(), 2);
+        assert!(media.bytes_url("empty.png", b"").is_none());
+        assert!(media.bytes_url("large.png", &[0; 33]).is_none());
+        assert!(media.bytes_url("wrong.exe", b"image").is_none());
     }
 
     #[test]
