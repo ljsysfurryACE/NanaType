@@ -15,18 +15,18 @@ use nana_ui::{
     ScenePresentationProfile, wgpu,
 };
 use nana_ui_core::{LengthSpec, PointerEventsSpec, PositionSpec};
-use nanatype_theme::{ShapeCommand, SweepSpec, contour_path};
+use nanatype_theme::{ShapeCommand, SweepSpec};
 
-use super::surface::Surface;
+use super::surface::{Surface, SurfaceRoute};
+
+pub(super) fn effective(spec: &SweepSpec) -> bool {
+    spec.enabled && spec.intensity > 0.0 && spec.color.a > 0
+}
 
 pub fn animating(ui: super::Ui) -> bool {
     !ui.reduced_motion.get_untracked()
         && !ui.display.with_untracked(|d| d.empty)
-        && ui.skin.with_untracked(|s| {
-            s.dialogue.sweep.enabled
-                && s.dialogue.sweep.intensity > 0.0
-                && s.dialogue.sweep.color.a > 0
-        })
+        && ui.skin.with_untracked(|s| effective(&s.dialogue.sweep))
 }
 
 const RENDERER: &str = "nanatype.dialogue-sweep";
@@ -75,6 +75,9 @@ impl ComponentView for SweepView {
 }
 
 pub fn view(surface: Surface, spec: SweepSpec, animated: bool) -> AnyView {
+    if !effective(&spec) {
+        return widget(nana_ui::runtime::Stack::row(0.0)).into_any();
+    }
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let material = Arc::new(Material {
         id,
@@ -413,138 +416,194 @@ impl SceneGpuRenderer for SweepRenderer {
 fn coverage(surface: &Surface, size: [u32; 2], scale: f32) -> Vec<u8> {
     let [w, h] = size;
     let logical = [w as f32 / scale, h as f32 / scale];
-    if let Some(mask) = frame_coverage(surface, size, scale) {
-        return mask;
+    if surface.route() == SurfaceRoute::Frame {
+        // A failed image decode must not fall through to a rectangular mask.
+        return frame_coverage(surface, size, scale)
+            .unwrap_or_else(|| vec![0; w as usize * h as usize * 4]);
     }
-    let mut builder = tiny_skia::PathBuilder::new();
-    let mut even_odd = false;
-    if let Some(contour) = surface.contour {
-        let border = surface
-            .border
-            .as_ref()
-            .map_or(0.0, |b| b.widths.into_iter().fold(0.0, f32::max));
-        let shape = contour_path(
-            contour,
-            logical,
-            surface.contour_radius(),
-            border * 0.5,
-            surface.tail.as_ref(),
-        );
-        even_odd = shape.even_odd;
-        for command in shape.commands {
-            match command {
-                ShapeCommand::Move([x, y]) => builder.move_to(x, y),
-                ShapeCommand::Line([x, y]) => builder.line_to(x, y),
-                ShapeCommand::Quad([a, b], [x, y]) => builder.quad_to(a, b, x, y),
-                ShapeCommand::Cubic([a, b], [c, d], [x, y]) => builder.cubic_to(a, b, c, d, x, y),
-                ShapeCommand::Close => builder.close(),
+    let polygon = surface
+        .polygon
+        .as_ref()
+        .filter(|_| !surface.is_vector())
+        .and_then(|points| {
+            let mut builder = tiny_skia::PathBuilder::new();
+            for (i, [x, y]) in points.iter().copied().enumerate() {
+                let (x, y) = (x * w as f32 / 100.0, y * h as f32 / 100.0);
+                if i == 0 {
+                    builder.move_to(x, y);
+                } else {
+                    builder.line_to(x, y);
+                }
+            }
+            builder.close();
+            let path = builder.finish()?;
+            let mut p = tiny_skia::Pixmap::new(w, h)?;
+            let mut paint = tiny_skia::Paint::default();
+            paint.set_color_rgba8(255, 255, 255, 255);
+            p.fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                tiny_skia::Transform::identity(),
+                None,
+            );
+            Some(p.take())
+        });
+    let mut out = vec![0; w as usize * h as usize * 4];
+    let mut pixmap = tiny_skia::Pixmap::new(w, h).expect("positive sweep size");
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color_rgba8(255, 255, 255, 255);
+    let transform = tiny_skia::Transform::from_scale(scale, scale);
+    let stroke_alpha = surface
+        .border
+        .as_ref()
+        .map(|b| b.color)
+        .or(surface.fill)
+        .map_or(0.0, |c| c[3]);
+    // Reuse one raster buffer for every part; only ink and opacity differ.
+    let mut raster = |path: &tiny_skia::Path, even_odd, stroke: Option<f32>, opacity: f32| {
+        pixmap.fill(tiny_skia::Color::TRANSPARENT);
+        if let Some(width) = stroke {
+            pixmap.stroke_path(
+                path,
+                &paint,
+                &tiny_skia::Stroke {
+                    width,
+                    line_cap: tiny_skia::LineCap::Round,
+                    line_join: tiny_skia::LineJoin::Round,
+                    ..Default::default()
+                },
+                transform,
+                None,
+            );
+        } else {
+            pixmap.fill_path(path, &paint, fill_rule(even_odd), transform, None);
+        }
+        for (i, (target, mask)) in out
+            .chunks_exact_mut(4)
+            .zip(pixmap.data().chunks_exact(4))
+            .enumerate()
+        {
+            let ink = if stroke.is_some() {
+                stroke_alpha
+            } else {
+                fill_alpha(
+                    surface,
+                    [
+                        ((i as u32 % w) as f32 + 0.5) / scale,
+                        ((i as u32 / w) as f32 + 0.5) / scale,
+                    ],
+                    logical,
+                )
+            };
+            let clip = polygon
+                .as_ref()
+                .map_or(1.0, |p| f32::from(p[i * 4 + 3]) / 255.0);
+            let alpha = (f32::from(mask[3]) / 255.0 * opacity * ink * clip).clamp(0.0, 1.0);
+            target[3] = (alpha * 255.0 + f32::from(target[3]) * (1.0 - alpha)).round() as u8;
+        }
+    };
+    if let SurfaceRoute::Motif(motif) = surface.route() {
+        for part in nanatype_theme::motif_paths(motif, logical) {
+            let mut builder = tiny_skia::PathBuilder::new();
+            append_path(&mut builder, &part.path);
+            if let Some(path) = builder.finish() {
+                raster(
+                    &path,
+                    part.path.even_odd,
+                    (!part.fill).then_some(part.stroke_width),
+                    part.opacity,
+                );
             }
         }
     } else {
-        let [w, h] = logical;
-        let [tl, tr, br, bl] = surface.radii.map(|v| v.max(0.0).min(w.min(h) * 0.5));
-        let k = 0.5522848;
-        builder.move_to(tl, 0.0);
-        builder.line_to(w - tr, 0.0);
-        builder.cubic_to(w - tr + k * tr, 0.0, w, tr - k * tr, w, tr);
-        builder.line_to(w, h - br);
-        builder.cubic_to(w, h - br + k * br, w - br + k * br, h, w - br, h);
-        builder.line_to(bl, h);
-        builder.cubic_to(bl - k * bl, h, 0.0, h - bl + k * bl, 0.0, h - bl);
-        builder.line_to(0.0, tl);
-        builder.cubic_to(0.0, tl - k * tl, tl - k * tl, 0.0, tl, 0.0);
-        builder.close();
-    }
-    let mut pixmap = tiny_skia::Pixmap::new(w, h).expect("positive sweep size");
-    if let Some(path) = builder.finish() {
-        let mut paint = tiny_skia::Paint::default();
-        paint.set_color_rgba8(255, 255, 255, 255);
-        pixmap.fill_path(
-            &path,
-            &paint,
-            if even_odd {
-                tiny_skia::FillRule::EvenOdd
-            } else {
-                tiny_skia::FillRule::Winding
-            },
-            tiny_skia::Transform::from_scale(scale, scale),
-            None,
-        );
-    }
-    let polygon = surface.polygon.as_ref().and_then(|points| {
         let mut builder = tiny_skia::PathBuilder::new();
-        for (i, [x, y]) in points.iter().copied().enumerate() {
-            let (x, y) = (x * w as f32 / 100.0, y * h as f32 / 100.0);
-            if i == 0 {
-                builder.move_to(x, y);
-            } else {
-                builder.line_to(x, y);
-            }
+        let mut even_odd = false;
+        if let Some(shape) = surface.contour_path(logical) {
+            even_odd = shape.even_odd;
+            append_path(&mut builder, &shape);
+        } else {
+            let [w, h] = logical;
+            let [tl, tr, br, bl] = surface.radii.map(|v| v.max(0.0).min(w.min(h) * 0.5));
+            let k = 0.5522848;
+            builder.move_to(tl, 0.0);
+            builder.line_to(w - tr, 0.0);
+            builder.cubic_to(w - tr + k * tr, 0.0, w, tr - k * tr, w, tr);
+            builder.line_to(w, h - br);
+            builder.cubic_to(w, h - br + k * br, w - br + k * br, h, w - br, h);
+            builder.line_to(bl, h);
+            builder.cubic_to(bl - k * bl, h, 0.0, h - bl + k * bl, 0.0, h - bl);
+            builder.line_to(0.0, tl);
+            builder.cubic_to(0.0, tl - k * tl, tl - k * tl, 0.0, tl, 0.0);
+            builder.close();
         }
-        builder.close();
-        let path = builder.finish()?;
-        let mut p = tiny_skia::Pixmap::new(w, h)?;
-        let mut paint = tiny_skia::Paint::default();
-        paint.set_color_rgba8(255, 255, 255, 255);
-        p.fill_path(
-            &path,
-            &paint,
-            tiny_skia::FillRule::Winding,
-            tiny_skia::Transform::identity(),
-            None,
-        );
-        Some(p.take())
-    });
-    let mut data = pixmap.take();
-    for (i, p) in data.chunks_exact_mut(4).enumerate() {
-        let mut alpha = surface.fill.map_or(0.0, |c| c[3]);
-        if let Some(nana_ui_core::BackgroundImage::Gradient(gradient)) = &surface.gradient {
-            let point = [
-                ((i as u32 % w) as f32 + 0.5) / scale,
-                ((i as u32 / w) as f32 + 0.5) / scale,
-            ];
-            let (at, stops) = match gradient {
-                nana_ui_core::CssGradient::Linear(g) => {
-                    let angle = g.angle_deg.to_radians();
-                    let dir = [angle.sin(), -angle.cos()];
-                    let span = dir[0].abs() * logical[0] + dir[1].abs() * logical[1];
-                    (
-                        0.5 + ((point[0] - logical[0] * 0.5) * dir[0]
-                            + (point[1] - logical[1] * 0.5) * dir[1])
-                            / span.max(0.001),
-                        &g.stops,
-                    )
-                }
-                nana_ui_core::CssGradient::Radial(g) => {
-                    let center = g
-                        .resolved_center(logical[0], logical[1])
-                        .unwrap_or([0.5, 0.5]);
-                    let center = [center[0] * logical[0], center[1] * logical[1]];
-                    let (dx, dy) = (
-                        center[0].max(logical[0] - center[0]).max(0.1),
-                        center[1].max(logical[1] - center[1]).max(0.1),
-                    );
-                    let (rx, ry) = if g.circle {
-                        let r = dx.hypot(dy);
-                        (r, r)
-                    } else {
-                        (dx * 2.0_f32.sqrt(), dy * 2.0_f32.sqrt())
-                    };
-                    (
-                        ((point[0] - center[0]) / rx).hypot((point[1] - center[1]) / ry),
-                        &g.stops,
-                    )
-                }
-            };
-            let g = gradient_alpha(stops, at);
-            alpha = g + alpha * (1.0 - g);
+        if let Some(path) = builder.finish() {
+            raster(&path, even_odd, None, 1.0);
         }
-        if let Some(polygon) = &polygon {
-            alpha *= f32::from(polygon[i * 4 + 3]) / 255.0;
-        }
-        p[3] = (f32::from(p[3]) * alpha.clamp(0.0, 1.0)).round() as u8;
     }
-    data
+    out
+}
+
+fn fill_alpha(surface: &Surface, point: [f32; 2], logical: [f32; 2]) -> f32 {
+    let mut alpha = surface.fill.map_or(0.0, |c| c[3]);
+    if let Some(nana_ui_core::BackgroundImage::Gradient(gradient)) = &surface.gradient {
+        let (at, stops) = match gradient {
+            nana_ui_core::CssGradient::Linear(g) => {
+                let angle = g.angle_deg.to_radians();
+                let dir = [angle.sin(), -angle.cos()];
+                let span = dir[0].abs() * logical[0] + dir[1].abs() * logical[1];
+                (
+                    0.5 + ((point[0] - logical[0] * 0.5) * dir[0]
+                        + (point[1] - logical[1] * 0.5) * dir[1])
+                        / span.max(0.001),
+                    &g.stops,
+                )
+            }
+            nana_ui_core::CssGradient::Radial(g) => {
+                let center = g
+                    .resolved_center(logical[0], logical[1])
+                    .unwrap_or([0.5, 0.5]);
+                let center = [center[0] * logical[0], center[1] * logical[1]];
+                let (dx, dy) = (
+                    center[0].max(logical[0] - center[0]).max(0.1),
+                    center[1].max(logical[1] - center[1]).max(0.1),
+                );
+                let (rx, ry) = if g.circle {
+                    let r = dx.hypot(dy);
+                    (r, r)
+                } else {
+                    (dx * 2.0_f32.sqrt(), dy * 2.0_f32.sqrt())
+                };
+                (
+                    ((point[0] - center[0]) / rx).hypot((point[1] - center[1]) / ry),
+                    &g.stops,
+                )
+            }
+        };
+        let g = gradient_alpha(stops, at);
+        alpha = g + alpha * (1.0 - g);
+    }
+    alpha.clamp(0.0, 1.0)
+}
+
+fn fill_rule(even_odd: bool) -> tiny_skia::FillRule {
+    if even_odd {
+        tiny_skia::FillRule::EvenOdd
+    } else {
+        tiny_skia::FillRule::Winding
+    }
+}
+
+fn append_path(builder: &mut tiny_skia::PathBuilder, shape: &nanatype_theme::ShapePath) {
+    for command in &shape.commands {
+        match *command {
+            ShapeCommand::Move([x, y]) => builder.move_to(x, y),
+            ShapeCommand::Line([x, y]) => builder.line_to(x, y),
+            ShapeCommand::Quad([a, b], [x, y]) => builder.quad_to(a, b, x, y),
+            ShapeCommand::Cubic([a, b], [c, d], [x, y]) => builder.cubic_to(a, b, c, d, x, y),
+            ShapeCommand::Close => builder.close(),
+        }
+    }
 }
 
 fn gradient_alpha(stops: &[nana_ui_core::GradientStop], t: f32) -> f32 {
@@ -644,4 +703,95 @@ fn frame_coverage(surface: &Surface, size: [u32; 2], scale: f32) -> Option<Vec<u
         }
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn motif_coverage_uses_stroke_ink_and_wins_over_contour_and_polygon() {
+        let mut surface = Surface {
+            motif: Some(nanatype_theme::MotifPreset::Orbit),
+            contour: Some(nanatype_theme::ContourPreset::Cloud),
+            polygon: Some(vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+            border: Some(super::super::surface::Border {
+                widths: [1.0; 4],
+                color: [1.0, 1.0, 1.0, 0.5],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let masked = coverage(&surface, [100, 60], 1.0);
+        assert!(masked.chunks_exact(4).any(|p| p[3] > 0));
+        assert_eq!(masked[3], 0);
+        surface.contour = None;
+        surface.polygon = None;
+        assert_eq!(masked, coverage(&surface, [100, 60], 1.0));
+    }
+
+    #[test]
+    fn invisible_sweeps_do_not_animate() {
+        let ui = super::super::Ui::new(
+            Arc::new(nanatype_settings::Settings::default()),
+            Arc::new(nanatype_theme::Skin::default()),
+            nanatype_i18n::Locale::ZhCn,
+        );
+        ui.display.update(|d| Arc::make_mut(d).empty = false);
+        let spec = SweepSpec {
+            enabled: true,
+            ..Default::default()
+        };
+        for spec in [
+            SweepSpec {
+                enabled: false,
+                ..spec.clone()
+            },
+            SweepSpec {
+                intensity: 0.0,
+                ..spec.clone()
+            },
+            SweepSpec {
+                color: nanatype_model::Rgba8::TRANSPARENT,
+                ..spec.clone()
+            },
+        ] {
+            ui.skin
+                .update(|s| Arc::make_mut(s).dialogue.sweep = spec.clone());
+            assert!(!animating(ui));
+        }
+        ui.skin.update(|s| Arc::make_mut(s).dialogue.sweep = spec);
+        assert!(animating(ui));
+        ui.reduced_motion.set(true);
+        assert!(!animating(ui));
+    }
+
+    #[test]
+    fn failed_nine_slice_masks_never_fall_back_to_contours_or_boxes() {
+        use super::super::surface::nine_slice;
+        let mut surface = Surface {
+            fill: Some([1.0; 4]),
+            contour: Some(nanatype_theme::ContourPreset::Cloud),
+            frame: Some(nine_slice(
+                &nanatype_theme::NineSlice {
+                    image: "missing.png".into(),
+                    slice: [4; 4],
+                    scale: 1.0,
+                    repeat: false,
+                },
+                "file:///nonexistent-nanatype-render-test/frame.png".into(),
+            )),
+            ..Default::default()
+        };
+        for scale in [1.0, 1.5, 2.0] {
+            let size = [(80.0 * scale) as u32, (40.0 * scale) as u32];
+            assert!(coverage(&surface, size, scale).iter().all(|b| *b == 0));
+        }
+        surface.frame = None;
+        assert!(
+            coverage(&surface, [80, 40], 1.0)
+                .chunks_exact(4)
+                .any(|p| p[3] > 0)
+        );
+    }
 }

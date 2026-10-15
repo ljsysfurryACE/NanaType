@@ -1,12 +1,12 @@
 //! Retained path painter for all skin surfaces. Geometry lives in theme;
 //! this adapter records it once per resolved surface/size/theme, not per frame.
-use super::Surface;
+use super::{Surface, SurfaceRoute};
 use nana_ui::runtime::{
     FillRule, Gradient, LineCap, LineJoin, PaintContext, PaintPath, PaintShadow, Painter,
     StrokeStyle,
 };
 use nana_ui_core::{BackgroundImage, CssGradient, LengthSpec};
-use nanatype_theme::{BorderStyleSpec, ShapeCommand, ShapePath, contour_path, motif_paths};
+use nanatype_theme::{BorderStyleSpec, ShapeCommand, ShapePath, motif_paths};
 use std::hash::{Hash, Hasher};
 
 pub struct SurfacePainter {
@@ -205,44 +205,38 @@ impl Painter for SurfacePainter {
         cx.save();
         cx.translate(bounds.x, bounds.y);
         let s = &self.surface;
-        if let Some(motif) = s.motif {
-            for part in motif_paths(motif, size) {
-                let path = paint_path(&part.path);
-                cx.save();
-                cx.set_opacity(cx.opacity() * part.opacity);
-                if part.fill {
-                    self.surface_path(cx, &path, size);
-                } else {
-                    let color = s
-                        .border
-                        .as_ref()
-                        .map(|b| b.color)
-                        .or(s.fill)
-                        .unwrap_or([0.0; 4]);
-                    stroke(
-                        cx,
-                        &path,
-                        part.stroke_width,
-                        color,
-                        BorderStyleSpec::Solid,
-                        LineJoin::Round,
-                    );
+        match s.route() {
+            SurfaceRoute::Motif(motif) => {
+                for part in motif_paths(motif, size) {
+                    let path = paint_path(&part.path);
+                    cx.save();
+                    cx.set_opacity(cx.opacity() * part.opacity);
+                    if part.fill {
+                        self.surface_path(cx, &path, size);
+                    } else {
+                        let color = s
+                            .border
+                            .as_ref()
+                            .map(|b| b.color)
+                            .or(s.fill)
+                            .unwrap_or([0.0; 4]);
+                        stroke(
+                            cx,
+                            &path,
+                            part.stroke_width,
+                            color,
+                            BorderStyleSpec::Solid,
+                            LineJoin::Round,
+                        );
+                    }
+                    cx.restore();
                 }
-                cx.restore();
             }
-        } else if let Some(contour) = s.contour {
-            let width = s
-                .border
-                .as_ref()
-                .map_or(0.0, |b| b.widths.into_iter().fold(0.0_f32, f32::max));
-            let path = paint_path(&contour_path(
-                contour,
-                size,
-                s.contour_radius(),
-                width * 0.5,
-                s.tail.as_ref(),
-            ));
-            self.surface_path(cx, &path, size);
+            SurfaceRoute::Contour(_) => {
+                let path = paint_path(&s.contour_path(size).expect("contour route"));
+                self.surface_path(cx, &path, size);
+            }
+            SurfaceRoute::Frame | SurfaceRoute::Style => {}
         }
         cx.restore();
         // No draw_default(): the path replaces the node's rectangular paint.

@@ -110,7 +110,7 @@ pwsh scripts/package.ps1
 | `NANATYPE_OPAQUE=1` | 叠加窗口改为不透明（调试构建） |
 | `NANATYPE_PERF=<JSON 文件>` | 退出时保存各原生窗口呈现／输出帧数、宿主回调耗时与可用工作计数；丢弃前 2 秒 |
 
-渲染测量、GPU 时间戳、截图比较及限制见 [渲染优化验证记录](docs/rendering-performance.md)。
+渲染流程、帧调度和表面分支见 [渲染管线](docs/rendering-pipeline.md)；渲染测量、GPU 时间戳、截图比较及限制见 [渲染优化验证记录](docs/rendering-performance.md)。
 
 ## 结构
 

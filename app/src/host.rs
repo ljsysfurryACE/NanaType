@@ -46,6 +46,78 @@ pub struct Host {
     toasts: HashMap<WindowId, Entity<ToastStack>>,
 }
 
+/// Application-clock work is separate from rendering-only work (GPU sweep,
+/// compositor tracks and the text follower). Recompute at each callback.
+#[derive(Default)]
+struct FramePolicy {
+    clock: Option<nana_ui::runtime::view::Signal<u64>>,
+    tick_clock: bool,
+    demand: FrameDemand,
+}
+
+impl FramePolicy {
+    fn advance(&self, now: u64, changed: bool) {
+        if (self.tick_clock || changed)
+            && let Some(clock) = self.clock
+        {
+            clock.set_if_changed(now);
+        }
+    }
+}
+
+fn frame_policy(
+    ui: crate::ui::Ui,
+    kind: Option<WindowKind>,
+    now: u64,
+    follow: &overflow::Follow,
+    peer_follow: &overflow::Follow,
+    pager: &overflow::Pager,
+) -> FramePolicy {
+    let (clock, tick_clock, render_only, next_at, fps) = match kind {
+        Some(WindowKind::Display | WindowKind::PeerDisplay) => {
+            let remote = kind == Some(WindowKind::PeerDisplay);
+            if remote && !ui.peer.get_untracked().active {
+                return FramePolicy::default();
+            }
+            let track = if remote { ui.remote() } else { ui };
+            let follow = if remote { peer_follow } else { follow };
+            (
+                track.now,
+                dialogue::display_animating(track, now),
+                crate::ui::sweep::animating(track)
+                    || follow.wants_frame()
+                    || (!remote && pager.wants_frame()),
+                follow.next_line_at(),
+                60,
+            )
+        }
+        Some(WindowKind::History) => {
+            let fade = history::fade_schedule(ui, now);
+            (ui.history_now, fade.animating, false, fade.next_at, 60)
+        }
+        Some(WindowKind::Input) => (ui.pulse_ms, input::mirror_chip_pulsing(ui), false, None, 30),
+        Some(WindowKind::Settings) => (
+            ui.settings_pulse_ms,
+            settings::links_pulsing(ui),
+            false,
+            None,
+            30,
+        ),
+        _ => return FramePolicy::default(),
+    };
+    FramePolicy {
+        clock: Some(clock),
+        tick_clock,
+        demand: if tick_clock || render_only {
+            FrameDemand::Continuous(NonZeroU32::new(fps).expect("non-zero"))
+        } else {
+            next_at.map_or(FrameDemand::OnDemand, |at| {
+                FrameDemand::At(clock::instant(at))
+            })
+        },
+    }
+}
+
 /// The tag every document shapes its text in by default, so Han characters
 /// take the active language's glyph shapes instead of the font's first guess.
 fn default_language(tag: &str) -> Option<nana_ui::runtime::LanguageTag> {
@@ -347,34 +419,6 @@ impl Host {
             self.app.open_chat();
         }
     }
-}
-
-/// A history row is in its fade-out window.
-fn history_fading(ui: crate::ui::Ui, now: u64) -> bool {
-    let Some(after) = ui.settings.with_untracked(|s| s.history.fade_after_s) else {
-        return false;
-    };
-    let unix = crate::clock::unix_of(now);
-    let start = u64::from(after) * 1000;
-    ui.history.with_untracked(|rows| {
-        rows.iter().any(|r| {
-            let age = unix.saturating_sub(r.item.at);
-            age >= start.saturating_sub(100) && age <= start + 700
-        })
-    })
-}
-
-/// Monotonic time at which the next history row starts to fade.
-fn next_history_fade(ui: crate::ui::Ui, now: u64) -> Option<u64> {
-    let after = u64::from(ui.settings.with_untracked(|s| s.history.fade_after_s)?) * 1000;
-    let unix_now = crate::clock::unix_of(now);
-    ui.history.with_untracked(|rows| {
-        rows.iter()
-            .map(|r| r.item.at + after)
-            .filter(|t| *t > unix_now)
-            .min()
-            .map(|t| now + (t - unix_now))
-    })
 }
 
 /// An image on the clipboard with no text beside it (text pastes normally).
@@ -713,10 +757,7 @@ impl RuntimeProgram for Host {
 
     fn window_output(&self, id: WindowId) -> Option<nana_ui::WindowOutputConfig> {
         let kind = WindowKind::from_id(id)?;
-        if kind == WindowKind::PeerDisplay && self.app.peer.handle.is_none() {
-            return None;
-        }
-        crate::output::config(kind, &self.app.settings)
+        crate::output::resolve(kind, &self.app.settings, self.app.peer.handle.is_some()).config()
     }
 
     fn window_frame_presented(
@@ -736,21 +777,19 @@ impl RuntimeProgram for Host {
         frame: &nana_ui::WindowOutputFrame,
         context: &RuntimeProgramContext<Msg>,
     ) {
-        if self.window_output(id).is_none() {
-            return;
-        }
-        if let Some(perf) = &mut self.perf {
-            perf.frame(id, true, self.docs.get(&id));
-        }
         let Some(kind) = WindowKind::from_id(id) else {
             return;
         };
-        let Some(name) =
-            crate::output::settings_for(kind, &self.app.settings).map(|o| o.name.clone())
+        let Some(out) =
+            crate::output::resolve(kind, &self.app.settings, self.app.peer.handle.is_some())
+                .output()
         else {
             return;
         };
-        if let Some((key, detail)) = self.app.spout.frame(kind, &name, frame, context.gpu()) {
+        if let Some(perf) = &mut self.perf {
+            perf.frame(id, true, self.docs.get(&id));
+        }
+        if let Some((key, detail)) = self.app.spout.frame(kind, &out.name, frame, context.gpu()) {
             crate::debug_log(&format!("spout {kind:?}: {detail}"));
             let locale = self.app.ui.locale.get_untracked();
             let state = crate::ui::link_text::spout_send(locale, key);
@@ -772,7 +811,12 @@ impl RuntimeProgram for Host {
             crate::debug_log(&format!("output {kind:?}: {status:?}"));
             let locale = self.app.ui.locale.get_untracked();
             let previous = self.app.ui.status.get_untracked();
-            self.app.spout.status_changed(kind, &status, locale);
+            if crate::output::resolve(kind, &self.app.settings, self.app.peer.handle.is_some())
+                .output()
+                .is_some()
+            {
+                self.app.spout.status_changed(kind, &status, locale);
+            }
             self.app.refresh_spout_status();
             if !Arc::ptr_eq(&previous, &self.app.ui.status.get_untracked()) {
                 context.dispatch(Msg::UiChanged);
@@ -781,49 +825,15 @@ impl RuntimeProgram for Host {
     }
 
     fn frame_demand(&self, id: WindowId) -> FrameDemand {
-        let now = clock::now_ms();
-        let ui = self.app.ui;
-        let animating = match WindowKind::from_id(id) {
-            Some(WindowKind::Display) => {
-                dialogue::display_animating(ui, now)
-                    || crate::ui::sweep::animating(ui)
-                    || self.follow.wants_frame()
-                    || self.pager.wants_frame()
-            }
-            Some(WindowKind::PeerDisplay) => {
-                ui.peer.get_untracked().active
-                    && (dialogue::display_animating(ui.remote(), now)
-                        || crate::ui::sweep::animating(ui.remote())
-                        || self.peer_follow.wants_frame())
-            }
-            Some(WindowKind::History) => history_fading(ui, now),
-            Some(WindowKind::Input) => input::mirror_chip_pulsing(ui),
-            Some(WindowKind::Settings) => crate::ui::settings::links_pulsing(ui),
-            _ => false,
-        };
-        if animating {
-            // The pulses are slow; 30 fps is smooth enough for them.
-            let fps = if matches!(
-                WindowKind::from_id(id),
-                Some(WindowKind::Input | WindowKind::Settings)
-            ) {
-                30
-            } else {
-                60
-            };
-            FrameDemand::Continuous(NonZeroU32::new(fps).expect("non-zero"))
-        } else if let Some(at) = match WindowKind::from_id(id) {
-            Some(WindowKind::History) => next_history_fade(ui, now),
-            Some(WindowKind::Display) => self.follow.next_line_at(),
-            Some(WindowKind::PeerDisplay) if ui.peer.get_untracked().active => {
-                self.peer_follow.next_line_at()
-            }
-            _ => None,
-        } {
-            FrameDemand::At(clock::instant(at))
-        } else {
-            FrameDemand::OnDemand
-        }
+        frame_policy(
+            self.app.ui,
+            WindowKind::from_id(id),
+            clock::now_ms(),
+            &self.follow,
+            &self.peer_follow,
+            &self.pager,
+        )
+        .demand
     }
 
     fn prepare_window_frame(&mut self, id: WindowId, _: &RuntimeProgramContext<Msg>) {
@@ -838,28 +848,19 @@ impl RuntimeProgram for Host {
             }
             _ => {}
         }
-        // The animation clock only runs for what animates on it; following
-        // the text drives its own scroll.
-        let ui = self.app.ui;
-        let (clock, animating) = match WindowKind::from_id(id) {
-            Some(WindowKind::Display) => (ui.now, dialogue::display_animating(ui, now)),
-            Some(WindowKind::PeerDisplay) => (
-                ui.peer_now,
-                ui.peer.get_untracked().active && dialogue::display_animating(ui.remote(), now),
-            ),
-            Some(WindowKind::History) => (ui.history_now, history_fading(ui, now)),
-            Some(WindowKind::Input) => (ui.pulse_ms, input::mirror_chip_pulsing(ui)),
-            Some(WindowKind::Settings) => {
-                (ui.settings_pulse_ms, crate::ui::settings::links_pulsing(ui))
-            }
-            _ => return,
-        };
+        let policy = frame_policy(
+            self.app.ui,
+            WindowKind::from_id(id),
+            now,
+            &self.follow,
+            &self.peer_follow,
+            &self.pager,
+        );
         let changed = self.docs.get(&id).is_some_and(|doc| {
-            doc.context().has_pending_reactive() || doc.context().world().has_pending_work()
+            let cx = doc.context();
+            cx.has_pending_reactive() || cx.world().has_pending_work()
         });
-        if animating || changed {
-            clock.set_if_changed(now);
-        }
+        policy.advance(now, changed);
     }
 }
 
@@ -877,6 +878,140 @@ mod redraw_tests {
     use super::*;
     use nana_ui::runtime::view::{signal, widget};
     use nana_ui::runtime::{LayoutViewport, Text};
+
+    #[test]
+    fn gpu_only_frames_leave_application_clocks_idle_and_keep_tracks_independent() {
+        let mut skin = nanatype_theme::Skin::default();
+        skin.dialogue.sweep.enabled = true;
+        let ui = crate::ui::Ui::new(
+            Arc::new(nanatype_settings::Settings::default()),
+            Arc::new(skin),
+            nanatype_i18n::Locale::ZhCn,
+        );
+        ui.display.update(|view| Arc::make_mut(view).empty = false);
+        ui.peer_display.set(ui.display.get_untracked());
+        ui.now.set(123);
+        ui.peer_now.set(456);
+        let follow = overflow::Follow::default();
+        let pager = overflow::Pager::default();
+        let now = 1_000_000_000;
+        let policy = |kind| frame_policy(ui, Some(kind), now, &follow, &follow, &pager);
+        let local = policy(WindowKind::Display);
+        assert!(matches!(local.demand, FrameDemand::Continuous(_)));
+        assert!(!local.tick_clock);
+        local.advance(now, false);
+        assert_eq!(ui.now.get_untracked(), 123);
+        local.advance(now, true);
+        assert_eq!(ui.now.get_untracked(), now);
+        assert_eq!(ui.peer_now.get_untracked(), 456);
+        let peer = policy(WindowKind::PeerDisplay);
+        assert!(matches!(peer.demand, FrameDemand::OnDemand));
+        peer.advance(now, true);
+        assert_eq!(ui.peer_now.get_untracked(), 456);
+        ui.peer.update(|peer| Arc::make_mut(peer).active = true);
+        let peer = policy(WindowKind::PeerDisplay);
+        assert!(matches!(peer.demand, FrameDemand::Continuous(_)));
+        peer.advance(now, false);
+        assert_eq!(ui.peer_now.get_untracked(), 456);
+        ui.reduced_motion.set(true);
+        assert!(matches!(
+            policy(WindowKind::Display).demand,
+            FrameDemand::OnDemand
+        ));
+    }
+
+    #[test]
+    fn completed_box_motion_sleeps_until_the_followers_next_line() {
+        let ui = crate::ui::Ui::new(
+            Arc::new(nanatype_settings::Settings::default()),
+            Arc::new(nanatype_theme::Skin::default()),
+            nanatype_i18n::Locale::ZhCn,
+        );
+        let now = 1_000_000_000;
+        ui.display.update(|d| {
+            let d = Arc::make_mut(d);
+            d.empty = false;
+            d.fade = Some((now, 100));
+        });
+        let mut follow = overflow::Follow::default();
+        let peer_follow = overflow::Follow::default();
+        let mut pager = overflow::Pager::default();
+        let policy = frame_policy(
+            ui,
+            Some(WindowKind::Display),
+            now,
+            &follow,
+            &peer_follow,
+            &pager,
+        );
+        assert!(policy.tick_clock && matches!(policy.demand, FrameDemand::Continuous(_)));
+        let now = now + 200;
+        assert!(matches!(
+            frame_policy(
+                ui,
+                Some(WindowKind::Display),
+                now,
+                &follow,
+                &peer_follow,
+                &pager
+            )
+            .demand,
+            FrameDemand::OnDemand
+        ));
+        let key = PageKey {
+            line: Some(nanatype_model::LineId(1)),
+            visible_from: 0,
+        };
+        let glyphs = vec![
+            overflow::Glyph {
+                byte: 0,
+                unit: Some(0),
+                at: Some(0),
+            },
+            overflow::Glyph {
+                byte: 1,
+                unit: Some(1),
+                at: Some(now + 100),
+            },
+        ];
+        let measure = Measure {
+            lines: vec![
+                LineSpan {
+                    bytes: 0..1,
+                    top: 0.0,
+                    bottom: 40.0,
+                },
+                LineSpan {
+                    bytes: 1..2,
+                    top: 40.0,
+                    bottom: 80.0,
+                },
+            ],
+            viewport: 40.0,
+            glyphs: &glyphs,
+        };
+        follow.frame(Some(key), Some(&measure), now, false);
+        let policy = frame_policy(
+            ui,
+            Some(WindowKind::Display),
+            now,
+            &follow,
+            &peer_follow,
+            &pager,
+        );
+        assert!(!policy.tick_clock);
+        assert!(matches!(policy.demand, FrameDemand::At(at) if at == clock::instant(now + 100)));
+        pager.frame(Some(key), None);
+        let policy = frame_policy(
+            ui,
+            Some(WindowKind::Display),
+            now,
+            &follow,
+            &peer_follow,
+            &pager,
+        );
+        assert!(matches!(policy.demand, FrameDemand::Continuous(_)) && !policy.tick_clock);
+    }
 
     #[test]
     fn local_signal_changes_redraw_one_window_global_changes_redraw_both() {

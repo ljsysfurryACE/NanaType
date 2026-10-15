@@ -325,3 +325,97 @@ fn sweep_is_clipped_premultiplied_and_retained_across_dpi_and_opacity() {
         assert_ne!(faded, next, "only the time uniform moves the sweep");
     }
 }
+
+#[test]
+fn sweep_nine_slice_alpha_and_failed_reload_keep_the_surface_route() {
+    use nana_ui::runtime::view::{IntoView, dynamic};
+    use nanatype::ui::surface::nine_slice;
+    let folder = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../target/render-pipeline/gpu-fixtures");
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("sweep-frame.png");
+    image::RgbaImage::from_pixel(6, 6, image::Rgba([255, 255, 255, 128]))
+        .save(&path)
+        .unwrap();
+    let frame = nanatype_theme::NineSlice {
+        image: "sweep-frame.png".into(),
+        slice: [2; 4],
+        scale: 1.0,
+        repeat: false,
+    };
+    for scale in [1.0, 1.5, 2.0] {
+        let surface = Surface {
+            fill: Some([1.0; 4]),
+            contour: Some(ContourPreset::Cloud),
+            frame: Some(nine_slice(&frame, nanatype::assets::file_url(&path))),
+            ..Default::default()
+        };
+        let current = signal(Arc::new(surface.clone()));
+        let id = DocumentId::new(1).unwrap();
+        let mut doc = RuntimeDocument::new(id);
+        doc.context_mut()
+            .mount_view_root(id, move || {
+                widget(
+                    Stack::column(0.0)
+                        .width(LengthSpec::Px(80.0))
+                        .height(LengthSpec::Px(40.0)),
+                )
+                .children(
+                    dynamic(
+                        move || current.get(),
+                        move |surface| {
+                            sweep::view(
+                                (**surface).clone(),
+                                SweepSpec {
+                                    enabled: true,
+                                    intensity: 0.6,
+                                    ..Default::default()
+                                },
+                                false,
+                            )
+                            .into_any()
+                        },
+                    )
+                    .css(nana_ui::runtime::view::css! { position: absolute; inset: 0; }),
+                )
+            })
+            .unwrap();
+        let mut session = RuntimeAgentSession::new_scaled(doc, 80, 40, scale).unwrap();
+        session.set_clear(Some([0.0; 4]));
+        session.set_gpu_renderers(sweep::renderers());
+        let (size, first) = session.screenshot_rgba().unwrap();
+        let center = pixel(
+            &first,
+            size.width,
+            (40.0 * scale) as u32,
+            (20.0 * scale) as u32,
+        );
+        assert!(
+            (65..=85).contains(&center[3]),
+            "nine-slice alpha at {scale}: {center:?}"
+        );
+        let mut missing = surface.clone();
+        missing.frame = Some(nine_slice(
+            &frame,
+            "file:///nanatype-no-such-frame.png".into(),
+        ));
+        current.set(Arc::new(missing));
+        let (_, missing) = session.screenshot_rgba().unwrap();
+        assert!(
+            missing.chunks_exact(4).all(|p| p[3] == 0),
+            "missing frame emitted light at {scale}"
+        );
+        let mut contour = surface.clone();
+        contour.frame = None;
+        current.set(Arc::new(contour));
+        let (_, contour) = session.screenshot_rgba().unwrap();
+        assert!(
+            pixel(
+                &contour,
+                size.width,
+                (40.0 * scale) as u32,
+                (20.0 * scale) as u32
+            )[3] > 130
+        );
+    }
+}

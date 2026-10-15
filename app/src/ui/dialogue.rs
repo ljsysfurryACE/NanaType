@@ -462,7 +462,7 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     let padding = d.padding;
     let box_surface =
         Surface::dialogue_box(&skin, d.box_.frame.as_ref().and_then(|f| ctx.url(&f.image)));
-    let (tail_below, tail_above) = tail(&ctx);
+    let (tail_below, tail_above) = tail(&ctx, &box_surface);
     let below = decor_views(ui, &ctx, DecorLayer::Below);
     let above = decor_views(ui, &ctx, DecorLayer::Above);
     let plate = nameplate(ui, &ctx);
@@ -539,7 +539,7 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         });
     }
 
-    let sweep = ctx.skin.dialogue.sweep.enabled.then(|| {
+    let sweep = super::sweep::effective(&ctx.skin.dialogue.sweep).then(|| {
         let surface = box_surface.clone();
         let spec = ctx.skin.dialogue.sweep.clone();
         dynamic(
@@ -931,15 +931,13 @@ fn decor_views(ui: Ui, ctx: &BoxCtx, layer: DecorLayer) -> Vec<AnyView> {
 
 /// The tail's shadow triangles (drawn under the box) and its border and
 /// fill triangles (drawn over the box border, so the tail opens into it).
-fn tail(ctx: &BoxCtx) -> (Vec<AnyView>, Vec<AnyView>) {
+fn tail(ctx: &BoxCtx, surface: &Surface) -> (Vec<AnyView>, Vec<AnyView>) {
     let skin = &ctx.skin;
     let Some(t) = &skin.dialogue.tail else {
         return (Vec::new(), Vec::new());
     };
     let b = &skin.dialogue.box_;
-    if Surface::dialogue_box(skin, b.frame.as_ref().and_then(|f| ctx.url(&f.image)))
-        .integrates_tail()
-    {
+    if surface.integrates_tail() {
         return (Vec::new(), Vec::new());
     }
     let edge = t.side;

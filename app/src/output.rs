@@ -81,35 +81,68 @@ pub fn name_conflicts(kind: WindowKind, s: &Settings) -> bool {
 }
 
 pub fn config(kind: WindowKind, s: &Settings) -> Option<WindowOutputConfig> {
+    resolve(kind, s, true).config()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ResolvedOutput<'a> {
+    Off,
+    Invalid(&'static str),
+    Ready(&'a SpoutOutput),
+}
+
+/// Configuration, sender lifetime and frame delivery share this decision.
+/// Enabled names remain reserved even while the partner is disconnected.
+pub(crate) fn resolve(kind: WindowKind, s: &Settings, peer_active: bool) -> ResolvedOutput<'_> {
+    let Some(out) = settings_for(kind, s)
+        .filter(|o| o.enabled && (kind != WindowKind::PeerDisplay || peer_active))
+    else {
+        return ResolvedOutput::Off;
+    };
     if !(cfg!(windows) || cfg!(target_os = "macos")) {
-        return None;
-    }
-    if name_conflicts(kind, s) {
-        return None;
-    }
-    let out = settings_for(kind, s).filter(|o| o.enabled && !o.name.trim().is_empty())?;
-    let extent = match out.size {
-        Some([width, height]) => WindowOutputExtent::Fixed { width, height },
-        None => WindowOutputExtent::MatchWindow,
-    };
-    // Windows shares a DX12 texture. macOS blits the same-device texture
-    // into Syphon; NanaUI has no Metal export token.
-    let export = if cfg!(windows) {
-        WindowOutputExport::Native
+        ResolvedOutput::Invalid("output-spout-unsupported")
+    } else if out.name.trim().is_empty() {
+        ResolvedOutput::Invalid("spout-error-name")
+    } else if name_conflicts(kind, s) {
+        ResolvedOutput::Invalid("output-name-conflict")
     } else {
-        WindowOutputExport::SameDevice
-    };
-    Some(
-        WindowOutputConfig::default()
-            .with_extent(extent)
-            .with_alpha(if out.straight_alpha {
-                WindowOutputAlpha::Straight
-            } else {
-                WindowOutputAlpha::Premultiplied
-            })
-            .with_export(export)
-            .while_hidden(true),
-    )
+        ResolvedOutput::Ready(out)
+    }
+}
+
+impl<'a> ResolvedOutput<'a> {
+    pub(crate) fn output(self) -> Option<&'a SpoutOutput> {
+        match self {
+            Self::Ready(out) => Some(out),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn config(self) -> Option<WindowOutputConfig> {
+        let out = self.output()?;
+        let extent = match out.size {
+            Some([width, height]) => WindowOutputExtent::Fixed { width, height },
+            None => WindowOutputExtent::MatchWindow,
+        };
+        // Windows shares a DX12 texture. macOS blits the same-device texture
+        // into Syphon; NanaUI has no Metal export token.
+        let export = if cfg!(windows) {
+            WindowOutputExport::Native
+        } else {
+            WindowOutputExport::SameDevice
+        };
+        Some(
+            WindowOutputConfig::default()
+                .with_extent(extent)
+                .with_alpha(if out.straight_alpha {
+                    WindowOutputAlpha::Straight
+                } else {
+                    WindowOutputAlpha::Premultiplied
+                })
+                .with_export(export)
+                .while_hidden(true),
+        )
+    }
 }
 
 #[cfg(windows)]
@@ -121,12 +154,13 @@ struct Sender {
 
 #[derive(Default)]
 pub struct Spout {
+    /// Qualified sender identities, also used to reset status after a rename
+    /// or after correcting an invalid configuration.
+    names: HashMap<WindowKind, String>,
     #[cfg(windows)]
     senders: HashMap<WindowKind, Sender>,
     #[cfg(target_os = "macos")]
     syphon: syphon::Outputs,
-    #[cfg(not(any(windows, target_os = "macos")))]
-    _unused: HashMap<WindowKind, ()>,
     /// Last link state per window, for the settings page.
     pub status: HashMap<WindowKind, LinkState>,
 }
@@ -138,46 +172,43 @@ fn t(locale: Locale, key: &str) -> String {
 impl Spout {
     /// Drop senders whose output was turned off or renamed.
     pub fn sync(&mut self, s: &Settings, locale: Locale, peer_active: bool) {
+        #[cfg(target_os = "macos")]
+        let mut live = Vec::new();
         for kind in KINDS {
-            let conflict = name_conflicts(kind, s);
-            let wanted = settings_for(kind, s)
-                .filter(|o| o.enabled && (kind != WindowKind::PeerDisplay || peer_active));
+            let resolved = resolve(kind, s, peer_active);
+            let wanted = resolved.output();
             #[cfg(windows)]
             if self
                 .senders
                 .get(&kind)
-                .is_some_and(|x| wanted.is_none_or(|o| o.name != x.name) || conflict)
+                .is_some_and(|x| wanted.is_none_or(|o| o.name != x.name))
             {
                 self.senders.remove(&kind);
             }
-            let state = match wanted {
-                None => LinkState::Off,
-                Some(_) if !(cfg!(windows) || cfg!(target_os = "macos")) => {
-                    LinkState::Error(t(locale, "output-spout-unsupported"))
-                }
-                Some(_) if conflict => LinkState::Error(t(locale, "output-name-conflict")),
-                Some(_) => match self.status.get(&kind) {
+            let renamed = wanted.is_some_and(|o| self.names.get(&kind) != Some(&o.name));
+            let state = match resolved {
+                ResolvedOutput::Off => LinkState::Off,
+                ResolvedOutput::Invalid(key) => LinkState::Error(t(locale, key)),
+                ResolvedOutput::Ready(_) if renamed => LinkState::Connecting,
+                ResolvedOutput::Ready(_) => match self.status.get(&kind) {
                     // Just switched on: no frame has gone out yet.
                     None | Some(LinkState::Off) => LinkState::Connecting,
                     Some(state) => state.clone(),
                 },
             };
+            if let Some(out) = wanted {
+                if renamed {
+                    self.names.insert(kind, out.name.clone());
+                }
+                #[cfg(target_os = "macos")]
+                live.push((kind, out.name.clone()));
+            } else {
+                self.names.remove(&kind);
+            }
             self.status.insert(kind, state);
         }
         #[cfg(target_os = "macos")]
-        self.syphon.sync(
-            &KINDS
-                .into_iter()
-                .filter_map(|kind| {
-                    let out = settings_for(kind, s)?;
-                    (out.enabled
-                        && !out.name.trim().is_empty()
-                        && !name_conflicts(kind, s)
-                        && (kind != WindowKind::PeerDisplay || peer_active))
-                        .then(|| (kind, out.name.clone()))
-                })
-                .collect::<Vec<_>>(),
-        );
+        self.syphon.sync(&live);
     }
 
     pub fn status_changed(
@@ -278,6 +309,62 @@ impl Spout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn invalid_names_and_renames_share_configuration_and_sender_lifetime() {
+        if !(cfg!(windows) || cfg!(target_os = "macos")) {
+            return;
+        }
+        let mut settings = Settings::default();
+        settings.output.display.enabled = true;
+        settings.output.display.name = "   ".into();
+        let mut outputs = Spout::default();
+        outputs.sync(&settings, Locale::ZhCn, false);
+        assert!(config(WindowKind::Display, &settings).is_none());
+        assert!(outputs.names.is_empty());
+        assert_eq!(
+            outputs.status[&WindowKind::Display],
+            LinkState::Error(t(Locale::ZhCn, "spout-error-name"))
+        );
+        settings.output.display.name = "Renamed".into();
+        outputs.sync(&settings, Locale::ZhCn, false);
+        assert!(config(WindowKind::Display, &settings).unwrap().while_hidden);
+        assert_eq!(outputs.status[&WindowKind::Display], LinkState::Connecting);
+        outputs
+            .status
+            .insert(WindowKind::Display, LinkState::Connected("ready".into()));
+        outputs.sync(&settings, Locale::ZhCn, false);
+        assert!(matches!(
+            outputs.status[&WindowKind::Display],
+            LinkState::Connected(_)
+        ));
+        settings.output.display.name = "Renamed again".into();
+        outputs.sync(&settings, Locale::ZhCn, false);
+        assert_eq!(outputs.status[&WindowKind::Display], LinkState::Connecting);
+        assert_eq!(outputs.names[&WindowKind::Display], "Renamed again");
+        settings.output.peer_display.enabled = true;
+        assert!(
+            resolve(WindowKind::PeerDisplay, &settings, false)
+                .config()
+                .is_none()
+        );
+        assert!(
+            resolve(WindowKind::PeerDisplay, &settings, true)
+                .config()
+                .is_some()
+        );
+        settings.output.peer_display.name = settings.output.display.name.clone();
+        outputs.sync(&settings, Locale::ZhCn, true);
+        assert!(outputs.names.is_empty());
+        assert!(
+            resolve(WindowKind::Display, &settings, true)
+                .output()
+                .is_none()
+        );
+        settings.output.peer_display.enabled = false;
+        outputs.sync(&settings, Locale::ZhCn, false);
+        assert_eq!(outputs.status[&WindowKind::Display], LinkState::Connecting);
+    }
 
     #[test]
     fn independent_outputs_keep_their_size_and_alpha() {

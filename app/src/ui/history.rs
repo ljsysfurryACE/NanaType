@@ -37,6 +37,8 @@ pub fn local_time(unix_ms: u64, seconds: bool) -> String {
 
 /// How long a new row takes to settle in.
 const ROW_ENTER_MS: u64 = 220;
+const ROW_FADE_MS: u64 = 600;
+const FADE_FRAME_SLACK_MS: u64 = 100;
 
 /// Meta text (time, role) is a step below the name: 11px beside a 14px name.
 fn time_size(h: &nanatype_theme::History) -> f32 {
@@ -664,7 +666,7 @@ pub(super) fn message_view(
         };
         let age = crate::clock::unix_of(ui.history_now.get()).saturating_sub(at);
         let start = u64::from(after) * 1000;
-        let opacity = 1.0 - (age.saturating_sub(start) as f32 / 600.0).clamp(0.0, 1.0);
+        let opacity = 1.0 - (age.saturating_sub(start) as f32 / ROW_FADE_MS as f32).clamp(0.0, 1.0);
         let mut taken = std::mem::replace(s, Stack::row(0.0));
         taken = taken.with_layout(|l| l.opacity = Some(opacity));
         *s = taken;
@@ -685,52 +687,79 @@ pub(super) fn message_view(
     }
 }
 
-/// The newest `visible` rows, leaving out the line `on_screen`.
-fn shown_keys(
-    rows: impl Iterator<Item = (u64, Option<LineId>)>,
+/// The visible suffix, excluding the lines still on either dialogue box.
+#[derive(Clone, Copy)]
+struct Selection {
     visible: usize,
-    on_screen: Option<LineId>,
-) -> Vec<u64> {
-    let keys: Vec<u64> = rows
-        .filter(|(_, line)| on_screen.is_none() || *line != on_screen)
-        .map(|(key, _)| key)
-        .collect();
-    let start = keys.len().saturating_sub(visible);
-    keys[start..].to_vec()
+    hidden: [Option<LineId>; 2],
+}
+
+fn selection(ui: Ui) -> Selection {
+    let (visible, hide) = ui
+        .settings
+        .with(|s| (s.history.visible_items as usize, s.history.hide_latest));
+    let hide = hide.resolve(ui.skin.with(|s| s.history.hide_latest));
+    let hidden = if !hide {
+        [None; 2]
+    } else if ui.peer.with(|p| p.active) {
+        [ui.peer_local_line.get(), ui.peer_display.with(|d| d.line)]
+    } else {
+        [ui.display.with(|d| d.line), None]
+    };
+    Selection { visible, hidden }
+}
+
+/// Newest first: stop after the visible suffix instead of scanning the log.
+fn selected_rows(rows: &[HistoryRow], selection: Selection) -> impl Iterator<Item = &HistoryRow> {
+    rows.iter()
+        .rev()
+        .filter(move |row| row.item.line.is_none() || !selection.hidden.contains(&row.item.line))
+        .take(selection.visible)
+}
+
+fn visible_keys(ui: Ui) -> Vec<u64> {
+    let selection = selection(ui);
+    ui.history.with(|rows| {
+        let mut keys: Vec<_> = selected_rows(rows, selection).map(|r| r.key).collect();
+        keys.reverse();
+        keys
+    })
+}
+
+#[derive(Default, Debug, PartialEq)]
+pub(crate) struct FadeSchedule {
+    pub animating: bool,
+    pub next_at: Option<u64>,
+}
+
+/// Only mounted history rows can need the history clock. Read untracked from
+/// host callbacks, but share exactly the list's selection and fade interval.
+pub(crate) fn fade_schedule(ui: Ui, now: u64) -> FadeSchedule {
+    nana_ui::runtime::view::untrack(|| {
+        let Some(after) = ui.settings.with(|s| s.history.fade_after_s) else {
+            return FadeSchedule::default();
+        };
+        let selection = selection(ui);
+        let unix_now = crate::clock::unix_of(now);
+        let delay = u64::from(after) * 1000;
+        ui.history.with(|rows| {
+            let mut schedule = FadeSchedule::default();
+            for row in selected_rows(rows, selection) {
+                let start = row.item.at.saturating_add(delay);
+                schedule.animating |= unix_now >= start.saturating_sub(FADE_FRAME_SLACK_MS)
+                    && unix_now <= start.saturating_add(ROW_FADE_MS + FADE_FRAME_SLACK_MS);
+                if start > unix_now {
+                    let at = now.saturating_add(start - unix_now);
+                    schedule.next_at = Some(schedule.next_at.map_or(at, |old| old.min(at)));
+                }
+            }
+            schedule
+        })
+    })
 }
 
 pub fn history_window(ui: Ui) -> impl IntoView {
-    let items = computed(move || {
-        let (visible, hide) = ui
-            .settings
-            .with(|s| (s.history.visible_items as usize, s.history.hide_latest));
-        let hide = hide.resolve(ui.skin.with(|k| k.history.hide_latest));
-        // The line still on the dialogue box joins once the box clears or
-        // the next line replaces it.
-        let on_screen = if hide {
-            if ui.peer.with(|p| p.active) {
-                ui.peer_local_line.get()
-            } else {
-                ui.display.with(|d| d.line)
-            }
-        } else {
-            None
-        };
-        ui.history.with(|rows| {
-            let peer_on_screen = if hide && ui.peer.with(|p| p.active) {
-                ui.peer_display.with(|d| d.line)
-            } else {
-                None
-            };
-            shown_keys(
-                rows.iter()
-                    .filter(|r| peer_on_screen.is_none() || r.item.line != peer_on_screen)
-                    .map(|r| (r.key, r.item.line)),
-                visible,
-                on_screen,
-            )
-        })
-    });
+    let items = computed(move || visible_keys(ui));
     let follows = computed(move || {
         if ui.skin.with(|s| interaction_presentation(s)) {
             return Vec::new();
@@ -901,13 +930,96 @@ mod tests {
 
     #[test]
     fn the_line_on_screen_waits_until_it_leaves() {
-        let rows = [(1, Some(LineId(10))), (2, None), (3, Some(LineId(11)))];
-        let all = || rows.iter().copied();
-        assert_eq!(shown_keys(all(), 30, None), [1, 2, 3]);
+        let rows: Vec<_> = [(1, Some(LineId(10))), (2, None), (3, Some(LineId(11)))]
+            .into_iter()
+            .map(|(key, line)| {
+                let mut row = row(key, 0);
+                row.item.line = line;
+                row
+            })
+            .collect();
+        let keys = |visible, hidden| {
+            let mut keys: Vec<_> = selected_rows(&rows, Selection { visible, hidden })
+                .map(|r| r.key)
+                .collect();
+            keys.reverse();
+            keys
+        };
+        assert_eq!(keys(30, [None; 2]), [1, 2, 3]);
         // Only the line still on the box is left out; external rows stay.
-        assert_eq!(shown_keys(all(), 30, Some(LineId(11))), [1, 2]);
+        assert_eq!(keys(30, [Some(LineId(11)), None]), [1, 2]);
         // The cap counts the rows that show.
-        assert_eq!(shown_keys(all(), 1, Some(LineId(11))), [2]);
+        assert_eq!(keys(1, [Some(LineId(11)), None]), [2]);
+        assert_eq!(keys(30, [Some(LineId(10)), Some(LineId(11))]), [2]);
+        assert!(keys(0, [None; 2]).is_empty());
+    }
+
+    fn row(key: u64, at: u64) -> HistoryRow {
+        let mut item = item("Nana", SourceKind::Typewriter, 0);
+        item.at = at;
+        HistoryRow {
+            key,
+            item,
+            doc: Arc::new(Document::new()),
+            reveal: None,
+        }
+    }
+
+    #[test]
+    fn fade_schedule_uses_the_same_visible_rows_as_the_list() {
+        use nanatype_settings::{HideLatest, Settings};
+        let mut settings = Settings::default();
+        settings.history.visible_items = 1;
+        settings.history.fade_after_s = Some(2);
+        settings.history.hide_latest = HideLatest::Never;
+        let ui = Ui::new(
+            Arc::new(settings),
+            Arc::new(Skin::default()),
+            nanatype_i18n::Locale::ZhCn,
+        );
+        let base = crate::clock::unix_of(0);
+        ui.history
+            .set(Arc::new(vec![row(1, base), row(2, base + 3000)]));
+        assert_eq!(visible_keys(ui), [2]);
+        // Row 1 is fading, but it isn't mounted. Only row 2 schedules work.
+        assert_eq!(
+            fade_schedule(ui, 2000),
+            FadeSchedule {
+                animating: false,
+                next_at: Some(5000)
+            }
+        );
+        assert!(fade_schedule(ui, 5000).animating);
+        assert_eq!(fade_schedule(ui, 5701), FadeSchedule::default());
+        ui.settings
+            .update(|s| Arc::make_mut(s).history.visible_items = 2);
+        assert_eq!(visible_keys(ui), [1, 2]);
+        assert!(fade_schedule(ui, 2000).animating);
+        ui.settings
+            .update(|s| Arc::make_mut(s).history.visible_items = 0);
+        assert_eq!(fade_schedule(ui, 2000), FadeSchedule::default());
+        ui.settings.update(|s| {
+            let s = Arc::make_mut(s);
+            s.history.visible_items = 30;
+            s.history.hide_latest = HideLatest::Always;
+        });
+        ui.history.update(|rows| {
+            let rows = Arc::make_mut(rows);
+            rows[0].item.line = Some(LineId(10));
+            rows[1].item.line = Some(LineId(11));
+        });
+        ui.display
+            .update(|d| Arc::make_mut(d).line = Some(LineId(10)));
+        assert_eq!(visible_keys(ui), [2]);
+        assert!(!fade_schedule(ui, 2000).animating);
+        ui.peer.update(|p| Arc::make_mut(p).active = true);
+        ui.peer_local_line.set(Some(LineId(10)));
+        ui.peer_display
+            .update(|d| Arc::make_mut(d).line = Some(LineId(11)));
+        assert!(visible_keys(ui).is_empty());
+        assert_eq!(fade_schedule(ui, 2000), FadeSchedule::default());
+        ui.peer.update(|p| Arc::make_mut(p).active = false);
+        assert_eq!(visible_keys(ui), [2]);
     }
 
     fn item(author: &str, kind: SourceKind, at_s: u64) -> HistoryItem {

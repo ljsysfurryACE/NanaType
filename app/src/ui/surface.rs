@@ -47,6 +47,15 @@ pub struct Surface {
     pub opacity: Option<f32>,
 }
 
+/// One precedence rule for layout paint, retained paths and coverage masks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SurfaceRoute {
+    Frame,
+    Motif(nanatype_theme::MotifPreset),
+    Contour(nanatype_theme::ContourPreset),
+    Style,
+}
+
 pub fn gradient(skin: &Skin, g: &GradientSpec) -> BackgroundImage {
     let stops = g
         .stops
@@ -288,6 +297,17 @@ impl Surface {
 
     /// Write this surface into `l`. Leaves position, size and padding alone.
     pub fn apply(&self, l: &mut LayoutStyle) {
+        // Surface owns these fields. Clear them even when changing routes on
+        // the same retained node (image -> path -> ordinary box, for example).
+        l.background = None;
+        l.paint.background_image = None;
+        l.paint.border_image = None;
+        l.border_radius = None;
+        l.paint.border_radii = None;
+        l.border_color = None;
+        l.border_style = None;
+        set_border_widths(l, [0.0; 4]);
+        l.paint.box_shadows.clear();
         if let Some((spec, widths)) = &self.frame {
             l.paint.border_image = Some(spec.clone());
             set_border_widths(l, *widths);
@@ -322,12 +342,8 @@ impl Surface {
                         .collect(),
                 )
             });
-        if self.rotate_deg != 0.0 {
-            l.transform = Some(affine(0.0, 0.0, self.rotate_deg, 1.0));
-        }
-        if let Some(o) = self.opacity {
-            l.opacity = Some(o);
-        }
+        l.transform = (self.rotate_deg != 0.0).then(|| affine(0.0, 0.0, self.rotate_deg, 1.0));
+        l.opacity = self.opacity;
     }
 
     pub fn contour_radius(&self) -> f32 {
@@ -335,11 +351,45 @@ impl Surface {
     }
 
     pub fn is_vector(&self) -> bool {
-        self.frame.is_none() && (self.contour.is_some() || self.motif.is_some())
+        matches!(
+            self.route(),
+            SurfaceRoute::Contour(_) | SurfaceRoute::Motif(_)
+        )
     }
 
     pub fn integrates_tail(&self) -> bool {
-        self.is_vector() && self.motif.is_none() && self.tail.is_some()
+        matches!(self.route(), SurfaceRoute::Contour(_)) && self.tail.is_some()
+    }
+
+    pub(super) fn route(&self) -> SurfaceRoute {
+        if self.frame.is_some() {
+            SurfaceRoute::Frame
+        } else if let Some(motif) = self.motif {
+            SurfaceRoute::Motif(motif)
+        } else if let Some(contour) = self.contour {
+            SurfaceRoute::Contour(contour)
+        } else {
+            SurfaceRoute::Style
+        }
+    }
+
+    pub(super) fn border_width(&self) -> f32 {
+        self.border
+            .as_ref()
+            .map_or(0.0, |b| b.widths.into_iter().fold(0.0_f32, f32::max))
+    }
+
+    pub(super) fn contour_path(&self, size: [f32; 2]) -> Option<nanatype_theme::ShapePath> {
+        let SurfaceRoute::Contour(contour) = self.route() else {
+            return None;
+        };
+        Some(nanatype_theme::contour_path(
+            contour,
+            size,
+            self.contour_radius(),
+            self.border_width() * 0.5,
+            self.tail.as_ref(),
+        ))
     }
 
     /// The one attachment path for live views, history, and thumbnails.
@@ -366,39 +416,31 @@ impl Surface {
 
     /// Actual path bounds, including an integrated tail, before rotation.
     pub fn paint_bounds(&self, size: [f32; 2]) -> [f32; 4] {
-        if !self.is_vector() {
-            return [0.0, 0.0, size[0], size[1]];
-        }
-        if let Some(motif) = self.motif {
-            let paths = nanatype_theme::motif_paths(motif, size);
-            let mut bounds = [0.0, 0.0, size[0], size[1]];
-            for p in paths {
-                if let Some([x, y, w, h]) = p.path.bounds() {
-                    let pad = p.stroke_width * 0.5;
-                    let right = (bounds[0] + bounds[2]).max(x + w + pad);
-                    let bottom = (bounds[1] + bounds[3]).max(y + h + pad);
-                    bounds[0] = bounds[0].min(x - pad);
-                    bounds[1] = bounds[1].min(y - pad);
-                    bounds[2] = right - bounds[0];
-                    bounds[3] = bottom - bounds[1];
+        match self.route() {
+            SurfaceRoute::Frame | SurfaceRoute::Style => [0.0, 0.0, size[0], size[1]],
+            SurfaceRoute::Motif(motif) => {
+                let paths = nanatype_theme::motif_paths(motif, size);
+                let mut bounds = [0.0, 0.0, size[0], size[1]];
+                for p in paths {
+                    if let Some([x, y, w, h]) = p.path.bounds() {
+                        let pad = p.stroke_width * 0.5;
+                        let right = (bounds[0] + bounds[2]).max(x + w + pad);
+                        let bottom = (bounds[1] + bounds[3]).max(y + h + pad);
+                        bounds[0] = bounds[0].min(x - pad);
+                        bounds[1] = bounds[1].min(y - pad);
+                        bounds[2] = right - bounds[0];
+                        bounds[3] = bottom - bounds[1];
+                    }
                 }
+                bounds
             }
-            bounds
-        } else {
-            let width = self
-                .border
-                .as_ref()
-                .map_or(0.0, |b| b.widths.into_iter().fold(0.0_f32, f32::max));
-            let p = nanatype_theme::contour_path(
-                self.contour.unwrap(),
-                size,
-                self.contour_radius(),
-                width * 0.5,
-                self.tail.as_ref(),
-            );
-            p.bounds()
-                .map(|[x, y, w, h]| [x - width * 0.5, y - width * 0.5, w + width, h + width])
-                .unwrap_or([0.0; 4])
+            SurfaceRoute::Contour(_) => {
+                let width = self.border_width();
+                let p = self.contour_path(size).expect("contour route");
+                p.bounds()
+                    .map(|[x, y, w, h]| [x - width * 0.5, y - width * 0.5, w + width, h + width])
+                    .unwrap_or([0.0; 4])
+            }
         }
     }
 }
@@ -612,5 +654,44 @@ mod tests {
         };
         let (_, widths) = nine_slice(&frame, "file:///f.png".into());
         assert_eq!(widths, [16.0, 8.0, 16.0, 8.0]);
+    }
+
+    #[test]
+    fn route_precedence_and_reused_layout_do_not_retain_old_paint() {
+        let mut surface = Surface {
+            contour: Some(nanatype_theme::ContourPreset::Cloud),
+            motif: Some(nanatype_theme::MotifPreset::Petal),
+            fill: Some([1.0; 4]),
+            rotate_deg: 10.0,
+            opacity: Some(0.5),
+            ..Default::default()
+        };
+        assert!(matches!(surface.route(), SurfaceRoute::Motif(_)));
+        assert!(surface.contour_path([100.0, 50.0]).is_none());
+        surface.frame = Some(nine_slice(
+            &NineSlice {
+                image: "frame.png".into(),
+                slice: [4; 4],
+                scale: 1.0,
+                repeat: false,
+            },
+            "file:///frame.png".into(),
+        ));
+        let mut layout = LayoutStyle::default();
+        surface.apply(&mut layout);
+        assert_eq!(surface.route(), SurfaceRoute::Frame);
+        assert!(layout.paint.border_image.is_some());
+        surface.frame = None;
+        surface.motif = None;
+        surface.rotate_deg = 0.0;
+        surface.opacity = None;
+        surface.apply(&mut layout);
+        assert!(matches!(surface.route(), SurfaceRoute::Contour(_)));
+        assert!(layout.paint.border_image.is_none());
+        assert_eq!(layout.border_top_width, Some(0.0));
+        assert!(layout.transform.is_none() && layout.opacity.is_none());
+        assert!(surface.contour_path([100.0, 50.0]).is_some());
+        surface.contour = None;
+        assert_eq!(surface.route(), SurfaceRoute::Style);
     }
 }
