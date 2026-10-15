@@ -8,14 +8,14 @@ use std::sync::Arc;
 
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{
-    AnyView, EntityRef, IntoView, Signal, WithRefs, dynamic, entity_ref, segmented,
-    segmented_option, signal, widget, with_refs,
+    AnyView, EntityRef, IntoView, Signal, WithRefs, dynamic, entity_ref, segmented_option, signal,
+    widget, with_refs,
 };
 use nana_ui::runtime::{
     ActionMenu, ActionMenuItem, Activate, Button, ColorChanged, ColorField, Divider,
     FocusWithinChanged, IconButton, IconGlyph, NodeStyle, Popover, PopoverClosed, PopoverToggled,
     RangeField, RangeInput, RichAttrMask, RichSelectionAttrs, RichTextEditor, RichTextEditorEvent,
-    Stack, Text, TextArea, TextChanged, TextInput, TextSubmitted,
+    SegmentedControl, Stack, Text, TextArea, TextChanged, TextInput, TextSubmitted,
 };
 use nana_ui::theme::space;
 use nana_ui::{ButtonKind, ControlSize, PopoverPlacement};
@@ -1009,7 +1009,7 @@ fn toolbar(ui: Ui) -> AnyView {
                 .collect()
         };
         let mode = settings.general.input_mode;
-        let mode_switch = segmented().children((
+        let mode_switch = widget(SegmentedControl::new().size(ControlSize::Small)).children((
             segmented_option(t("mode-compose-short"))
                 .selected(mode == InputMode::Compose)
                 .on_cx(|_, _: &nana_ui::runtime::SegmentedSelectionRequested, cx| {
@@ -1695,3 +1695,98 @@ pub fn capture_source_selection(
 pub type EditorRef = EntityRef<RichTextEditor>;
 pub type SourceRef = EntityRef<TextArea>;
 pub type ToastsRef = EntityRef<nana_ui::runtime::ToastStack>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nana_ui::runtime::{DocumentId, RuntimeDocument};
+    use nana_ui_devtools::agent::RuntimeAgentSession;
+
+    #[test]
+    fn toolbar_controls_share_the_compact_height_and_vertical_center() {
+        let skin = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"))
+            .load("nanatype.halo")
+            .unwrap()
+            .skin;
+        for locale in [Locale::ZhCn, Locale::EnUs, Locale::JaJp] {
+            for width in [796, 1200] {
+                for mode in [InputMode::Compose, InputMode::Mirror] {
+                    for scale in [1.0, 1.5, 2.0] {
+                        let mut settings = Settings::default();
+                        settings.general.input_mode = mode;
+                        settings.skin.overrides.region = Some([width as f32, 200.0]);
+                        let ui = Ui::new(Arc::new(settings), skin.clone(), locale);
+                        let id = DocumentId::new(1).unwrap();
+                        let mut document = RuntimeDocument::new(id);
+                        document
+                            .context_mut()
+                            .set_theme_tokens(crate::skin_theme::compile(&skin, false))
+                            .unwrap();
+                        document
+                            .context_mut()
+                            .mount_view_root(id, move || toolbar(ui))
+                            .unwrap();
+                        let mut session = RuntimeAgentSession::new_scaled(
+                            document,
+                            width,
+                            TOOLBAR_H as u32,
+                            scale,
+                        )
+                        .unwrap();
+                        let nodes = session.accessibility_dump();
+                        let controls = [
+                            "tb-bold",
+                            "tb-italic",
+                            "tb-color",
+                            "tb-size",
+                            "tb-effects",
+                            "tb-pacing",
+                            "tb-phrases",
+                            "window-settings",
+                            "tb-send",
+                        ]
+                        .map(|key| {
+                            let label = ui.now_t(key);
+                            nodes
+                                .iter()
+                                .find(|node| node.label.as_deref() == Some(label.as_str()))
+                                .unwrap_or_else(|| panic!("missing toolbar control {label}"))
+                        });
+                        let mode_switch = nodes
+                            .iter()
+                            .find(|node| node.role == "radio-group")
+                            .expect("input mode switch");
+                        for node in controls.into_iter().chain([mode_switch]) {
+                            let bounds = &node.bounds;
+                            assert!(
+                                (bounds.height - TARGET).abs() <= 1.0 / scale,
+                                "{locale:?}, width={width}, {mode:?}, {scale}x: {node:?}"
+                            );
+                            assert!(
+                                (bounds.y + bounds.height / 2.0 - TOOLBAR_H / 2.0).abs()
+                                    <= 1.0 / scale,
+                                "{locale:?}, width={width}, {mode:?}, {scale}x: {node:?}"
+                            );
+                            assert!(
+                                bounds.width > 0.0
+                                    && bounds.x >= 0.0
+                                    && bounds.x + bounds.width <= width as f32 + 1.0 / scale,
+                                "toolbar control clipped: {locale:?}, width={width}: {node:?}"
+                            );
+                        }
+                        if locale == Locale::ZhCn
+                            && mode == InputMode::Compose
+                            && let Some(out) = std::env::var_os("NANATYPE_TOOLBAR_CAPTURE_DIR")
+                        {
+                            let out = std::path::PathBuf::from(out);
+                            std::fs::create_dir_all(&out).unwrap();
+                            session
+                                .screenshot_png(&out.join(format!("toolbar-{width}-{scale}x.png")))
+                                .unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
