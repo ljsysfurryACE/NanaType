@@ -7,6 +7,7 @@
 - **历史记录**：头像 + 名字 + 气泡的聊天列表，可随打字同步出现。
 - **接入 OBS**：Spout2（Windows）或 Syphon（macOS）共享 GPU 纹理，零回读，窗口隐藏时也持续输出；也可以用透明窗口捕获。
 - **联动**：VTube Studio（表情、热键、参数和口型同步，`[expr]` / `[vts]` 标记按打字位置触发）、OSC、本地 WebSocket 广播。
+- **双人联机**：通过 iroh 连接另一位主播，自己与伙伴的台词或实时输入镜像分别进入独立展示窗口和 OBS 输出源，共享本次会话的主播历史记录。
 - **blivechat 弹幕**：连接本机运行的 [blivechat](https://github.com/xfgryujk/blivechat)，弹幕面板里可 @ 或回复观众：@ 插入头像昵称标签，回复附带原消息引用；弹幕、醒目留言、礼物、上舰也可以混入历史记录。
 - **皮肤**：内置 18 套（光环、夜色、羊皮纸、ADV 经典、RPG 窗口、香草、气泡、字幕、直播弹幕、漫画、终端、掌机像素、樱花、水墨、Echo-Live 原版、Echo-Live 玻璃、Echo-Live 气泡、Echo-Live 虚空；后四套还原 Echo-Live），可导入 / 导出 `.ntskin` 皮肤包，支持热重载。
 - **多语言**：简体中文、English、日本語。
@@ -41,11 +42,24 @@
 cargo run -p nanatype-blive --example mock_blivechat
 ```
 
+### 双人联机
+
+1. 输入窗口顶部展开「双人联机」，一方点击「创建联机」，复制邀请并私下发送给另一方。
+2. 另一方粘贴邀请并点击「加入」。卡片显示连接状态、对方名字、直连／中继和往返延迟；需要时可填写自定义中继 URL。
+3. 「展示框」始终显示自己的内容，「联机伙伴展示框」独立显示对方的内容；两者可以分别移动、缩放和隐藏。联机卡片的「伙伴窗口」按钮可切换伙伴窗口。双方保留各自皮肤和窗口布局；实时镜像模式公开正在输入的内容，编辑后发送模式只公开已发送内容。输入框和草稿各自独立，F9、跳过和清空展示只控制自己。
+4. 历史窗口在联机期间显示本次会话的主播台词，按房主确认顺序排列。联机前历史和直播间弹幕不共享。离开后恢复本机历史，隐藏伙伴窗口并停止伙伴输出；本次会话不会跨进程重启恢复。会话最多保留最近 1000 条台词，并按消息大小限制裁剪。
+5. 短暂断线时保留编辑能力，发送与手动播放控制暂停；重连后补齐历史并恢复最新展示状态。主动离开会结束当前双人会话，首版不自动转移房主。
+
+图片、贴纸、头像、引用中的头像和当前立绘以内容哈希分发并缓存，资源加载不会阻塞台词。单个资源上限 16 MiB；超限或缺失时使用占位。仅自己的台词触发本机 VTube Studio／OSC 等人物控制，对方台词不会操作自己的模型。
+
+联机邀请包含会话访问凭据，请只交给联机伙伴。iroh 在可行时使用直连，否则经端到端加密的中继转发；直连双方会获知彼此的网络地址。默认公共中继适合开发验证，有限流且不保证可用性，正式直播前应在双方实际网络上试连，必要时配置自己的中继。
+
 ### 接入 OBS
 
-- **Spout2**：设置 › 输出 / OBS 打开 Spout2 输出。OBS 中安装 Spout2 插件，添加 *Spout2 Capture*，选择发送端名称（默认 `NanaType Display` / `NanaType History`），合成模式选 *Premultiplied Alpha*。
+- **Spout2**：设置 › 输出 / OBS 打开 Spout2 输出。OBS 中安装 Spout2 插件，添加 *Spout2 Capture*，选择发送端名称（默认 `NanaType Display` / `NanaType Partner` / `NanaType History`），合成模式选 *Premultiplied Alpha*。
+- **分别输出**：在设置 › 输出 / OBS 分别启用「展示框」和「展示框 · 联机伙伴」，再在 OBS 添加两个来源，分别选择 `NanaType Display`（自己）和 `NanaType Partner`（对方）。尺寸、透明度和发送端名称分别设置；启用的发送端名称须互不重复。伙伴输出只在联机期间运行；联机中隐藏窗口仍会持续输出。共享历史另选 `NanaType History`。
 - **窗口捕获**：*Window Capture*，捕获方式选 *Windows 10 (1903 and up)*。
-- **Syphon**（macOS）：设置 › 输出 / OBS 打开 Syphon 输出。OBS 中添加 *Syphon Client*，选择发送端名称（默认 `NanaType Display` / `NanaType History`），合成模式选 *Premultiplied Alpha*。也可以用 *macOS Screen Capture* 捕获展示框窗口。Spout2 仅 Windows。
+- **Syphon**（macOS）：设置 › 输出 / OBS 打开 Syphon 输出。OBS 中添加 *Syphon Client*，选择发送端名称（默认 `NanaType Display` / `NanaType Partner` / `NanaType History`），合成模式选 *Premultiplied Alpha*。也可以用 *macOS Screen Capture* 捕获展示框窗口。Spout2 仅 Windows。
 
 ## 台词标记
 
@@ -108,6 +122,7 @@ pwsh scripts/package.ps1
 | `crates/bridge` | VTube Studio、OSC、WebSocket |
 | `crates/blive` | blivechat 客户端：协议解析、连接与重连 |
 | `crates/core` | 会话逻辑：草稿、发送、继续、队列、历史、回溯 |
+| `crates/p2p` | iroh 双人联机、会话排序、重连恢复与图片传输 |
 | `app` | NanaUI 宿主、窗口、视图、热键、托盘、Spout |
 
 纯逻辑 crate 不依赖界面框架，可单独测试。

@@ -102,6 +102,13 @@ pub enum FileTarget {
 }
 
 pub enum Msg {
+    PeerStart {
+        invitation: Option<String>,
+        relay: String,
+    },
+    PeerLeave,
+    PeerPanel(bool),
+    PeerEvent(u64, nanatype_p2p::Event),
     /// A session command (send, continue, draft changed…).
     Core(Cmd),
     /// Change settings.

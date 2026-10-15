@@ -1,0 +1,415 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use iroh::EndpointAddr;
+use nanatype_core::{DisplayView, HistoryRow, Reveal};
+use nanatype_model::{Line, LineId};
+use serde::{Deserialize, Serialize};
+
+pub const ALPN: &[u8] = b"nanatype/session/1";
+pub const VERSION: u32 = 1;
+pub const MAX_FRAME: usize = 8 * 1024 * 1024;
+pub const MAX_ASSET: usize = 16 * 1024 * 1024;
+pub const MAX_ENTRIES: usize = 1000;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Invite {
+    pub v: u32,
+    pub session: String,
+    pub secret: String,
+    pub addr: EndpointAddr,
+}
+
+impl Invite {
+    pub fn encode(&self) -> String {
+        format!(
+            "nanatype1:{}",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(self).expect("invite"))
+        )
+    }
+
+    pub fn decode(text: &str) -> Result<Self, String> {
+        if text.len() > 16384 {
+            return Err("Invitation is too long".into());
+        }
+        let payload = text
+            .trim()
+            .strip_prefix("nanatype1:")
+            .ok_or("Not a NanaType invitation")?;
+        let bytes = URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| "Invalid invitation encoding")?;
+        let invite: Self = serde_json::from_slice(&bytes).map_err(|_| "Invalid invitation")?;
+        if invite.v != VERSION {
+            return Err("Incompatible session protocol".into());
+        }
+        if invite.session.len() != 64 || invite.secret.len() != 64 {
+            return Err("Invalid session credentials".into());
+        }
+        Ok(invite)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct MessageId {
+    pub session: String,
+    pub participant: String,
+    pub sequence: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Entry {
+    pub id: MessageId,
+    pub order: u64,
+    pub line: Line,
+    pub avatar: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackSnapshot {
+    pub revision: u64,
+    pub captured_ms: u64,
+    /// Time spent waiting at intermediate peers, excluding network transit.
+    pub age_ms: u64,
+    pub name: String,
+    pub display: DisplayView,
+    pub rows: Vec<HistoryRow>,
+    #[serde(default)]
+    pub portraits: Vec<PortraitAsset>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortraitAsset {
+    pub variant: String,
+    pub asset: nanatype_model::AssetRef,
+}
+
+impl TrackSnapshot {
+    pub fn validate(&mut self) -> Result<(), String> {
+        if self.name.len() > 1024 || self.rows.len() > MAX_ENTRIES || self.portraits.len() > 2 {
+            return Err("Session state exceeds limits".into());
+        }
+        std::sync::Arc::make_mut(&mut self.display.doc).normalize();
+        for row in &mut self.rows {
+            row.item.doc.normalize();
+            std::sync::Arc::make_mut(&mut row.doc).normalize();
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Room {
+    pub session: String,
+    pub host: String,
+    pub guest: Option<String>,
+    pub entries: Vec<Entry>,
+    pub tracks: BTreeMap<String, TrackSnapshot>,
+    pub next_order: u64,
+    /// Highest accepted submission per participant, retained after pruning.
+    pub accepted: BTreeMap<String, u64>,
+    /// Local line IDs are monotonic; pruned rows must not return in a mirror update.
+    #[serde(default)]
+    pub retired_before: BTreeMap<String, u64>,
+}
+
+impl Room {
+    pub fn new(session: String, host: String) -> Self {
+        Self {
+            session,
+            host,
+            guest: None,
+            entries: Vec::new(),
+            tracks: BTreeMap::new(),
+            next_order: 1,
+            accepted: BTreeMap::new(),
+            retired_before: BTreeMap::new(),
+        }
+    }
+
+    pub fn submit(
+        &mut self,
+        participant: &str,
+        sequence: u64,
+        mut line: Line,
+        avatar: Option<String>,
+    ) -> bool {
+        if sequence <= *self.accepted.get(participant).unwrap_or(&0) {
+            return false;
+        }
+        line.doc.normalize();
+        self.accepted.insert(participant.into(), sequence);
+        let id = MessageId {
+            session: self.session.clone(),
+            participant: participant.into(),
+            sequence,
+        };
+        self.entries.push(Entry {
+            id,
+            order: self.next_order,
+            line,
+            avatar,
+        });
+        self.next_order += 1;
+        self.compact();
+        true
+    }
+
+    pub fn update(&mut self, participant: &str, mut track: TrackSnapshot) -> Result<bool, String> {
+        if self
+            .tracks
+            .get(participant)
+            .is_some_and(|old| old.revision >= track.revision)
+        {
+            return Ok(false);
+        }
+        track.validate()?;
+        let retired = self.retired_before.get(participant).copied().unwrap_or(0);
+        track
+            .rows
+            .retain(|row| row.item.line.is_some_and(|line| line.0 > retired));
+        self.tracks.insert(participant.into(), track);
+        self.compact();
+        Ok(true)
+    }
+
+    fn compact(&mut self) {
+        // Leave room for the frame wrapper and both live display documents.
+        while !self.entries.is_empty()
+            && (self.entries.len() > MAX_ENTRIES
+                || serde_json::to_vec(self).is_ok_and(|bytes| bytes.len() > MAX_FRAME * 3 / 4))
+        {
+            let entry = self.entries.remove(0);
+            let retired = self
+                .retired_before
+                .entry(entry.id.participant.clone())
+                .or_default();
+            *retired = (*retired).max(entry.line.id.0);
+            if let Some(track) = self.tracks.get_mut(&entry.id.participant) {
+                track
+                    .rows
+                    .retain(|row| row.item.line.is_none_or(|line| line.0 > *retired));
+            }
+        }
+    }
+
+    /// Receiver-local IDs cannot collide with local process IDs or each other.
+    pub fn render_id(&self, participant: &str, line: LineId) -> LineId {
+        let entry = self
+            .entries
+            .iter()
+            .find(|e| e.id.participant == participant && e.line.id == line);
+        if let Some(entry) = entry {
+            return LineId(entry.order | (1 << 63));
+        }
+        let digest = blake3::hash(format!("{}:{participant}:{}", self.session, line.0).as_bytes());
+        LineId(
+            u64::from_le_bytes(digest.as_bytes()[..8].try_into().expect("eight bytes")) | (3 << 62),
+        )
+    }
+
+    pub fn asset_hashes(&self) -> BTreeSet<String> {
+        let value = serde_json::to_value(self).expect("room");
+        asset_references(&value)
+            .into_iter()
+            .filter_map(|reference| reference.strip_prefix("blob:p2p-"))
+            .filter(|hash| valid_hash(hash))
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+/// Resource fields in the serialized session schema; ordinary text is excluded.
+pub fn asset_references(value: &serde_json::Value) -> Vec<&str> {
+    fn visit<'a>(value: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+        match value {
+            serde_json::Value::Object(object) => {
+                for (key, value) in object {
+                    if matches!(key.as_str(), "asset" | "avatar")
+                        && let Some(reference) = value.as_str()
+                    {
+                        out.push(reference);
+                    } else {
+                        visit(value, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(array) => {
+                for value in array {
+                    visit(value, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut references = Vec::new();
+    visit(value, &mut references);
+    references
+}
+
+pub fn valid_hash(hash: &str) -> bool {
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+fn rebase_reveal(reveal: &mut Reveal, remote_now: u64, now: u64) {
+    if let Some(seg) = &mut reveal.segment {
+        // Preserve elapsed reveal even when the receiver only just launched.
+        seg.reveal_ms = seg
+            .reveal_ms
+            .iter()
+            .map(|offset| {
+                (seg.origin_ms
+                    .saturating_add(u64::from(*offset))
+                    .saturating_sub(remote_now))
+                .min(u64::from(u32::MAX)) as u32
+            })
+            .collect();
+        seg.origin_ms = now;
+    }
+}
+
+pub fn rebase_display(view: &mut DisplayView, remote_now: u64, now: u64) {
+    rebase_reveal(&mut view.reveal, remote_now, now);
+    if let Some((at, ms)) = &mut view.fade {
+        let elapsed = remote_now.saturating_sub(*at);
+        if elapsed >= u64::from(*ms) {
+            view.empty = true;
+            view.fade = None;
+        } else {
+            *at = now;
+            *ms -= elapsed as u32;
+        }
+    }
+    if let Some(shake) = &mut view.shake {
+        let elapsed = remote_now.saturating_sub(shake.at_ms);
+        if elapsed >= u64::from(shake.ms) {
+            view.shake = None;
+        } else {
+            shake.at_ms = now;
+            shake.ms -= elapsed as u32;
+        }
+    }
+}
+
+pub fn rebase_row(row: &mut HistoryRow, remote_now: u64, now: u64) {
+    if let Some(reveal) = &mut row.reveal {
+        rebase_reveal(reveal, remote_now, now);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) enum Frame {
+    Hello {
+        v: u32,
+        session: String,
+        secret: String,
+    },
+    Welcome(Room),
+    Submit {
+        sequence: u64,
+        line: Line,
+        avatar: Option<String>,
+    },
+    Track(TrackSnapshot),
+    PeerTrack {
+        participant: String,
+        track: TrackSnapshot,
+    },
+    Room(Room),
+    Ping(u64),
+    Pong(u64),
+    Leave,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nanatype_model::{Document, Speaker};
+    #[test]
+    fn resource_discovery_includes_nested_media_but_excludes_text() {
+        let value = serde_json::json!({
+            "text": "blob:p2p-not-a-resource",
+            "avatar": "blob:face",
+            "doc": [{"asset":"lib:heart"}, {"quote":{"avatar":"blob:quoted"}}],
+            "portraits":[{"asset":"skin:portrait.png"}]
+        });
+        let references: BTreeSet<_> = asset_references(&value).into_iter().collect();
+        assert_eq!(
+            references,
+            BTreeSet::from(["blob:face", "blob:quoted", "lib:heart", "skin:portrait.png",])
+        );
+    }
+
+    #[test]
+    fn duplicate_submission_is_not_reinserted_after_pruning() {
+        let mut room = Room::new("s".into(), "a".into());
+        let line = Line::new(Document::new(), Speaker::default());
+        for n in 1..=1002 {
+            assert!(room.submit("a", n, line.clone(), None));
+        }
+        assert_eq!(room.entries.len(), MAX_ENTRIES);
+        assert!(!room.submit("a", 1, line, None));
+        assert_eq!(room.entries[0].order, 3);
+    }
+    #[test]
+    fn owners_with_the_same_local_line_id_get_distinct_render_ids() {
+        let mut room = Room::new("s".into(), "a".into());
+        let line = Line::new(Document::new(), Speaker::default());
+        room.submit("a", 1, line.clone(), None);
+        room.submit("b", 1, line.clone(), None);
+        assert_ne!(room.render_id("a", line.id), room.render_id("b", line.id));
+    }
+    #[test]
+    fn rebase_handles_receiver_clock_younger_than_the_line() {
+        let mut reveal = Reveal::full(3);
+        reveal.shown = 0;
+        reveal.segment = Some(nanatype_core::SegmentReveal {
+            origin_ms: 1000,
+            start: 0,
+            reveal_ms: vec![0, 50, 150].into(),
+        });
+        rebase_reveal(&mut reveal, 1100, 10);
+        assert_eq!(reveal.unit_at(0), Some(10));
+        assert_eq!(reveal.unit_at(2), Some(60));
+    }
+    #[test]
+    fn rejects_invalid_and_newer_invitations() {
+        assert!(Invite::decode("hello").is_err());
+        assert!(Invite::decode(&format!("nanatype1:{}", "a".repeat(17000))).is_err());
+        let value = serde_json::json!({"v":2,"session":"s","secret":"x","addr":{"id":"bad"}});
+        assert!(
+            Invite::decode(&format!(
+                "nanatype1:{}",
+                URL_SAFE_NO_PAD.encode(value.to_string())
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn track_versions_cannot_move_backwards_or_cross_owners() {
+        let mut room = Room::new("session".into(), "a".into());
+        let track = TrackSnapshot {
+            revision: 4,
+            captured_ms: 20,
+            age_ms: 0,
+            name: "A".into(),
+            display: DisplayView::empty(nanatype_model::Entrance {
+                kind: nanatype_model::EntranceKind::None,
+                ms: 0,
+            }),
+            rows: Vec::new(),
+            portraits: Vec::new(),
+        };
+        assert!(room.update("a", track.clone()).unwrap());
+        let mut stale = track.clone();
+        stale.revision = 3;
+        assert!(!room.update("a", stale).unwrap());
+        assert!(room.update("b", track).unwrap());
+        assert_eq!(room.tracks.len(), 2);
+        assert_eq!(room.tracks["a"].revision, 4);
+    }
+}

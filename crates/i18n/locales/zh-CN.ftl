@@ -560,3 +560,32 @@ chat-inserted = 已插入 @{ $name }
 chat-queued = 已排队 · { $count } 条
 chat-room-owner = 房主
 chat-moderator = 房管
+
+# Two-person sessions
+peer-title = 双人联机
+peer-expand = 展开
+peer-collapse = 收起
+peer-off = 未联机
+peer-connecting = 正在连接…
+peer-waiting = 等待对方加入
+peer-reconnecting = 正在重连…
+peer-direct = 直连
+peer-relay = 中继
+peer-error = 联机失败
+peer-create = 创建联机
+peer-join = 加入
+peer-leave = 离开联机
+peer-copy = 复制邀请
+peer-invitation = 粘贴对方的联机邀请
+peer-relay-placeholder = 自定义中继 URL（留空使用公共中继）
+peer-own-controls = 自己与伙伴使用独立展示窗口；快捷键只控制自己的台词。
+peer-paused = 等待联机恢复后再发送或控制播放；可以继续编辑草稿。
+
+# Independent partner output
+window-peer-display = 联机伙伴展示框
+windows-peer-display = 联机伙伴
+output-peer-display = 展示框 · 联机伙伴
+peer-window-toggle = 伙伴窗口
+output-name-conflict = 输出名称重复，请为每个输出设置不同的名称。
+
+output-peer-hint = 联机期间独立输出伙伴画面；隐藏窗口仍会输出。

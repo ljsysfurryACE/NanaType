@@ -32,6 +32,7 @@ nanatype-audio.workspace = true
 nanatype-bridge.workspace = true
 nanatype-blive.workspace = true
 nanatype-core.workspace = true
+nanatype-p2p.workspace = true
 nana-ui.workspace = true
 nana-ui-platform.workspace = true
 nana-ui-core.workspace = true

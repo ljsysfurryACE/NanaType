@@ -10,6 +10,7 @@ pub mod keycap;
 pub mod link_text;
 pub mod motion;
 pub mod overflow;
+pub mod p2p;
 pub mod quote;
 pub mod rich;
 pub mod settings;
@@ -79,6 +80,7 @@ pub struct Status {
     pub blive: String,
     pub blive_link: danmaku::Link,
     pub spout_display: LinkState,
+    pub spout_peer_display: LinkState,
     pub spout_history: LinkState,
     pub notices: Vec<Notice>,
     pub queued: usize,
@@ -134,6 +136,16 @@ pub struct Ui {
     pub settings: Signal<Arc<Settings>>,
     pub skin: Signal<Arc<Skin>>,
     pub display: Signal<Arc<DisplayView>>,
+    pub peer_display: Signal<Arc<DisplayView>>,
+    pub peer: Signal<Arc<crate::p2p::SessionUi>>,
+    pub peer_panel: Signal<bool>,
+    pub peer_text_node: NodeRef,
+    pub peer_text_port: NodeRef,
+    pub peer_text_scroll: Signal<f32>,
+    pub peer_portraits: Signal<Arc<HashMap<String, String>>>,
+    pub peer_local_line: Signal<Option<nanatype_model::LineId>>,
+    /// Stable slot for per-track animation and layout caches.
+    pub track_slot: usize,
     /// Animation clock (ms); advanced every frame while something moves.
     pub now: Signal<u64>,
     pub history: Signal<Arc<Vec<HistoryRow>>>,
@@ -198,6 +210,15 @@ impl Ui {
             settings: signal(settings),
             skin: signal(skin),
             display: signal(Arc::new(DisplayView::empty(entrance))),
+            peer_display: signal(Arc::new(DisplayView::empty(entrance))),
+            peer: signal(Arc::new(crate::p2p::SessionUi::default())),
+            peer_panel: signal(false),
+            peer_text_node: node_ref(),
+            peer_text_port: node_ref(),
+            peer_text_scroll: signal(0.0),
+            peer_portraits: signal(Arc::new(HashMap::new())),
+            peer_local_line: signal(None),
+            track_slot: 0,
             now: signal(crate::clock::now_ms()),
             history: signal(Arc::new(Vec::new())),
             draft: signal(Arc::new(Document::new())),
@@ -227,6 +248,27 @@ impl Ui {
             chat_width: signal(400.0),
             chat_target: signal(None),
             skins_grid: signal(true),
+        }
+    }
+
+    /// A string that follows the language setting.
+    pub fn display_kind(self) -> crate::windows::WindowKind {
+        if self.track_slot == 1 {
+            crate::windows::WindowKind::PeerDisplay
+        } else {
+            crate::windows::WindowKind::Display
+        }
+    }
+
+    pub fn remote(self) -> Self {
+        Self {
+            display: self.peer_display,
+            text_node: self.peer_text_node,
+            text_port: self.peer_text_port,
+            text_scroll: self.peer_text_scroll,
+            portraits: self.peer_portraits,
+            track_slot: 1,
+            ..self
         }
     }
 

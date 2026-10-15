@@ -38,6 +38,7 @@ pub struct Host {
     editor_fx: Option<(usize, bool)>,
     /// The typewriter's scroll through long text.
     follow: overflow::Follow,
+    peer_follow: overflow::Follow,
     /// The typewriter's automatic page breaks.
     pager: overflow::Pager,
     /// The toast stack of each control window (settings, input, chat).
@@ -195,9 +196,12 @@ impl Host {
         match kind {
             WindowKind::Display => {
                 context
-                    .mount_view_root(doc_id, move || {
-                        dialogue::dialogue_box(ui, dialogue::Source::Display, None)
-                    })
+                    .mount_view_root(doc_id, move || dialogue::display_window(ui))
+                    .map_err(err)?;
+            }
+            WindowKind::PeerDisplay => {
+                context
+                    .mount_view_root(doc_id, move || dialogue::peer_window(ui))
                     .map_err(err)?;
             }
             WindowKind::History => {
@@ -256,19 +260,27 @@ impl Host {
 
     /// Read the typewriter's last layout: scroll along with the typing, or
     /// tell the core where a full box turns the page.
-    fn follow_text(&mut self, now: u64) {
-        let ui = self.app.ui;
+    fn follow_track(&mut self, now: u64, remote: bool) {
+        let ui = if remote {
+            self.app.ui.remote()
+        } else {
+            self.app.ui
+        };
         let view = ui.display.get_untracked();
-        let mut mode = self.app.skin.dialogue.overflow;
+        let mut mode = if remote {
+            Overflow::Scroll
+        } else {
+            self.app.skin.dialogue.overflow
+        };
         let mirror = self.app.settings.general.input_mode == nanatype_settings::InputMode::Mirror;
         if mode == Overflow::Page && (mirror || view.line.is_none()) {
             // Nothing to page while the text follows the editor.
             mode = Overflow::Scroll;
         }
         let key = (!view.empty && mode != Overflow::Clip).then(|| PageKey::of(&view));
-        let page = overflow::published().filter(|p| Some(p.key) == key);
+        let page = overflow::published_on(ui.track_slot).filter(|p| Some(p.key) == key);
         let measure = page.as_ref().and_then(|page| {
-            let world = self.docs.get(&WindowKind::Display.id())?.context().world();
+            let world = self.docs.get(&ui.display_kind().id())?.context().world();
             let (_, layout) = world.text_layout(ui.text_node.get_untracked()?)?;
             // A layout of an older node until the new one is laid out.
             let end = layout.lines.last()?.source.end;
@@ -294,8 +306,14 @@ impl Host {
             Overflow::Page => (None, key),
             _ => (key, None),
         };
-        let y = self.follow.frame(follow, measure.as_ref(), now, reduced);
-        if let Some(breaks) = self.pager.frame(pager, measure.as_ref())
+        let follower = if remote {
+            &mut self.peer_follow
+        } else {
+            &mut self.follow
+        };
+        let y = follower.frame(follow, measure.as_ref(), now, reduced);
+        if !remote
+            && let Some(breaks) = self.pager.frame(pager, measure.as_ref())
             && let Some(line) = view.line
         {
             self.app.post(Msg::Core(Cmd::PageBreaks { line, breaks }));
@@ -414,6 +432,7 @@ impl RuntimeProgram for Host {
             source: None,
             editor_fx: None,
             follow: overflow::Follow::default(),
+            peer_follow: overflow::Follow::default(),
             pager: overflow::Pager::default(),
             toasts: HashMap::new(),
         };
@@ -544,9 +563,12 @@ impl RuntimeProgram for Host {
                     let editing = kind
                         .overlay(&self.app.settings)
                         .is_some_and(|o| o.lock == nanatype_settings::Lock::EditLayout);
-                    let current = crate::windows::size_of(kind, &self.app.skin, &self.app.settings);
+                    let current = self.app.window_size(kind);
                     if editing
-                        && matches!(kind, WindowKind::Display | WindowKind::History)
+                        && matches!(
+                            kind,
+                            WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History
+                        )
                         && ((current.0 - w).abs() > 1.0 || (current.1 - h).abs() > 1.0)
                     {
                         self.app.edit(|s| {
@@ -627,7 +649,9 @@ impl RuntimeProgram for Host {
                 .and_then(|k| k.overlay(&self.app.settings))
                 .is_some_and(|o| o.lock == nanatype_settings::Lock::EditLayout);
             let drag = match kind {
-                Some(WindowKind::Display | WindowKind::History) => editing,
+                Some(WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History) => {
+                    editing
+                }
                 Some(WindowKind::Input) => input.pointer_hit.is_none() || editing,
                 _ => false,
             };
@@ -679,7 +703,11 @@ impl RuntimeProgram for Host {
     }
 
     fn window_output(&self, id: WindowId) -> Option<nana_ui::WindowOutputConfig> {
-        crate::output::config(WindowKind::from_id(id)?, &self.app.settings)
+        let kind = WindowKind::from_id(id)?;
+        if kind == WindowKind::PeerDisplay && self.app.peer.handle.is_none() {
+            return None;
+        }
+        crate::output::config(kind, &self.app.settings)
     }
 
     fn window_output_frame(
@@ -688,6 +716,9 @@ impl RuntimeProgram for Host {
         frame: &nana_ui::WindowOutputFrame,
         context: &RuntimeProgramContext<Msg>,
     ) {
+        if self.window_output(id).is_none() {
+            return;
+        }
         let Some(kind) = WindowKind::from_id(id) else {
             return;
         };
@@ -730,6 +761,11 @@ impl RuntimeProgram for Host {
                     || self.follow.wants_frame()
                     || self.pager.wants_frame()
             }
+            Some(WindowKind::PeerDisplay) => {
+                ui.peer.get_untracked().active
+                    && (dialogue::display_animating(ui.remote(), now)
+                        || self.peer_follow.wants_frame())
+            }
             Some(WindowKind::History) => history_fading(ui, now),
             Some(WindowKind::Input) => input::mirror_chip_pulsing(ui),
             Some(WindowKind::Settings) => crate::ui::settings::links_pulsing(ui),
@@ -749,6 +785,9 @@ impl RuntimeProgram for Host {
         } else if let Some(at) = match WindowKind::from_id(id) {
             Some(WindowKind::History) => next_history_fade(ui, now),
             Some(WindowKind::Display) => self.follow.next_line_at(),
+            Some(WindowKind::PeerDisplay) if ui.peer.get_untracked().active => {
+                self.peer_follow.next_line_at()
+            }
             _ => None,
         } {
             FrameDemand::At(clock::instant(at))
@@ -759,13 +798,21 @@ impl RuntimeProgram for Host {
 
     fn prepare_window_frame(&mut self, id: WindowId, _: &RuntimeProgramContext<Msg>) {
         let now = clock::now_ms();
-        if WindowKind::from_id(id) == Some(WindowKind::Display) {
-            self.follow_text(now);
+        match WindowKind::from_id(id) {
+            Some(WindowKind::Display) => self.follow_track(now, false),
+            Some(WindowKind::PeerDisplay) if self.app.peer.handle.is_some() => {
+                self.follow_track(now, true)
+            }
+            _ => {}
         }
         // The animation clock only runs for what animates on it; following
         // the text drives its own scroll.
         let animating = match WindowKind::from_id(id) {
             Some(WindowKind::Display) => dialogue::display_animating(self.app.ui, now),
+            Some(WindowKind::PeerDisplay) => {
+                self.app.ui.peer.get_untracked().active
+                    && dialogue::display_animating(self.app.ui.remote(), now)
+            }
             Some(WindowKind::History) => history_fading(self.app.ui, now),
             _ => false,
         };

@@ -2004,22 +2004,27 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
 }
 
 /// The overlay windows, in the matrix's column order.
-const OVERLAYS: [WindowKind; 3] = [WindowKind::Display, WindowKind::History, WindowKind::Input];
+const OVERLAYS: [WindowKind; 4] = [
+    WindowKind::Display,
+    WindowKind::PeerDisplay,
+    WindowKind::History,
+    WindowKind::Input,
+];
 /// Width of the matrix's row labels.
 const MATRIX_LABEL_W: f32 = 150.0;
 /// Space between the matrix's columns.
 const MATRIX_GAP: f32 = space::MD;
 
 /// A matrix line: a label, then one cell per overlay window.
-fn matrix_row(label: AnyView, cells: [AnyView; 3]) -> AnyView {
+fn matrix_row(label: AnyView, cells: [AnyView; 4]) -> AnyView {
     let cells = cells.map(|cell| {
         widget(
-            // A third of what the label and the gaps leave, so the columns
+            // A quarter of what the label and the gaps leave, so the columns
             // line up whatever their cells hold.
             Stack::row(0.0).align(AlignSpec::Center).with_layout(|l| {
                 l.width = Some(crate::ui::surface::calc(
-                    100.0 / 3.0,
-                    -(MATRIX_LABEL_W + 3.0 * MATRIX_GAP) / 3.0 - 0.5,
+                    100.0 / 4.0,
+                    -(MATRIX_LABEL_W + 4.0 * MATRIX_GAP) / 4.0 - 0.5,
                 ));
                 l.flex_shrink = Some(0.0);
                 l.min_width = Some(LengthSpec::Px(0.0));
@@ -2134,7 +2139,7 @@ fn overlay_select(
         .into_any()
 }
 
-/// The three overlay windows side by side: one line per setting, one
+/// The overlay windows side by side: one line per setting, one
 /// column per window, "—" where a setting does not apply.
 fn windows(ui: Ui) -> AnyView {
     let header = matrix_row(
@@ -2142,6 +2147,7 @@ fn windows(ui: Ui) -> AnyView {
         OVERLAYS.map(|kind| {
             let key = match kind {
                 WindowKind::Display => "windows-display",
+                WindowKind::PeerDisplay => "windows-peer-display",
                 WindowKind::History => "windows-history",
                 _ => "windows-input",
             };
@@ -3055,15 +3061,18 @@ fn output(ui: Ui) -> AnyView {
     let spout = |kind: WindowKind, title: &'static str| {
         let link: fn(&crate::ui::Status) -> &LinkState = match kind {
             WindowKind::Display => |s| &s.spout_display,
+            WindowKind::PeerDisplay => |s| &s.spout_peer_display,
             _ => |s| &s.spout_history,
         };
-        let enabled: fn(&Settings) -> bool = match kind {
-            WindowKind::Display => |s| s.output.display.enabled,
-            _ => |s| s.output.history.enabled,
+        let read: fn(&Settings) -> &nanatype_settings::SpoutOutput = match kind {
+            WindowKind::Display => |s| &s.output.display,
+            WindowKind::PeerDisplay => |s| &s.output.peer_display,
+            _ => |s| &s.output.history,
         };
-        let name = move |s: &Settings| match kind {
-            WindowKind::Display => s.output.display.name.clone(),
-            _ => s.output.history.name.clone(),
+        let write: fn(&mut Settings) -> &mut nanatype_settings::SpoutOutput = match kind {
+            WindowKind::Display => |s| &mut s.output.display,
+            WindowKind::PeerDisplay => |s| &mut s.output.peer_display,
+            _ => |s| &mut s.output.history,
         };
         section(
             ui,
@@ -3076,28 +3085,21 @@ fn output(ui: Ui) -> AnyView {
                     } else {
                         "output-spout"
                     },
-                    None,
+                    (kind == WindowKind::PeerDisplay).then_some("output-peer-hint"),
                     widget(Stack::row(10.0).align(AlignSpec::Center))
                         .children((
                             link_badge(ui, link),
-                            match kind {
-                                WindowKind::Display => switch(
-                                    ui,
-                                    |s| s.output.display.enabled,
-                                    |s, v| s.output.display.enabled = v,
-                                ),
-                                _ => switch(
-                                    ui,
-                                    |s| s.output.history.enabled,
-                                    |s, v| s.output.history.enabled = v,
-                                ),
-                            },
+                            switch(
+                                ui,
+                                move |s| read(s).enabled,
+                                move |s, v| write(s).enabled = v,
+                            ),
                         ))
                         .into_any(),
                 ),
                 when_on(
                     ui,
-                    enabled,
+                    move |s| read(s).enabled,
                     vec![
                         row(
                             ui,
@@ -3105,22 +3107,13 @@ fn output(ui: Ui) -> AnyView {
                             None,
                             widget(Stack::row(6.0))
                                 .children((
-                                    match kind {
-                                        WindowKind::Display => text(
-                                            ui,
-                                            String::new(),
-                                            220.0,
-                                            |s| s.output.display.name.clone(),
-                                            |s, v| s.output.display.name = v,
-                                        ),
-                                        _ => text(
-                                            ui,
-                                            String::new(),
-                                            220.0,
-                                            |s| s.output.history.name.clone(),
-                                            |s, v| s.output.history.name = v,
-                                        ),
-                                    },
+                                    text(
+                                        ui,
+                                        String::new(),
+                                        220.0,
+                                        move |s| read(s).name.clone(),
+                                        move |s, v| write(s).name = v,
+                                    ),
                                     widget(
                                         IconButton::new(ti::COPY, ui.now_t("output-spout-copy"))
                                             .size(ControlSize::Small)
@@ -3130,7 +3123,8 @@ fn output(ui: Ui) -> AnyView {
                                         move |_, _: &Activate, cx| {
                                             // Read when clicked: the name may have been edited since the
                                             // page was built.
-                                            let current = name(&ui.settings.get_untracked());
+                                            let current =
+                                                read(&ui.settings.get_untracked()).name.clone();
                                             cx.dispatch_program_all(Msg::CopyText(current))
                                         },
                                     ),
@@ -3151,11 +3145,8 @@ fn output(ui: Ui) -> AnyView {
                                     ("3840x2160".into(), "3840 × 2160".into()),
                                 ],
                                 move |s| {
-                                    let o = match kind {
-                                        WindowKind::Display => &s.output.display,
-                                        _ => &s.output.history,
-                                    };
-                                    o.size
+                                    read(s)
+                                        .size
                                         .map(|[w, h]| format!("{w}x{h}"))
                                         .unwrap_or_else(|| "window".into())
                                 },
@@ -3163,10 +3154,7 @@ fn output(ui: Ui) -> AnyView {
                                     let size = v.split_once('x').and_then(|(w, h)| {
                                         Some([w.parse().ok()?, h.parse().ok()?])
                                     });
-                                    match kind {
-                                        WindowKind::Display => s.output.display.size = size,
-                                        _ => s.output.history.size = size,
-                                    }
+                                    write(s).size = size;
                                 },
                             ),
                         ),
@@ -3174,18 +3162,11 @@ fn output(ui: Ui) -> AnyView {
                             ui,
                             "output-spout-straight",
                             Some("output-spout-straight-hint"),
-                            match kind {
-                                WindowKind::Display => switch(
-                                    ui,
-                                    |s| s.output.display.straight_alpha,
-                                    |s, v| s.output.display.straight_alpha = v,
-                                ),
-                                _ => switch(
-                                    ui,
-                                    |s| s.output.history.straight_alpha,
-                                    |s, v| s.output.history.straight_alpha = v,
-                                ),
-                            },
+                            switch(
+                                ui,
+                                move |s| read(s).straight_alpha,
+                                move |s, v| write(s).straight_alpha = v,
+                            ),
                         ),
                     ],
                     "output-off-hint",
@@ -3197,6 +3178,7 @@ fn output(ui: Ui) -> AnyView {
         .children((
             section(ui, "output-obs-title", vec![obs_guide(ui)]),
             spout(WindowKind::Display, "output-display"),
+            spout(WindowKind::PeerDisplay, "output-peer-display"),
             spout(WindowKind::History, "output-history"),
         ))
         .into_any()

@@ -12,3 +12,4 @@ nanatype-markup.workspace = true
 nanatype-playback.workspace = true
 nanatype-settings.workspace = true
 nanatype-theme.workspace = true
+serde.workspace = true

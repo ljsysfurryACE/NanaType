@@ -16,6 +16,7 @@ pub mod host;
 pub mod localtime;
 pub mod msg;
 pub mod output;
+pub mod p2p;
 pub mod paths;
 pub mod scheduler;
 pub mod services;

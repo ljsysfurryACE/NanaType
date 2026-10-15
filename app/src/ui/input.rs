@@ -1645,6 +1645,7 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
     })
     .animate(super::motion::enter_implicit())
     .children((
+        super::p2p::card(ui),
         toolbar(ui),
         widget(Stack::column(0.0).with_layout(|l| l.position = PositionSpec::Relative))
             .bind(move |s: &mut Stack| {

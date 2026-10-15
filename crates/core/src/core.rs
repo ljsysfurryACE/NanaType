@@ -85,6 +85,8 @@ pub enum UiSound {
 /// Things other programs may want to know (bridge, status bar).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    /// Accepted from the local editor or a quick phrase, even if queued.
+    LineSubmitted(Line),
     LineStarted(Line),
     LineRevealed(LineId),
     LineFinished(LineId),
@@ -527,6 +529,7 @@ impl Core {
     /// Mirror mode send: the line is already on screen; record it and run the
     /// after-line behaviour.
     fn commit_mirror(&mut self, line: Line, now: Millis, fx: &mut Effects) {
+        fx.events.push(Event::LineSubmitted(line.clone()));
         self.mirror_committed = true;
         let doc = Arc::new(line.doc.without_markers());
         let item = self.local_item(&line);
@@ -548,6 +551,7 @@ impl Core {
     }
 
     fn submit(&mut self, line: Line, now: Millis, fx: &mut Effects) {
+        fx.events.push(Event::LineSubmitted(line.clone()));
         let busy = self
             .active
             .as_ref()

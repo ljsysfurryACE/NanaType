@@ -87,6 +87,30 @@ fn blank_drafts_do_not_send() {
 }
 
 #[test]
+fn submission_events_include_queued_quick_phrases_and_mirror_commits_once() {
+    let mut core = core_with(|s| s.playback.queue = QueuePolicy::Queue);
+    type_and_send(&mut core, "first", 0);
+    let fx = core.handle(Cmd::SendMarkup("queued".into()), 1);
+    assert_eq!(
+        fx.events
+            .iter()
+            .filter(|e| matches!(e, Event::LineSubmitted(_)))
+            .count(),
+        1
+    );
+    assert!(!fx.events.iter().any(|e| matches!(e, Event::LineStarted(_))));
+    let mut mirror = core_with(|s| s.general.input_mode = InputMode::Mirror);
+    let fx = type_and_send(&mut mirror, "mirror", 10);
+    assert_eq!(
+        fx.events
+            .iter()
+            .filter(|e| matches!(e, Event::LineSubmitted(_)))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn continue_passes_a_pause_and_skips_a_segment() {
     let mut core = core_with(|_| {});
     let fx = type_and_send(&mut core, "abcdef[pause]gh", 0);

@@ -319,6 +319,7 @@ impl Tray {
                         Lock::Locked
                     };
                     s.overlays.display.lock = lock;
+                    s.overlays.peer_display.lock = lock;
                     s.overlays.history.lock = lock;
                 })),
                 ID_CONTINUE => Msg::Hotkey(GlobalAction::Continue),

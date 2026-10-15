@@ -52,6 +52,7 @@ pub struct App {
     pub loaded: LoadedSkin,
     pub skin: Arc<nanatype_theme::Skin>,
     pub core: Core,
+    pub peer: crate::p2p::Session,
     pub ui: Ui,
     pub assets: AssetLibrary,
     pub windows: WindowManager,
@@ -205,6 +206,7 @@ impl App {
             loaded,
             skin,
             core,
+            peer: crate::p2p::Session::default(),
             ui,
             windows: {
                 let mut w = WindowManager::default();
@@ -415,7 +417,9 @@ impl App {
                 tooltip,
                 badge: crate::services::tray::Badge {
                     mirroring: s.general.input_mode == nanatype_settings::InputMode::Mirror,
-                    hidden: !s.overlays.display.visible && !s.overlays.history.visible,
+                    hidden: !s.overlays.display.visible
+                        && !s.overlays.history.visible
+                        && !(self.peer.handle.is_some() && s.overlays.peer_display.visible),
                     locked,
                 },
             },
@@ -770,7 +774,8 @@ impl App {
 
     pub fn refresh_spout_status(&mut self) {
         let locale = self.ui.locale.get_untracked();
-        self.spout.sync(&self.settings, locale);
+        self.spout
+            .sync(&self.settings, locale, self.peer.handle.is_some());
         let display = self
             .spout
             .status
@@ -783,8 +788,15 @@ impl App {
             .get(&WindowKind::History)
             .cloned()
             .unwrap_or_default();
+        let peer = self
+            .spout
+            .status
+            .get(&WindowKind::PeerDisplay)
+            .cloned()
+            .unwrap_or_default();
         self.edit_status(|s| {
             s.spout_display = display;
+            s.spout_peer_display = peer;
             s.spout_history = history;
         });
     }
@@ -841,6 +853,7 @@ impl App {
             self.sync_tray_skins();
             for kind in [
                 WindowKind::Display,
+                WindowKind::PeerDisplay,
                 WindowKind::History,
                 WindowKind::Settings,
                 WindowKind::Chat,
@@ -892,6 +905,9 @@ impl App {
     // ---- the session ------------------------------------------------------
 
     pub fn run(&mut self, cmd: Cmd) {
+        if self.peer_blocked(&cmd) {
+            return;
+        }
         let fx = self.core.handle(cmd, clock::now_ms());
         self.apply_effects(fx);
     }
@@ -942,6 +958,7 @@ impl App {
             });
         }
         for event in &fx.events {
+            self.peer_submitted(event);
             self.bridge_event(event);
         }
         if let Some(doc) = &fx.replace_draft {
@@ -951,10 +968,18 @@ impl App {
             self.summoned = false;
         }
         if fx.display_changed {
-            self.ui.display.set(Arc::new(self.core.display().clone()));
+            let mut display = self.core.display().clone();
+            if self.peer.handle.is_some()
+                && display
+                    .line
+                    .is_some_and(|id| !self.peer.lines.contains(&id))
+            {
+                display.empty = true;
+            }
+            self.ui.display.set(Arc::new(display));
             self.ui.now.set(clock::now_ms());
         }
-        if fx.history_changed {
+        if fx.history_changed && self.peer.handle.is_none() {
             self.ui
                 .history
                 .set(Arc::new(self.core.history().iter().cloned().collect()));
@@ -968,6 +993,10 @@ impl App {
         }
         if fx.display_changed || fx.history_changed {
             self.refresh_atom_urls();
+            self.peer_publish();
+            if self.peer.handle.is_some() {
+                self.peer_render();
+            }
         }
     }
 
@@ -984,7 +1013,7 @@ impl App {
     }
 
     /// Give every asset of `assets` a URL the views can load.
-    fn ensure_urls(&mut self, assets: impl IntoIterator<Item = AssetRef>) {
+    pub(crate) fn ensure_urls(&mut self, assets: impl IntoIterator<Item = AssetRef>) {
         let urls = self.ui.asset_urls.get_untracked();
         let found: Vec<(String, String)> = assets
             .into_iter()
@@ -1022,7 +1051,7 @@ impl App {
             Event::Vts(action) => BridgeEvent::Vts {
                 action: action.clone(),
             },
-            Event::LineRevealed(_) | Event::Queued { .. } => return,
+            Event::LineSubmitted(_) | Event::LineRevealed(_) | Event::Queued { .. } => return,
         };
         self.bridge.emit(out);
     }
@@ -1403,7 +1432,14 @@ impl App {
 
     pub fn update(&mut self, msg: Msg) {
         match msg {
+            Msg::PeerStart { invitation, relay } => self.peer_start(invitation, relay),
+            Msg::PeerLeave => self.peer_leave(),
+            Msg::PeerPanel(expanded) => self.ui.peer_panel.set(expanded),
+            Msg::PeerEvent(generation, event) => self.peer_event(generation, event),
             Msg::Core(Cmd::Send) => {
+                if self.peer_blocked(&Cmd::Send) {
+                    return;
+                }
                 let fx = self.core.handle(Cmd::Send, clock::now_ms());
                 // A send that took the draft: say so briefly.
                 let sent = fx.replace_draft.as_ref().is_some_and(Document::is_blank);
@@ -1906,11 +1942,17 @@ impl App {
                     nanatype_settings::InputMode::Mirror => nanatype_settings::InputMode::Compose,
                 }
             }),
-            GlobalAction::ToggleOverlays => self.edit(|s| {
-                let show = !(s.overlays.display.visible || s.overlays.history.visible);
-                s.overlays.display.visible = show;
-                s.overlays.history.visible = show;
-            }),
+            GlobalAction::ToggleOverlays => {
+                let peer_active = self.peer.handle.is_some();
+                self.edit(|s| {
+                    let show = !(s.overlays.display.visible
+                        || s.overlays.history.visible
+                        || (peer_active && s.overlays.peer_display.visible));
+                    s.overlays.display.visible = show;
+                    s.overlays.peer_display.visible = show;
+                    s.overlays.history.visible = show;
+                });
+            }
             GlobalAction::Phrase(i) => self.update(Msg::InsertPhrase(i)),
         }
     }
@@ -1933,15 +1975,29 @@ impl App {
         });
     }
 
+    pub fn window_size(&self, kind: WindowKind) -> (f32, f32) {
+        let (w, h) = windows::size_of(kind, &self.skin, &self.settings);
+        let h = match kind {
+            WindowKind::Input => h + crate::ui::p2p::card_height(self.ui),
+            _ => h,
+        };
+        (w, h)
+    }
+
     /// Native window state for this frame.
     pub fn reconcile_windows(&mut self) -> Vec<WindowCommand> {
         let want: Vec<_> = WindowKind::ALL
             .into_iter()
             .map(|k| {
-                (
-                    k,
-                    windows::desired(k, &self.skin, &self.settings, self.summoned),
-                )
+                (k, {
+                    let mut desired =
+                        windows::desired(k, &self.skin, &self.settings, self.summoned);
+                    desired.size = self.window_size(k);
+                    if k == WindowKind::PeerDisplay && self.peer.handle.is_none() {
+                        desired.visible = false;
+                    }
+                    desired
+                })
             })
             .collect();
         let mut out = std::mem::take(&mut self.commands);

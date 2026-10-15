@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use nanatype_model::{ChatRef, Document, Entrance, HistoryItem, LineId, Speaker};
@@ -5,7 +6,7 @@ use nanatype_model::{ChatRef, Document, Entrance, HistoryItem, LineId, Speaker};
 use crate::Millis;
 
 /// Units of the current segment that animate in.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentReveal {
     pub origin_ms: Millis,
     /// First unit of the segment.
@@ -15,7 +16,7 @@ pub struct SegmentReveal {
 }
 
 /// Which units of a document a surface draws, and when each appears.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Reveal {
     /// Units before this are off the page (cleared by a page marker).
     pub visible_from: u32,
@@ -85,7 +86,7 @@ impl Reveal {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ShakeView {
     pub at_ms: Millis,
     pub amp: f32,
@@ -93,7 +94,7 @@ pub struct ShakeView {
 }
 
 /// Everything the typewriter (and the input preview) needs to paint.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DisplayView {
     /// Bumps on every change; renderers compare it to skip work.
     pub revision: u64,
@@ -148,7 +149,7 @@ impl DisplayView {
 }
 
 /// One row of the history list.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryRow {
     /// Stable key for list diffing and entrance animation.
     pub key: u64,

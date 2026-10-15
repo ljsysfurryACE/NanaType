@@ -553,12 +553,123 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     let ih = (nanatype::windows::TOOLBAR_H
         + d.region[1]
         + d.overscan * 2.0
-        + nanatype::windows::STATUS_H) as u32;
+        + nanatype::windows::STATUS_H
+        + nanatype::ui::p2p::card_height(ui)) as u32;
     shot("input", out, w, ih, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();
     });
+    ui.peer_panel.set(true);
+    shot("p2p-create", out, w, ih + 114, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || input::input_window(ui))
+            .unwrap();
+    });
+    let mut peer_settings = settings.clone();
+    peer_settings.general.speaker_name = "联机伙伴 / Partner".into();
+    let mut peer_core = Core::new(peer_settings, skin.clone());
+    peer_core.handle(
+        Cmd::SendMarkup(
+            "[color=#689fd7]我这边也能看到你的台词！[/color]\n两个人可以同时显示，也可以独立继续。"
+                .into(),
+        ),
+        0,
+    );
+    peer_core.handle(Cmd::Skip, 1);
+    ui.peer_display.set(Arc::new(peer_core.display().clone()));
+    ui.peer.set(Arc::new(nanatype::p2p::SessionUi {
+        active: true,
+        host: true,
+        invitation: "nanatype1:preview".into(),
+        name: "联机伙伴".into(),
+        status: nanatype_p2p::Status::Connected {
+            route: "direct".into(),
+            rtt_ms: 28,
+        },
+    }));
+    shot("p2p-input", out, w, ih + 114, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || input::input_window(ui))
+            .unwrap();
+    });
+    shot("p2p-local-display", out, w, h, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || dialogue::display_window(ui))
+            .unwrap();
+    });
+    shot(
+        "p2p-partner-display",
+        out,
+        w,
+        h,
+        theme.clone(),
+        |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || dialogue::peer_window(ui))
+                .unwrap();
+        },
+    );
+    for page in [settings::Page::Windows, settings::Page::Output] {
+        ui.page.set(page);
+        shot(
+            &format!("p2p-settings-{page:?}"),
+            out,
+            920,
+            900,
+            theme.clone(),
+            |doc, id| {
+                doc.context_mut()
+                    .mount_view_root(id, move || settings::settings_window(ui))
+                    .unwrap();
+            },
+        );
+    }
+    ui.page.set(settings::Page::Windows);
+    shot(
+        "p2p-settings-Windows-narrow",
+        out,
+        720,
+        660,
+        theme.clone(),
+        |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || settings::settings_window(ui))
+                .unwrap();
+        },
+    );
+    let before_output = ui.settings.get_untracked();
+    let mut enabled_output = (*before_output).clone();
+    enabled_output.output.display.enabled = true;
+    enabled_output.output.peer_display.enabled = true;
+    enabled_output.output.history.enabled = true;
+    ui.settings.set(Arc::new(enabled_output));
+    let before_output_status = ui.status.get_untracked();
+    let mut output_status = (*before_output_status).clone();
+    output_status.spout_display = LinkState::Connecting;
+    output_status.spout_peer_display = LinkState::Connecting;
+    output_status.spout_history = LinkState::Connecting;
+    ui.status.set(Arc::new(output_status));
+    ui.page.set(settings::Page::Output);
+    shot(
+        "p2p-settings-Output-enabled",
+        out,
+        920,
+        1400,
+        theme.clone(),
+        |doc, id| {
+            doc.context_mut()
+                .mount_view_root(id, move || settings::settings_window(ui))
+                .unwrap();
+        },
+    );
+    ui.settings.set(before_output);
+    ui.status.set(before_output_status);
+    ui.peer.set(Arc::new(nanatype::p2p::SessionUi::default()));
+    ui.peer_panel.set(false);
+    if std::env::var_os("NANATYPE_P2P_SNAPSHOTS_ONLY").is_some() {
+        return;
+    }
     // The toolbar's `?` sheet as its popover shows it.
     shot(
         "input-cheatsheet",

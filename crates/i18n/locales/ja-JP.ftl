@@ -560,3 +560,32 @@ chat-inserted = @{ $name } を挿入しました
 chat-queued = 待機中 · { $count } 件
 chat-room-owner = 配信者
 chat-moderator = モデレーター
+
+# Two-person sessions
+peer-title = 2人で接続
+peer-expand = 開く
+peer-collapse = 閉じる
+peer-off = 未接続
+peer-connecting = 接続中…
+peer-waiting = 相手の参加待ち
+peer-reconnecting = 再接続中…
+peer-direct = 直接接続
+peer-relay = リレー
+peer-error = 接続失敗
+peer-create = 接続を作成
+peer-join = 参加
+peer-leave = 退出
+peer-copy = 招待をコピー
+peer-invitation = 相手の招待を貼り付け
+peer-relay-placeholder = カスタムリレー URL（空欄で公開リレー）
+peer-own-controls = 自分と相手の表示枠は独立しています。ショートカットは自分の台詞だけを操作します。
+peer-paused = 再接続後に送信・再生操作できます。下書きは続けて編集できます。
+
+# Independent partner output
+window-peer-display = 接続相手の表示枠
+windows-peer-display = 接続相手
+output-peer-display = 接続相手の表示枠
+peer-window-toggle = 相手の表示枠
+output-name-conflict = 出力名が重複しています。出力ごとに異なる名前を指定してください。
+
+output-peer-hint = 連携中は相手の画面を個別出力します。ウィンドウを隠しても出力を続けます。

@@ -52,14 +52,39 @@ fn spout_error_key(e: &nanalive_spout::SpoutOutputError) -> &'static str {
 pub fn settings_for(kind: WindowKind, s: &Settings) -> Option<&SpoutOutput> {
     match kind {
         WindowKind::Display => Some(&s.output.display),
+        WindowKind::PeerDisplay => Some(&s.output.peer_display),
         WindowKind::History => Some(&s.output.history),
         _ => None,
     }
 }
 
-/// The output NanaUI should produce for a window, if any.
+pub const KINDS: [WindowKind; 3] = [
+    WindowKind::Display,
+    WindowKind::PeerDisplay,
+    WindowKind::History,
+];
+
+pub fn name_conflicts(kind: WindowKind, s: &Settings) -> bool {
+    let Some(output) = settings_for(kind, s) else {
+        return false;
+    };
+    KINDS
+        .into_iter()
+        .filter(|other| *other != kind)
+        .filter_map(|other| settings_for(other, s))
+        .any(|other| {
+            output.enabled
+                && other.enabled
+                && !output.name.trim().is_empty()
+                && output.name.trim() == other.name.trim()
+        })
+}
+
 pub fn config(kind: WindowKind, s: &Settings) -> Option<WindowOutputConfig> {
     if !(cfg!(windows) || cfg!(target_os = "macos")) {
+        return None;
+    }
+    if name_conflicts(kind, s) {
         return None;
     }
     let out = settings_for(kind, s).filter(|o| o.enabled && !o.name.trim().is_empty())?;
@@ -112,14 +137,16 @@ fn t(locale: Locale, key: &str) -> String {
 
 impl Spout {
     /// Drop senders whose output was turned off or renamed.
-    pub fn sync(&mut self, s: &Settings, locale: Locale) {
-        for kind in [WindowKind::Display, WindowKind::History] {
-            let wanted = settings_for(kind, s).filter(|o| o.enabled);
+    pub fn sync(&mut self, s: &Settings, locale: Locale, peer_active: bool) {
+        for kind in KINDS {
+            let conflict = name_conflicts(kind, s);
+            let wanted = settings_for(kind, s)
+                .filter(|o| o.enabled && (kind != WindowKind::PeerDisplay || peer_active));
             #[cfg(windows)]
             if self
                 .senders
                 .get(&kind)
-                .is_some_and(|x| wanted.is_none_or(|o| o.name != x.name))
+                .is_some_and(|x| wanted.is_none_or(|o| o.name != x.name) || conflict)
             {
                 self.senders.remove(&kind);
             }
@@ -128,6 +155,7 @@ impl Spout {
                 Some(_) if !(cfg!(windows) || cfg!(target_os = "macos")) => {
                     LinkState::Error(t(locale, "output-spout-unsupported"))
                 }
+                Some(_) if conflict => LinkState::Error(t(locale, "output-name-conflict")),
                 Some(_) => match self.status.get(&kind) {
                     // Just switched on: no frame has gone out yet.
                     None | Some(LinkState::Off) => LinkState::Connecting,
@@ -138,11 +166,15 @@ impl Spout {
         }
         #[cfg(target_os = "macos")]
         self.syphon.sync(
-            &[WindowKind::Display, WindowKind::History]
+            &KINDS
                 .into_iter()
                 .filter_map(|kind| {
                     let out = settings_for(kind, s)?;
-                    (out.enabled && !out.name.trim().is_empty()).then(|| (kind, out.name.clone()))
+                    (out.enabled
+                        && !out.name.trim().is_empty()
+                        && !name_conflicts(kind, s)
+                        && (kind != WindowKind::PeerDisplay || peer_active))
+                        .then(|| (kind, out.name.clone()))
                 })
                 .collect::<Vec<_>>(),
         );
@@ -240,5 +272,110 @@ impl Spout {
             let _ = (frame, gpu);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn independent_outputs_keep_their_size_and_alpha() {
+        if !(cfg!(windows) || cfg!(target_os = "macos")) {
+            return;
+        }
+        let mut s = Settings::default();
+        s.output.display.enabled = true;
+        s.output.display.size = Some([1280, 720]);
+        s.output.peer_display.enabled = true;
+        s.output.peer_display.size = Some([640, 360]);
+        s.output.peer_display.straight_alpha = true;
+        let own = config(WindowKind::Display, &s).unwrap();
+        let peer = config(WindowKind::PeerDisplay, &s).unwrap();
+        assert_eq!(
+            own.extent,
+            WindowOutputExtent::Fixed {
+                width: 1280,
+                height: 720
+            }
+        );
+        assert_eq!(
+            peer.extent,
+            WindowOutputExtent::Fixed {
+                width: 640,
+                height: 360
+            }
+        );
+        assert_eq!(own.alpha, WindowOutputAlpha::Premultiplied);
+        assert_eq!(peer.alpha, WindowOutputAlpha::Straight);
+        assert!(own.while_hidden && peer.while_hidden);
+        s.output.peer_display.enabled = false;
+        assert!(config(WindowKind::PeerDisplay, &s).is_none());
+        assert_eq!(config(WindowKind::Display, &s), Some(own));
+        assert!(config(WindowKind::History, &s).is_none());
+    }
+
+    #[test]
+    fn partner_output_stops_on_leave_and_can_start_again() {
+        if !(cfg!(windows) || cfg!(target_os = "macos")) {
+            return;
+        }
+        let mut s = Settings::default();
+        s.output.display.enabled = true;
+        s.output.peer_display.enabled = true;
+        let mut outputs = Spout::default();
+        let locale = Locale::ZhCn;
+        outputs.sync(&s, locale, false);
+        assert!(matches!(
+            outputs.status[&WindowKind::PeerDisplay],
+            LinkState::Off
+        ));
+        outputs.sync(&s, locale, true);
+        assert!(matches!(
+            outputs.status[&WindowKind::PeerDisplay],
+            LinkState::Connecting
+        ));
+        outputs
+            .status
+            .insert(WindowKind::Display, LinkState::Connected("self".into()));
+        outputs.status.insert(
+            WindowKind::PeerDisplay,
+            LinkState::Connected("partner".into()),
+        );
+        outputs.sync(&s, locale, false);
+        assert!(matches!(
+            outputs.status[&WindowKind::PeerDisplay],
+            LinkState::Off
+        ));
+        assert!(matches!(
+            outputs.status[&WindowKind::Display],
+            LinkState::Connected(_)
+        ));
+        outputs.sync(&s, locale, true);
+        assert!(matches!(
+            outputs.status[&WindowKind::PeerDisplay],
+            LinkState::Connecting
+        ));
+    }
+
+    #[test]
+    fn duplicate_enabled_names_are_rejected() {
+        let mut s = Settings::default();
+        s.output.display.enabled = true;
+        s.output.peer_display.enabled = true;
+        s.output.peer_display.name = s.output.display.name.clone();
+        assert!(name_conflicts(WindowKind::Display, &s));
+        assert!(name_conflicts(WindowKind::PeerDisplay, &s));
+        assert!(!name_conflicts(WindowKind::History, &s));
+        assert!(config(WindowKind::Display, &s).is_none());
+        assert!(config(WindowKind::PeerDisplay, &s).is_none());
+        let mut outputs = Spout::default();
+        outputs.sync(&s, Locale::ZhCn, true);
+        assert!(matches!(
+            outputs.status[&WindowKind::PeerDisplay],
+            LinkState::Error(_)
+        ));
+        s.output.peer_display.enabled = false;
+        assert!(!name_conflicts(WindowKind::Display, &s));
     }
 }

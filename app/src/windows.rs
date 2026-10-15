@@ -18,6 +18,7 @@ use nanatype_theme::Skin;
 pub enum WindowKind {
     Input,
     Display,
+    PeerDisplay,
     History,
     Settings,
     /// The live chat panel: an ordinary window for the streamer, never
@@ -33,12 +34,13 @@ pub const STATUS_H: f32 = 26.0;
 pub const OVERLAY_MIN: (f64, f64) = (160.0, 96.0);
 
 impl WindowKind {
-    pub const OVERLAYS: [Self; 3] = [Self::Input, Self::Display, Self::History];
+    pub const OVERLAYS: [Self; 4] = [Self::Input, Self::Display, Self::PeerDisplay, Self::History];
 
     pub fn id(self) -> WindowId {
         match self {
             Self::Input => WindowId::PRIMARY,
             Self::Display => WindowId(2),
+            Self::PeerDisplay => WindowId(6),
             Self::History => WindowId(3),
             Self::Settings => WindowId(4),
             Self::Chat => WindowId(5),
@@ -46,9 +48,10 @@ impl WindowKind {
     }
 
     /// Windows the app manages, in reconcile order.
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Input,
         Self::Display,
+        Self::PeerDisplay,
         Self::History,
         Self::Settings,
         Self::Chat,
@@ -62,6 +65,7 @@ impl WindowKind {
         match self {
             Self::Input => "nt.input",
             Self::Display => "nt.display",
+            Self::PeerDisplay => "nt.peer-display",
             Self::History => "nt.history",
             Self::Settings => "nt.settings",
             Self::Chat => "nt.chat",
@@ -72,6 +76,7 @@ impl WindowKind {
         match self {
             Self::Input => "input",
             Self::Display => "display",
+            Self::PeerDisplay => "peer_display",
             Self::History => "history",
             Self::Settings => "settings",
             Self::Chat => "chat",
@@ -82,6 +87,7 @@ impl WindowKind {
         match self {
             Self::Input => "window-input",
             Self::Display => "window-display",
+            Self::PeerDisplay => "window-peer-display",
             Self::History => "window-history",
             Self::Settings => "window-settings",
             Self::Chat => "window-chat",
@@ -92,6 +98,7 @@ impl WindowKind {
         match self {
             Self::Input => Some(&s.overlays.input),
             Self::Display => Some(&s.overlays.display),
+            Self::PeerDisplay => Some(&s.overlays.peer_display),
             Self::History => Some(&s.overlays.history),
             Self::Settings | Self::Chat => None,
         }
@@ -101,6 +108,7 @@ impl WindowKind {
         match self {
             Self::Input => Some(&mut s.overlays.input),
             Self::Display => Some(&mut s.overlays.display),
+            Self::PeerDisplay => Some(&mut s.overlays.peer_display),
             Self::History => Some(&mut s.overlays.history),
             Self::Settings | Self::Chat => None,
         }
@@ -130,6 +138,12 @@ pub fn size_of(kind: WindowKind, skin: &Skin, s: &Settings) -> (f32, f32) {
         WindowKind::Display => s
             .overlays
             .display
+            .size
+            .map(|[w, h]| (w, h))
+            .unwrap_or((region[0] + pad, region[1] + pad)),
+        WindowKind::PeerDisplay => s
+            .overlays
+            .peer_display
             .size
             .map(|[w, h]| (w, h))
             .unwrap_or((region[0] + pad, region[1] + pad)),
@@ -256,7 +270,10 @@ pub fn descriptor(kind: WindowKind, title: &str, skin: &Skin, s: &Settings) -> W
             // The descriptor default (760×520) is clamped down to whatever
             // size the window opens at, which freezes a broadcast window
             // there. A small floor still stops a resize from collapsing it.
-            if matches!(kind, WindowKind::Display | WindowKind::History) {
+            if matches!(
+                kind,
+                WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History
+            ) {
                 d.minimum_size = OVERLAY_MIN;
             }
             // Shown once placed, so nothing flashes at the default origin.
@@ -304,8 +321,10 @@ pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool
         pass,
         on_top: o.is_some_and(|o| o.always_on_top),
         resizable: kind == WindowKind::Chat
-            || matches!(kind, WindowKind::History | WindowKind::Display)
-                && lock == Lock::EditLayout,
+            || matches!(
+                kind,
+                WindowKind::History | WindowKind::Display | WindowKind::PeerDisplay
+            ) && lock == Lock::EditLayout,
         size: size_of(kind, skin, s),
     }
 }
@@ -316,7 +335,7 @@ pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool
 pub fn pins_size(kind: WindowKind, resizable: bool) -> bool {
     match kind {
         WindowKind::Chat => false,
-        WindowKind::Display | WindowKind::History if resizable => false,
+        WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History if resizable => false,
         _ => true,
     }
 }
@@ -401,6 +420,7 @@ impl WindowManager {
         let (px, py) = match kind {
             WindowKind::Input => (x + (w - sw) / 2.0, y + h - sh - margin),
             WindowKind::Display => (x + (w - sw) / 2.0, y + h * 0.55 - sh / 2.0),
+            WindowKind::PeerDisplay => (x + (w - sw) / 2.0, y + h * 0.28 - sh / 2.0),
             WindowKind::History => (x + w - sw - margin, y + (h - sh) / 2.0),
             WindowKind::Settings => (x + (w - sw) / 2.0, y + (h - sh) / 2.0),
             WindowKind::Chat => (x + margin, y + (h - sh) / 2.0),
@@ -453,7 +473,14 @@ impl WindowManager {
             {
                 out.push(WindowCommand::SetBounds {
                     id,
-                    position: (f.x as f32, f.y as f32),
+                    position: (
+                        f.x as f32,
+                        if *kind == WindowKind::Input {
+                            f.y as f32 + f.h as f32 - d.size.1
+                        } else {
+                            f.y as f32
+                        },
+                    ),
                     size: d.size,
                 });
             }
@@ -565,6 +592,31 @@ mod tests {
     }
 
     #[test]
+    fn local_and_partner_windows_have_independent_layouts() {
+        let skin = skin();
+        let mut s = Settings::default();
+        s.overlays.display.size = Some([760.0, 200.0]);
+        s.overlays.display.lock = Lock::Locked;
+        s.overlays.peer_display.size = Some([500.0, 300.0]);
+        s.overlays.peer_display.lock = Lock::EditLayout;
+        s.overlays.peer_display.visible = false;
+        let own = desired(WindowKind::Display, &skin, &s, false);
+        let peer = desired(WindowKind::PeerDisplay, &skin, &s, false);
+        assert_eq!(own.size, (760.0, 200.0));
+        assert_eq!(peer.size, (500.0, 300.0));
+        assert!(own.visible && !peer.visible);
+        assert_eq!(own.pass, Pass::Full);
+        assert_eq!(peer.pass, Pass::Off);
+        assert!(!own.resizable && peer.resizable);
+        assert_ne!(WindowKind::Display.id(), WindowKind::PeerDisplay.id());
+        assert_ne!(WindowKind::Display.key(), WindowKind::PeerDisplay.key());
+        assert_eq!(
+            WindowKind::from_id(WindowKind::PeerDisplay.id()),
+            Some(WindowKind::PeerDisplay)
+        );
+    }
+
+    #[test]
     fn a_live_resize_is_not_overwritten() {
         assert!(!pins_size(WindowKind::Display, true));
         assert!(!pins_size(WindowKind::History, true));
@@ -578,7 +630,11 @@ mod tests {
     fn broadcast_windows_can_shrink_below_the_descriptor_default() {
         let skin = skin();
         let s = Settings::default();
-        for kind in [WindowKind::Display, WindowKind::History] {
+        for kind in [
+            WindowKind::Display,
+            WindowKind::PeerDisplay,
+            WindowKind::History,
+        ] {
             assert_eq!(
                 descriptor(kind, kind.key(), &skin, &s).minimum_size,
                 OVERLAY_MIN

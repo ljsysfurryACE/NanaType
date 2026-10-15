@@ -181,7 +181,7 @@ pub fn divided(rows: Vec<AnyView>) -> Vec<AnyView> {
 /// show a page of dead settings.
 pub fn when_on(
     ui: Ui,
-    enabled: fn(&Settings) -> bool,
+    enabled: impl Fn(&Settings) -> bool + Send + Sync + Copy + 'static,
     rows: Vec<AnyView>,
     off_hint_key: &'static str,
 ) -> AnyView {
@@ -206,9 +206,16 @@ pub fn links_pulsing(ui: Ui) -> bool {
             super::Page::Integrations | super::Page::Output
         )
         && ui.status.with_untracked(|s| {
-            [&s.vts, &s.osc, &s.ws, &s.spout_display, &s.spout_history]
-                .into_iter()
-                .any(|l| *l == LinkState::Connecting)
+            [
+                &s.vts,
+                &s.osc,
+                &s.ws,
+                &s.spout_display,
+                &s.spout_peer_display,
+                &s.spout_history,
+            ]
+            .into_iter()
+            .any(|l| *l == LinkState::Connecting)
                 || s.blive_link == crate::ui::danmaku::Link::Connecting
         })
 }
@@ -346,7 +353,11 @@ pub fn edit(f: impl FnOnce(&mut Settings) + Send + 'static) -> Msg {
     Msg::Edit(Box::new(f))
 }
 
-pub fn switch(ui: Ui, get: fn(&Settings) -> bool, set: fn(&mut Settings, bool)) -> AnyView {
+pub fn switch(
+    ui: Ui,
+    get: impl Fn(&Settings) -> bool + Send + Sync + Copy + 'static,
+    set: impl Fn(&mut Settings, bool) + Send + Sync + Copy + 'static,
+) -> AnyView {
     widget(Switch::new("", get(&ui.settings.get_untracked())))
         .bind(move |s: &mut Switch| s.checked = ui.settings.with(|x| get(x)))
         .on_cx(move |_, e: &ToggleChanged, cx| {
@@ -644,8 +655,8 @@ pub fn text(
     ui: Ui,
     placeholder: String,
     width: f32,
-    get: fn(&Settings) -> String,
-    set: fn(&mut Settings, String),
+    get: impl Fn(&Settings) -> String + Send + Sync + Copy + 'static,
+    set: impl Fn(&mut Settings, String) + Send + Sync + Copy + 'static,
 ) -> AnyView {
     text_field(ui, placeholder, width, false, get, set)
 }
@@ -656,8 +667,8 @@ pub fn code_text(
     ui: Ui,
     placeholder: String,
     width: f32,
-    get: fn(&Settings) -> String,
-    set: fn(&mut Settings, String),
+    get: impl Fn(&Settings) -> String + Send + Sync + Copy + 'static,
+    set: impl Fn(&mut Settings, String) + Send + Sync + Copy + 'static,
 ) -> AnyView {
     text_field(ui, placeholder, width, true, get, set)
 }
@@ -667,8 +678,8 @@ fn text_field(
     placeholder: String,
     width: f32,
     code: bool,
-    get: fn(&Settings) -> String,
-    set: fn(&mut Settings, String),
+    get: impl Fn(&Settings) -> String + Send + Sync + Copy + 'static,
+    set: impl Fn(&mut Settings, String) + Send + Sync + Copy + 'static,
 ) -> AnyView {
     widget(
         Stack::row(0.0)

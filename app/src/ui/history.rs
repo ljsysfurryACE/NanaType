@@ -673,13 +673,24 @@ pub fn history_window(ui: Ui) -> impl IntoView {
         // The line still on the dialogue box joins once the box clears or
         // the next line replaces it.
         let on_screen = if hide {
-            ui.display.with(|d| d.line)
+            if ui.peer.with(|p| p.active) {
+                ui.peer_local_line.get()
+            } else {
+                ui.display.with(|d| d.line)
+            }
         } else {
             None
         };
         ui.history.with(|rows| {
+            let peer_on_screen = if hide && ui.peer.with(|p| p.active) {
+                ui.peer_display.with(|d| d.line)
+            } else {
+                None
+            };
             shown_keys(
-                rows.iter().map(|r| (r.key, r.item.line)),
+                rows.iter()
+                    .filter(|r| peer_on_screen.is_none() || r.item.line != peer_on_screen)
+                    .map(|r| (r.key, r.item.line)),
                 visible,
                 on_screen,
             )

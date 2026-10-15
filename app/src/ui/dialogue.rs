@@ -186,12 +186,15 @@ fn document_on(
         Timing::Reveal(r) => Some(RevealPlan::new(&rich, r, base.entrance)),
     };
     if let (Some(key), Some(plan)) = (follow, &reveal) {
-        overflow::publish(overflow::PageText {
-            key,
-            text_len: rich.text().len(),
-            text_trimmed: rich.text().trim_end().len(),
-            glyphs: overflow::glyphs(rich.text(), &plan.at_ms),
-        });
+        overflow::publish_on(
+            ui.track_slot,
+            overflow::PageText {
+                key,
+                text_len: rich.text().len(),
+                text_trimmed: rich.text().trim_end().len(),
+                glyphs: overflow::glyphs(rich.text(), &plan.at_ms),
+            },
+        );
     }
     let mut view = RichTextView::new(rich)
         .decorative()
@@ -278,7 +281,7 @@ pub fn dialogue_box(ui: Ui, source: Source, editor: Option<AnyView>) -> AnyView 
         return box_view(ui, BoxCtx::active(ui, source), editor).into_any();
     }
     if source == Source::Display {
-        *stage() = Stage::new();
+        *stage(ui.track_slot) = Stage::new();
     }
     let key = move || {
         let skin = ui.skin.get();
@@ -294,6 +297,24 @@ pub fn dialogue_box(ui: Ui, source: Source, editor: Option<AnyView>) -> AnyView 
         box_view(ui, BoxCtx::active(ui, source), content(ui).into_any())
     })
     .into_any()
+}
+
+/// Each native window owns one participant and one GPU output surface.
+pub fn display_window(ui: Ui) -> impl IntoView {
+    dialogue_box(ui, Source::Display, None)
+}
+
+pub fn peer_window(ui: Ui) -> impl IntoView {
+    dynamic(
+        move || ui.peer.with(|state| state.active),
+        move |active| {
+            if *active {
+                dialogue_box(ui.remote(), Source::Display, None)
+            } else {
+                widget(Stack::column(0.0)).into_any()
+            }
+        },
+    )
 }
 
 /// The box fades in and rises into place when a line appears on an empty
@@ -328,12 +349,12 @@ impl Stage {
     }
 
     /// `view` as drawn, noting when the box appears or clears.
-    fn see(&mut self, view: Arc<DisplayView>, now: u64) -> Arc<DisplayView> {
+    fn see(&mut self, view: Arc<DisplayView>, now: u64, slot: usize) -> Arc<DisplayView> {
         let first = !std::mem::replace(&mut self.observed, true);
         if !view.empty {
             if !first && (self.shown.is_none() || self.leaving) {
                 self.entered_at = now;
-                MOVING_UNTIL.store(now + ENTER_MS, Ordering::Relaxed);
+                MOVING_UNTIL[slot].store(now + ENTER_MS, Ordering::Relaxed);
             }
             self.leaving = false;
             self.shown = Some(view.clone());
@@ -344,7 +365,7 @@ impl Stage {
                 if !self.leaving {
                     self.leaving = true;
                     self.left_at = now;
-                    MOVING_UNTIL.store(now + EXIT_MS, Ordering::Relaxed);
+                    MOVING_UNTIL[slot].store(now + EXIT_MS, Ordering::Relaxed);
                 }
                 shown.clone()
             }
@@ -364,23 +385,23 @@ impl Stage {
     }
 }
 
-static STAGE: Mutex<Stage> = Mutex::new(Stage::new());
+static STAGES: [Mutex<Stage>; 2] = [Mutex::new(Stage::new()), Mutex::new(Stage::new())];
 /// Until when (ms) the box is entering or leaving, for frame requests.
-static MOVING_UNTIL: AtomicU64 = AtomicU64::new(0);
+static MOVING_UNTIL: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
 
-fn stage() -> std::sync::MutexGuard<'static, Stage> {
-    STAGE.lock().unwrap_or_else(|e| e.into_inner())
+fn stage(slot: usize) -> std::sync::MutexGuard<'static, Stage> {
+    STAGES[slot].lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// The typewriter's view as drawn (see [`Stage`]), tracked.
 fn drawn(ui: Ui) -> Arc<DisplayView> {
     let view = ui.display.get();
-    stage().see(view, crate::clock::now_ms())
+    stage(ui.track_slot).see(view, crate::clock::now_ms(), ui.track_slot)
 }
 
 fn drawn_untracked(ui: Ui) -> Arc<DisplayView> {
     let view = ui.display.get_untracked();
-    stage().see(view, crate::clock::now_ms())
+    stage(ui.track_slot).see(view, crate::clock::now_ms(), ui.track_slot)
 }
 
 /// A still box showing `doc` in `ctx.skin`, for the skin picker.
@@ -453,9 +474,10 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     }));
     if source == Source::Display {
         outer = outer.bind(move |s: &mut Stack| {
-            let editing = ui
-                .settings
-                .with(|x| x.overlays.display.lock == nanatype_settings::Lock::EditLayout);
+            let editing = ui.settings.with(|x| {
+                ui.display_kind().overlay(x).expect("display overlay").lock
+                    == nanatype_settings::Lock::EditLayout
+            });
             let accent = c(ui.skin.with(|k| k.chrome.accent));
             restyle(s, |l| edit_outline(l, editing, accent));
         });
@@ -464,9 +486,10 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     // Layout mode drags the window, so the box must not take the press.
     // Rebuilt when the lock changes; the outline behind it stays hittable.
     let drag_window = source == Source::Display
-        && ui
-            .settings
-            .with_untracked(|s| s.overlays.display.lock == nanatype_settings::Lock::EditLayout);
+        && ui.settings.with_untracked(|s| {
+            ui.display_kind().overlay(s).expect("display overlay").lock
+                == nanatype_settings::Lock::EditLayout
+        });
     let mut frame = widget(
         Stack::fill_column(0.0)
             .width(LengthSpec::Percent(width_fraction * 100.0))
@@ -491,7 +514,7 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
                     1.0 - (now.saturating_sub(at) as f32 / ms.max(1) as f32).clamp(0.0, 1.0)
                 })
                 .unwrap_or(1.0);
-            let (shown, rise) = stage().presence(now, reduced);
+            let (shown, rise) = stage(ui.track_slot).presence(now, reduced);
             let opacity = if view.empty { 0.0 } else { fade * shown };
             let (dx, dy) = match view.shake {
                 Some(sh) if now < sh.at_ms + u64::from(sh.ms) && !reduced => {
@@ -612,8 +635,8 @@ fn content(ui: Ui) -> impl IntoView {
             let base = Base::dialogue(&skin, view.entrance, reduced);
             let (doc, reveal) = view.page();
             // Clipped text has nothing to follow.
-            let follow =
-                (skin.dialogue.overflow != Overflow::Clip).then(|| overflow::PageKey::of(&view));
+            let follow = (ui.track_slot == 1 || skin.dialogue.overflow != Overflow::Clip)
+                .then(|| overflow::PageKey::of(&view));
             document_on(ui, &doc, &base, Timing::Reveal(reveal), follow)
         },
     )
@@ -962,7 +985,7 @@ fn sprite(url: &str, frames: u32, i: u32) -> BackgroundImage {
 /// Whether the display needs frames for the box itself (fade, shake, the
 /// continue mark). Text reveal and effects request their own frames.
 pub fn display_animating(ui: Ui, now: u64) -> bool {
-    if now <= MOVING_UNTIL.load(Ordering::Relaxed) + 50 {
+    if now <= MOVING_UNTIL[ui.track_slot].load(Ordering::Relaxed) + 50 {
         return true;
     }
     let view = ui.display.get_untracked();

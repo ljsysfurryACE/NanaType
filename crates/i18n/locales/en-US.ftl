@@ -566,3 +566,32 @@ chat-inserted = Inserted @{ $name }
 chat-queued = Queued · { $count }
 chat-room-owner = Room owner
 chat-moderator = Moderator
+
+# Two-person sessions
+peer-title = Two-person session
+peer-expand = Expand
+peer-collapse = Collapse
+peer-off = Offline
+peer-connecting = Connecting…
+peer-waiting = Waiting for partner
+peer-reconnecting = Reconnecting…
+peer-direct = Direct
+peer-relay = Relay
+peer-error = Connection failed
+peer-create = Create session
+peer-join = Join
+peer-leave = Leave
+peer-copy = Copy invitation
+peer-invitation = Paste your partner's invitation
+peer-relay-placeholder = Custom relay URL (empty for public relays)
+peer-own-controls = You and your partner have separate display windows. Shortcuts control only your own track.
+peer-paused = Wait for the session to reconnect before sending or controlling playback. You can keep editing.
+
+# Independent partner output
+window-peer-display = Partner display
+windows-peer-display = Partner
+output-peer-display = Partner display
+peer-window-toggle = Partner window
+output-name-conflict = Output names must be unique. Choose a different name for each output.
+
+output-peer-hint = Separate partner output during a session; keeps sending while hidden.

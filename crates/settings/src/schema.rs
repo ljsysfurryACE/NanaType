@@ -315,6 +315,7 @@ impl Default for OverlaySettings {
 pub struct Overlays {
     pub input: OverlaySettings,
     pub display: OverlaySettings,
+    pub peer_display: OverlaySettings,
     pub history: OverlaySettings,
 }
 
@@ -326,6 +327,7 @@ impl Default for Overlays {
                 ..OverlaySettings::default()
             },
             display: OverlaySettings::default(),
+            peer_display: OverlaySettings::default(),
             history: OverlaySettings::default(),
         }
     }
@@ -486,6 +488,7 @@ pub struct SpoutOutput {
 #[serde(default)]
 pub struct OutputSettings {
     pub display: SpoutOutput,
+    pub peer_display: SpoutOutput,
     pub history: SpoutOutput,
 }
 
@@ -495,6 +498,12 @@ impl Default for OutputSettings {
             display: SpoutOutput {
                 enabled: false,
                 name: "NanaType Display".into(),
+                size: None,
+                straight_alpha: false,
+            },
+            peer_display: SpoutOutput {
+                enabled: false,
+                name: "NanaType Partner".into(),
                 size: None,
                 straight_alpha: false,
             },
@@ -712,6 +721,7 @@ impl Settings {
         for o in [
             &mut self.overlays.input,
             &mut self.overlays.display,
+            &mut self.overlays.peer_display,
             &mut self.overlays.history,
         ] {
             if let Some([w, h]) = o.size.as_mut() {
@@ -719,7 +729,11 @@ impl Settings {
                 *h = finite_or(*h, 200.0).clamp(60.0, 8192.0);
             }
         }
-        for out in [&mut self.output.display, &mut self.output.history] {
+        for out in [
+            &mut self.output.display,
+            &mut self.output.peer_display,
+            &mut self.output.history,
+        ] {
             out.name = out.name.trim().chars().take(255).collect();
             if let Some([w, h]) = out.size.as_mut() {
                 *w = (*w).clamp(16, 8192);

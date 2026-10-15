@@ -270,3 +270,40 @@ fn only_a_new_installation_enables_chat_history() {
     fs::write(&path, r#"{"schema":1,"history":{"chat":{"enabled":true}}}"#).unwrap();
     assert!(load_settings(&path, None).value.history.chat.enabled);
 }
+
+#[test]
+fn old_settings_preserve_local_output_and_add_disabled_partner_output() {
+    let s: Settings = serde_json::from_str(
+        r#"{
+        "schema":1,
+        "output":{"display":{"enabled":true,"name":"My Display","size":[1280,720]}},
+        "overlays":{"display":{"size":[900,300]}}
+    }"#,
+    )
+    .unwrap();
+    assert!(s.output.display.enabled);
+    assert_eq!(s.output.display.name, "My Display");
+    assert_eq!(s.output.display.size, Some([1280, 720]));
+    assert_eq!(s.overlays.display.size, Some([900.0, 300.0]));
+    assert!(!s.output.peer_display.enabled);
+    assert_eq!(s.output.peer_display.name, "NanaType Partner");
+    assert_eq!(s.overlays.peer_display.size, None);
+}
+
+#[test]
+fn partner_settings_round_trip_and_sanitize() {
+    let mut s = Settings::default();
+    s.output.peer_display.enabled = true;
+    s.output.peer_display.name = "  Partner  ".into();
+    s.output.peer_display.size = Some([0, 99999]);
+    s.overlays.peer_display.size = Some([0.0, 99999.0]);
+    s.overlays.peer_display.lock = Lock::EditLayout;
+    assert!(s.sanitize());
+    assert_eq!(s.output.peer_display.name, "Partner");
+    assert_eq!(s.output.peer_display.size, Some([16, 8192]));
+    assert_eq!(s.overlays.peer_display.size, Some([160.0, 8192.0]));
+    let loaded: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+    assert_eq!(loaded, s);
+    assert!(!s.output.display.enabled);
+    assert_eq!(s.overlays.display.size, None);
+}
