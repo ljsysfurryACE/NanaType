@@ -30,12 +30,13 @@ use crate::windows::WindowKind;
 
 pub struct Host {
     app: App,
+    perf: Option<crate::perf::Recorder>,
     docs: HashMap<WindowId, RuntimeDocument>,
     /// The input window's rich editor.
     editor: Option<Entity<RichTextEditor>>,
     source: Option<Entity<nana_ui::runtime::TextArea>>,
     /// Skin and reduced-motion the editor's effect preview was built for.
-    editor_fx: Option<(usize, bool)>,
+    editor_fx: Option<(usize, bool, usize)>,
     /// The typewriter's scroll through long text.
     follow: overflow::Follow,
     peer_follow: overflow::Follow,
@@ -91,7 +92,9 @@ impl Host {
                 let _ = doc.context_mut().set_theme_tokens(theme.clone());
             }
         }
-        self.app.update_result()
+        let mut result = self.app.update_result();
+        result.redraw = pending_redraw(&self.docs);
+        result
     }
 
     /// Apply the app's editor commands, and keep the editor's per-glyph
@@ -120,11 +123,15 @@ impl Host {
             }
         }
         let reduced = self.app.ui.reduced_motion.get_untracked();
-        let key = (Arc::as_ptr(&self.app.skin) as usize, reduced);
+        let key = (
+            Arc::as_ptr(&self.app.skin) as usize,
+            reduced,
+            crate::ui::rich::attr_version(),
+        );
         if self.editor_fx != Some(key) {
             let effects = crate::ui::rich::effect_table(&self.app.skin.effects, reduced);
             if cx
-                .set_rich_presentation(editor.stable_id(), effects, None)
+                .set_rich_presentation_chains(editor.stable_id(), effects, None)
                 .is_ok()
             {
                 self.editor_fx = Some(key);
@@ -427,6 +434,7 @@ impl RuntimeProgram for Host {
         let app = App::new(context);
         let mut host = Self {
             app,
+            perf: crate::perf::Recorder::from_env(),
             docs: HashMap::new(),
             editor: None,
             source: None,
@@ -702,12 +710,27 @@ impl RuntimeProgram for Host {
         Ok(RuntimeProgramUpdate::default())
     }
 
+    fn scene_gpu_renderers(&self, _: WindowId) -> Option<nana_ui::SceneGpuRendererRegistry> {
+        Some(crate::ui::sweep::renderers())
+    }
+
     fn window_output(&self, id: WindowId) -> Option<nana_ui::WindowOutputConfig> {
         let kind = WindowKind::from_id(id)?;
         if kind == WindowKind::PeerDisplay && self.app.peer.handle.is_none() {
             return None;
         }
         crate::output::config(kind, &self.app.settings)
+    }
+
+    fn window_frame_presented(
+        &mut self,
+        id: WindowId,
+        _: &RuntimeProgramContext<Msg>,
+    ) -> RuntimeProgramUpdate {
+        if let Some(perf) = &mut self.perf {
+            perf.frame(id, false, self.docs.get(&id));
+        }
+        RuntimeProgramUpdate::default()
     }
 
     fn window_output_frame(
@@ -718,6 +741,9 @@ impl RuntimeProgram for Host {
     ) {
         if self.window_output(id).is_none() {
             return;
+        }
+        if let Some(perf) = &mut self.perf {
+            perf.frame(id, true, self.docs.get(&id));
         }
         let Some(kind) = WindowKind::from_id(id) else {
             return;
@@ -734,6 +760,7 @@ impl RuntimeProgram for Host {
             if self.app.spout.status.get(&kind) != Some(&state) {
                 self.app.spout.status.insert(kind, state);
                 self.app.refresh_spout_status();
+                context.dispatch(Msg::UiChanged);
             }
         }
     }
@@ -742,13 +769,17 @@ impl RuntimeProgram for Host {
         &mut self,
         id: WindowId,
         status: nana_ui::WindowOutputStatus,
-        _: &RuntimeProgramContext<Msg>,
+        context: &RuntimeProgramContext<Msg>,
     ) {
         if let Some(kind) = WindowKind::from_id(id) {
             crate::debug_log(&format!("output {kind:?}: {status:?}"));
             let locale = self.app.ui.locale.get_untracked();
+            let previous = self.app.ui.status.get_untracked();
             self.app.spout.status_changed(kind, &status, locale);
             self.app.refresh_spout_status();
+            if !Arc::ptr_eq(&previous, &self.app.ui.status.get_untracked()) {
+                context.dispatch(Msg::UiChanged);
+            }
         }
     }
 
@@ -758,12 +789,14 @@ impl RuntimeProgram for Host {
         let animating = match WindowKind::from_id(id) {
             Some(WindowKind::Display) => {
                 dialogue::display_animating(ui, now)
+                    || crate::ui::sweep::animating(ui)
                     || self.follow.wants_frame()
                     || self.pager.wants_frame()
             }
             Some(WindowKind::PeerDisplay) => {
                 ui.peer.get_untracked().active
                     && (dialogue::display_animating(ui.remote(), now)
+                        || crate::ui::sweep::animating(ui.remote())
                         || self.peer_follow.wants_frame())
             }
             Some(WindowKind::History) => history_fading(ui, now),
@@ -797,6 +830,9 @@ impl RuntimeProgram for Host {
     }
 
     fn prepare_window_frame(&mut self, id: WindowId, _: &RuntimeProgramContext<Msg>) {
+        if let Some(perf) = &mut self.perf {
+            perf.begin(id);
+        }
         let now = clock::now_ms();
         match WindowKind::from_id(id) {
             Some(WindowKind::Display) => self.follow_track(now, false),
@@ -807,27 +843,79 @@ impl RuntimeProgram for Host {
         }
         // The animation clock only runs for what animates on it; following
         // the text drives its own scroll.
-        let animating = match WindowKind::from_id(id) {
-            Some(WindowKind::Display) => dialogue::display_animating(self.app.ui, now),
-            Some(WindowKind::PeerDisplay) => {
-                self.app.ui.peer.get_untracked().active
-                    && dialogue::display_animating(self.app.ui.remote(), now)
+        let ui = self.app.ui;
+        let (clock, animating) = match WindowKind::from_id(id) {
+            Some(WindowKind::Display) => (ui.now, dialogue::display_animating(ui, now)),
+            Some(WindowKind::PeerDisplay) => (
+                ui.peer_now,
+                ui.peer.get_untracked().active && dialogue::display_animating(ui.remote(), now),
+            ),
+            Some(WindowKind::History) => (ui.history_now, history_fading(ui, now)),
+            Some(WindowKind::Input) => (ui.pulse_ms, input::mirror_chip_pulsing(ui)),
+            Some(WindowKind::Settings) => {
+                (ui.settings_pulse_ms, crate::ui::settings::links_pulsing(ui))
             }
-            Some(WindowKind::History) => history_fading(self.app.ui, now),
-            _ => false,
+            _ => return,
         };
-        if animating && self.app.ui.now.get_untracked() != now {
-            self.app.ui.now.set(now);
+        let changed = self.docs.get(&id).is_some_and(|doc| {
+            doc.context().has_pending_reactive() || doc.context().world().has_pending_work()
+        });
+        if animating || changed {
+            clock.set_if_changed(now);
         }
-        if WindowKind::from_id(id) == Some(WindowKind::Input)
-            && input::mirror_chip_pulsing(self.app.ui)
-        {
-            self.app.ui.pulse_ms.set(now);
+    }
+}
+
+/// Read the same pending work the runtime will drain, including direct editor
+/// commands and toasts. This avoids a second, incomplete message-to-window map.
+fn pending_redraw(docs: &HashMap<WindowId, RuntimeDocument>) -> nana_ui::RuntimeRedraw {
+    nana_ui::RuntimeRedraw::for_windows(docs.iter().filter_map(|(id, doc)| {
+        let cx = doc.context();
+        (cx.has_pending_reactive() || cx.world().has_pending_work()).then_some(*id)
+    }))
+}
+
+#[cfg(test)]
+mod redraw_tests {
+    use super::*;
+    use nana_ui::runtime::view::{signal, widget};
+    use nana_ui::runtime::{LayoutViewport, Text};
+
+    #[test]
+    fn local_signal_changes_redraw_one_window_global_changes_redraw_both() {
+        let local = signal(0);
+        let global = signal(0);
+        let mut docs = HashMap::new();
+        let mut shaper = nana_ui::NanaTextShaper::default();
+        for n in 1..=2 {
+            let id = DocumentId::new(n).unwrap();
+            let mut doc = RuntimeDocument::new(id);
+            doc.context_mut()
+                .mount_view_root(id, move || {
+                    widget(Text::new("")).bind(move |t: &mut Text| {
+                        t.value =
+                            format!("{} {}", if n == 1 { local.get() } else { 0 }, global.get());
+                    })
+                })
+                .unwrap();
+            doc.flush(LayoutViewport::new(200.0, 100.0), &mut shaper)
+                .unwrap();
+            docs.insert(WindowId(n), doc);
         }
-        if WindowKind::from_id(id) == Some(WindowKind::Settings)
-            && crate::ui::settings::links_pulsing(self.app.ui)
-        {
-            self.app.ui.pulse_ms.set(now);
+        assert_eq!(pending_redraw(&docs), nana_ui::RuntimeRedraw::None);
+        local.set(1);
+        assert_eq!(
+            pending_redraw(&docs),
+            nana_ui::RuntimeRedraw::Window(WindowId(1))
+        );
+        for doc in docs.values_mut() {
+            doc.flush(LayoutViewport::new(200.0, 100.0), &mut shaper)
+                .unwrap();
         }
+        global.set(1);
+        assert_eq!(
+            pending_redraw(&docs),
+            nana_ui::RuntimeRedraw::Windows(vec![WindowId(1), WindowId(2)])
+        );
     }
 }

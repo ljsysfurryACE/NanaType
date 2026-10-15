@@ -177,7 +177,8 @@ fn continues(prev: &HistoryItem, row: &HistoryItem) -> bool {
 
 /// The shown rows that continue the row above them.
 fn follow_ups(rows: &[HistoryRow], shown: &[u64]) -> Vec<u64> {
-    let item = |k: u64| rows.iter().find(|r| r.key == k).map(|r| &r.item);
+    let by_key: std::collections::HashMap<_, _> = rows.iter().map(|r| (r.key, &r.item)).collect();
+    let item = |k: u64| by_key.get(&k).copied();
     shown
         .windows(2)
         .filter(|w| matches!((item(w[0]), item(w[1])), (Some(a), Some(b)) if continues(a, b)))
@@ -186,8 +187,8 @@ fn follow_ups(rows: &[HistoryRow], shown: &[u64]) -> Vec<u64> {
 }
 
 fn find_row(ui: Ui, key: u64) -> Option<HistoryRow> {
-    ui.history
-        .with_untracked(|rows| rows.iter().find(|r| r.key == key).cloned())
+    let at = ui.history_index.with(|index| index.get(&key).copied())?;
+    ui.history.with_untracked(|rows| rows.get(at).cloned())
 }
 
 /// Halo's presentation follows the approved interaction preview. Other skins
@@ -628,7 +629,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         let Some(after) = fade_after else {
             return;
         };
-        let age = crate::clock::unix_of(ui.now.get()).saturating_sub(at);
+        let age = crate::clock::unix_of(ui.history_now.get()).saturating_sub(at);
         let start = u64::from(after) * 1000;
         let opacity = 1.0 - (age.saturating_sub(start) as f32 / 600.0).clamp(0.0, 1.0);
         let mut taken = std::mem::replace(s, Stack::row(0.0));

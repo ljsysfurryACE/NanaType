@@ -15,9 +15,9 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use nana_ui_core::{
-    GlyphEffect, GlyphIntro, PaintColor, RevealSchedule, RichLabelStyle, RichObject,
-    RichObjectContent, RichSpanStyle, RichText, RichTextShadow, RichTextStroke, TextDecorationLine,
-    TextStrokePlacement,
+    GlyphEffect, GlyphEffectChain, GlyphIntro, PaintColor, RevealSchedule, RichLabelStyle,
+    RichObject, RichObjectContent, RichSpanStyle, RichText, RichTextShadow, RichTextStroke,
+    TextDecorationLine, TextStrokePlacement,
 };
 use nanatype_core::Reveal;
 use nanatype_i18n::Locale;
@@ -424,23 +424,71 @@ fn glyph_effect(e: &nanatype_model::Continuous, d: &EffectDefaults) -> GlyphEffe
         ContinuousKind::Jump => {
             GlyphEffect::jump(d.jump_px * e.amp).frequency(e.speed / d.jump_period_s.max(0.05))
         }
-        ContinuousKind::Rainbow => {
-            GlyphEffect::rainbow().frequency(e.speed / d.rainbow_period_s.max(0.05))
-        }
+        ContinuousKind::Pulse => GlyphEffect::pulse(d.pulse_amount * e.amp)
+            .frequency(e.speed / d.pulse_period_s.max(0.05)),
+        ContinuousKind::Flicker => GlyphEffect::new(
+            nana_ui_core::GlyphEffectKind::Flicker,
+            d.flicker_amount * e.amp,
+            d.flicker_hz * e.speed,
+        ),
+        ContinuousKind::Rainbow => GlyphEffect::new(
+            nana_ui_core::GlyphEffectKind::Rainbow,
+            e.amp,
+            e.speed / d.rainbow_period_s.max(0.05),
+        ),
     }
 }
 
-/// Glyph effects indexed like the attribute table. One effect plays per span:
-/// the first of its continuous effects.
-pub fn effect_table(defaults: &EffectDefaults, reduced: bool) -> Arc<[GlyphEffect]> {
+/// Monotonic version of the append-only attribute table.
+pub fn attr_version() -> usize {
+    ATTRS.lock().unwrap_or_else(|e| e.into_inner()).len()
+}
+
+struct CachedEffects {
+    version: usize,
+    defaults: EffectDefaults,
+    reduced: bool,
+    effects: Arc<[GlyphEffectChain]>,
+}
+static EFFECTS: Mutex<Vec<CachedEffects>> = Mutex::new(Vec::new());
+
+/// Each attribute slot names all its continuous effects, or an empty chain.
+/// Pacing and entrance metadata must never keep a window awake.
+pub fn effect_table(defaults: &EffectDefaults, reduced: bool) -> Arc<[GlyphEffectChain]> {
     let table = ATTRS.lock().unwrap_or_else(|e| e.into_inner());
-    table
+    let mut cache = EFFECTS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(found) = cache
         .iter()
-        .map(|(effects, _)| match effects.continuous.first() {
-            Some(e) if !reduced => glyph_effect(e, defaults),
-            _ => GlyphEffect::shake(0.0),
+        .find(|c| c.version == table.len() && c.defaults == *defaults && c.reduced == reduced)
+    {
+        return found.effects.clone();
+    }
+    let effects: Arc<[GlyphEffectChain]> = table
+        .iter()
+        .map(|(effects, _)| {
+            GlyphEffectChain::new(if reduced {
+                Vec::new()
+            } else {
+                effects
+                    .continuous
+                    .iter()
+                    .map(|e| glyph_effect(e, defaults))
+                    .filter(GlyphEffect::is_effective)
+                    .collect()
+            })
         })
-        .collect()
+        .collect();
+    // Bound old revisions and hot-reloaded palettes, while keeping both motion preferences.
+    if cache.len() >= 8 {
+        cache.remove(0);
+    }
+    cache.push(CachedEffects {
+        version: table.len(),
+        defaults: defaults.clone(),
+        reduced,
+        effects: effects.clone(),
+    });
+    effects
 }
 
 // ---- inline objects ------------------------------------------------------
@@ -890,7 +938,13 @@ impl RevealPlan {
             EntranceKind::Pop => GlyphIntro::pop(secs),
             EntranceKind::SlideUp => GlyphIntro::rise(10.0, secs),
         };
-        RevealSchedule::new(anim_now, at_s).intro(intro)
+        let schedule = RevealSchedule::new(anim_now, at_s).intro(intro);
+        // A pause/page boundary hides the unscheduled suffix until Core
+        // supplies another segment. It is not an animation lasting 11 days.
+        match self.at_ms.iter().position(Option::is_none) {
+            Some(limit) => schedule.limit(limit as u32),
+            None => schedule,
+        }
     }
 }
 
@@ -1144,5 +1198,54 @@ mod tests {
         let sh = spans[0].paint.shadows.as_deref().unwrap()[0];
         assert_eq!(sh.blur_px, 10.0);
         assert_eq!(sh.color, color(Rgba8::rgba(8, 118, 208, 140)));
+    }
+}
+
+#[cfg(test)]
+mod effect_cache_tests {
+    use super::*;
+    #[test]
+    fn paused_and_already_shown_reveals_do_not_schedule_hidden_glyphs() {
+        let plan = RevealPlan {
+            at_ms: vec![Some(100), None, None],
+            intro: Entrance {
+                kind: EntranceKind::Fade,
+                ms: 200,
+            },
+        };
+        let schedule = plan.schedule(Duration::ZERO, 0, false);
+        assert_eq!(schedule.limit, Some(1));
+        assert!(schedule.end() < Duration::from_secs(1));
+        let plan = RevealPlan {
+            at_ms: vec![None],
+            ..plan
+        };
+        assert_eq!(
+            plan.schedule(Duration::ZERO, 0, false).end(),
+            Duration::ZERO
+        );
+    }
+    #[test]
+    fn empty_pacing_and_reduced_effects_are_static_and_tables_are_cached() {
+        let pacing = attr_index(&Effects::default(), Pace::FixedMs(33)).unwrap() as usize;
+        let defaults = EffectDefaults::default();
+        let table = effect_table(&defaults, false);
+        assert!(table[pacing].0.is_empty());
+        let version = attr_version();
+        let cached = effect_table(&defaults, false);
+        if version == attr_version() && table.len() == version {
+            assert!(Arc::ptr_eq(&table, &cached));
+        }
+        let effects = Effects {
+            continuous: vec![
+                nanatype_model::Continuous::new(ContinuousKind::Wave),
+                nanatype_model::Continuous::new(ContinuousKind::Rainbow),
+            ],
+            entrance: None,
+        };
+        let index = attr_index(&effects, Pace::Inherit).unwrap() as usize;
+        let table = effect_table(&defaults, false);
+        assert_eq!(table[index].0.len(), 2);
+        assert!(effect_table(&defaults, true)[index].0.is_empty());
     }
 }

@@ -589,3 +589,6 @@ peer-window-toggle = 伙伴窗口
 output-name-conflict = 输出名称重复，请为每个输出设置不同的名称。
 
 output-peer-hint = 联机期间独立输出伙伴画面；隐藏窗口仍会输出。
+
+tb-effect-pulse = 脉动
+tb-effect-flicker = 闪烁

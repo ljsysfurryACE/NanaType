@@ -66,6 +66,7 @@ fn separate_scenes_keep_self_and_partner_content_when_roles_change() {
     ui.display.set(Arc::new(own.display().clone()));
     ui.peer_display.set(Arc::new(partner.display().clone()));
     ui.now.set(100_000);
+    ui.peer_now.set(100_000); // The host advances each display clock independently.
     let out =
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/p2p-output-tests");
     std::fs::create_dir_all(&out).unwrap();

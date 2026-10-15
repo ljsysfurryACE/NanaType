@@ -209,6 +209,8 @@ pub enum Msg {
         text: String,
         error: bool,
     },
+    /// A host callback changed UI signals outside a program update.
+    UiChanged,
     Quit,
 }
 

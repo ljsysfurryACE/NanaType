@@ -1063,6 +1063,27 @@ pub struct Dialogue {
     pub decor: Vec<DecorSpec>,
     /// The quoted chat message above a line that answers one.
     pub reply: ReplySpec,
+    pub sweep: SweepSpec,
+}
+
+/// Optional light passing across the dialogue surface, beneath its text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SweepSpec {
+    pub enabled: bool,
+    pub color: Rgba8,
+    pub intensity: f32,
+    pub period_s: f32,
+}
+impl Default for SweepSpec {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: Rgba8::WHITE,
+            intensity: 0.18,
+            period_s: 4.0,
+        }
+    }
 }
 
 /// A chat message a line answers, quoted in one small line above it:
@@ -1152,6 +1173,7 @@ impl Default for Dialogue {
             tail: None,
             decor: Vec::new(),
             reply: ReplySpec::default(),
+            sweep: SweepSpec::default(),
         }
     }
 }
@@ -1459,6 +1481,10 @@ pub struct EffectDefaults {
     pub wave_period_s: f32,
     pub jump_px: f32,
     pub jump_period_s: f32,
+    pub pulse_amount: f32,
+    pub pulse_period_s: f32,
+    pub flicker_amount: f32,
+    pub flicker_hz: f32,
     pub rainbow_period_s: f32,
     pub rainbow_saturation: f32,
     pub rainbow_lightness: f32,
@@ -1478,6 +1504,10 @@ impl Default for EffectDefaults {
             wave_period_s: 1.2,
             jump_px: 6.0,
             jump_period_s: 0.9,
+            pulse_amount: 0.12,
+            pulse_period_s: 1.0,
+            flicker_amount: 1.0,
+            flicker_hz: 8.0,
             rainbow_period_s: 2.4,
             rainbow_saturation: 0.75,
             rainbow_lightness: 0.6,

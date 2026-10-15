@@ -24,13 +24,18 @@ fn main() {
         return;
     }
     if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
-        println!("cargo:rustc-link-arg-bin=nanatype=/MANIFEST:EMBED");
-        println!(
-            "cargo:rustc-link-arg-bin=nanatype=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
-        );
-        println!(
-            "cargo:rustc-link-arg-bin=nanatype=/MANIFESTUAC:level='asInvoker' uiAccess='false'"
-        );
+        // Standalone snapshot/performance tools link the same tray stack.
+        // They need the embedded activation context too, including when copied.
+        for target in [
+            "cargo:rustc-link-arg-bin=nanatype=",
+            "cargo:rustc-link-arg-examples=",
+        ] {
+            println!("{target}/MANIFEST:EMBED");
+            println!(
+                "{target}/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+            );
+            println!("{target}/MANIFESTUAC:level='asInvoker' uiAccess='false'");
+        }
     }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));

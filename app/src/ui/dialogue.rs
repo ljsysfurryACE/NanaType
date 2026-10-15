@@ -211,7 +211,7 @@ fn document_on(
                 base.reduced_motion,
             )
         });
-        view = view.presentation(effect_table(&base.effects, base.reduced_motion), schedule);
+        view = view.presentation_chains(effect_table(&base.effects, base.reduced_motion), schedule);
     }
     let doc = doc.clone();
     let look = look.clone();
@@ -334,7 +334,7 @@ struct Stage {
     /// mounts with a line on it shows it at once.
     observed: bool,
     leaving: bool,
-    entered_at: u64,
+    entered_at: Option<u64>,
     left_at: u64,
 }
 
@@ -344,7 +344,7 @@ impl Stage {
             shown: None,
             observed: false,
             leaving: false,
-            entered_at: 0,
+            entered_at: None,
             left_at: 0,
         }
     }
@@ -354,7 +354,7 @@ impl Stage {
         let first = !std::mem::replace(&mut self.observed, true);
         if !view.empty {
             if !first && (self.shown.is_none() || self.leaving) {
-                self.entered_at = now;
+                self.entered_at = Some(now);
                 MOVING_UNTIL[slot].store(now + ENTER_MS, Ordering::Relaxed);
             }
             self.leaving = false;
@@ -380,7 +380,10 @@ impl Stage {
             let t = (now.saturating_sub(self.left_at) as f32 / EXIT_MS as f32).clamp(0.0, 1.0);
             return (1.0 - t * t * t, 0.0);
         }
-        let t = (now.saturating_sub(self.entered_at) as f32 / ENTER_MS as f32).clamp(0.0, 1.0);
+        let Some(entered_at) = self.entered_at else {
+            return (1.0, 0.0);
+        };
+        let t = (now.saturating_sub(entered_at) as f32 / ENTER_MS as f32).clamp(0.0, 1.0);
         let e = 1.0 - (1.0 - t).powi(3);
         (e, if reduced { 0.0 } else { ENTER_RISE * (1.0 - e) })
     }
@@ -536,10 +539,21 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         });
     }
 
+    let sweep = ctx.skin.dialogue.sweep.enabled.then(|| {
+        let surface = box_surface.clone();
+        let spec = ctx.skin.dialogue.sweep.clone();
+        dynamic(
+            move || source == Source::Display && !ui.reduced_motion.get() && !drawn(ui).empty,
+            move |animated| super::sweep::view(surface.clone(), spec.clone(), *animated),
+        )
+        .css(nana_ui::runtime::view::css! { position: absolute; inset: 0; pointer-events: none; })
+        .into_any()
+    });
     let the_box = widget(
         box_surface
             .stack(Stack::fill_column(0.0))
             .with_layout(move |l| {
+                l.position = PositionSpec::Relative;
                 l.padding_left = Some(LengthSpec::Px(padding[0]));
                 l.padding_top = Some(LengthSpec::Px(padding[1]));
                 l.padding_right = Some(LengthSpec::Px(padding[2]));
@@ -547,6 +561,7 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
             }),
     )
     .children((
+        sweep,
         (source == Source::Display).then(|| reply_quote(ui)),
         text_port(ui, source, content),
     ));
@@ -787,14 +802,33 @@ fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
 }
 
 fn decor_view(ui: Ui, ctx: &BoxCtx, dec: &DecorSpec) -> AnyView {
-    let speaker = (dec.when == DecorWhen::Speaker).then(|| has_speaker(ui, ctx));
-    decor_on(
-        &ctx.skin,
-        dec,
-        speaker,
-        dec.image.as_ref().and_then(|path| ctx.url(path)),
-        (ctx.source == Source::Display).then_some(ui),
+    let ctx = ctx.clone();
+    let dec = dec.clone();
+    let source = ctx.source;
+    let speaker_only = dec.when == DecorWhen::Speaker;
+    let motion_enabled = dec.opacity > 0.0 && dec.motion.is_some_and(|m| m.amplitude > 0.0);
+    dynamic(
+        move || {
+            let view = ui.display.get();
+            motion_enabled
+                && source == Source::Display
+                && !ui.reduced_motion.get()
+                && !view.empty
+                && (!speaker_only || !view.speaker.name.trim().is_empty())
+        },
+        move |animate| {
+            let speaker = speaker_only.then(|| has_speaker(ui, &ctx));
+            decor_on(
+                &ctx.skin,
+                &dec,
+                speaker,
+                dec.image.as_ref().and_then(|path| ctx.url(path)),
+                *animate,
+            )
+        },
     )
+    .css(nana_ui::runtime::view::css! { position: absolute; inset: 0; pointer-events: none; overflow: visible; })
+    .into_any()
 }
 
 /// Whether a decor belongs on a box of `source` at all.
@@ -812,7 +846,7 @@ pub(super) fn decor<F>(
 where
     F: Fn() -> bool + Send + 'static,
 {
-    decor_on(skin, dec, visible, image_url, None)
+    decor_on(skin, dec, visible, image_url, false)
 }
 
 fn decor_on<F>(
@@ -820,7 +854,7 @@ fn decor_on<F>(
     dec: &DecorSpec,
     visible: Option<F>,
     image_url: Option<String>,
-    animation: Option<Ui>,
+    animate: bool,
 ) -> AnyView
 where
     F: Fn() -> bool + Send + 'static,
@@ -857,22 +891,15 @@ where
     if let Some(visible) = visible {
         el = el.visible(visible);
     }
-    if let Some(ui) = animation
-        && let Some(motion) = dec.motion
-    {
+    if animate && let Some(motion) = dec.motion {
+        let node = nana_ui::runtime::view::node_ref();
         let rotate = dec.rotate;
         let opacity = dec.opacity;
-        el = el.bind(move |node: &mut Stack| {
-            let reduced = ui.reduced_motion.get() || drawn(ui).empty;
-            let t = if reduced {
-                0.0
-            } else {
-                ui.now.get() as f64 / 1000.0
-            };
-            restyle(node, |l| {
-                apply_decor_motion(l, &motion, rotate, opacity, t, reduced);
-            });
+        super::motion::periodic(node, motion.period_s.max(0.5), move |t| {
+            let (dy, alpha) = decor_motion(&motion, t, false);
+            (affine(0.0, dy, rotate, 1.0), opacity * alpha)
         });
+        el = el.node_ref(node);
     }
     if dec.text.is_empty() {
         return el.into_any();
@@ -890,19 +917,6 @@ where
     }
     el.children(widget(Text::new(dec.text.clone()).decorative().style(st)))
         .into_any()
-}
-
-fn apply_decor_motion(
-    l: &mut LayoutStyle,
-    motion: &nanatype_theme::DecorMotionSpec,
-    rotate: f32,
-    opacity: f32,
-    t: f64,
-    reduced: bool,
-) {
-    let (dy, alpha) = decor_motion(motion, t, reduced);
-    l.transform = Some(affine(0.0, dy, rotate, 1.0));
-    l.opacity = Some(opacity * alpha);
 }
 
 fn decor_views(ui: Ui, ctx: &BoxCtx, layer: DecorLayer) -> Vec<AnyView> {
@@ -979,6 +993,25 @@ fn tail(ctx: &BoxCtx) -> (Vec<AnyView>, Vec<AnyView>) {
 }
 
 fn continue_indicator(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
+    let ctx = ctx.clone();
+    let source = ctx.source;
+    let shown = ctx.skin.dialogue.continue_.image.is_some()
+        || !ctx.skin.dialogue.continue_.glyph.is_empty();
+    dynamic(
+        move || {
+            let view = ui.display.get();
+            shown
+                && source == Source::Display
+                && !view.empty
+                && view.continue_indicator
+                && !ui.reduced_motion.get()
+        },
+        move |animate| continue_indicator_on(ui, &ctx, *animate).into_any(),
+    )
+    .css(nana_ui::runtime::view::css! { position: absolute; inset: 0; pointer-events: none; overflow: visible; })
+}
+
+fn continue_indicator_on(ui: Ui, ctx: &BoxCtx, animate: bool) -> impl IntoView + use<> {
     let source = ctx.source;
     let cs = ctx.skin.dialogue.continue_.clone();
     let image = cs.image.as_ref().and_then(|i| ctx.url(i));
@@ -996,7 +1029,7 @@ fn continue_indicator(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
                     .height(LengthSpec::Px(ih))
                     .with_layout(move |l| l.paint.background_image = Some(first)),
             );
-            if frames > 1 && source == Source::Display {
+            if frames > 1 && animate {
                 let shown = AtomicU32::new(0);
                 el = el.bind(move |s: &mut Stack| {
                     let f = sprite_frame(frames, fps, ui.now.get() as f32 / 1000.0);
@@ -1023,18 +1056,13 @@ fn continue_indicator(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
     let (motion, bob, period) = (cs.motion, cs.bob_px, cs.period_s);
     let mut mark =
         widget(Stack::row(0.0).with_layout(move |l| l.transform = Some(affine(ox, oy, 0.0, 1.0))));
-    if source == Source::Display && motion != ContinueMotion::None {
-        mark = mark.bind(move |s: &mut Stack| {
-            let (dy, opacity, scale) = if ui.reduced_motion.get() {
-                (0.0, 1.0, 1.0)
-            } else {
-                continue_motion(motion, bob, period, ui.now.get() as f32 / 1000.0)
-            };
-            restyle(s, |l| {
-                l.transform = Some(affine(ox, oy + dy, 0.0, scale));
-                l.opacity = Some(opacity);
-            });
+    if animate && motion != ContinueMotion::None {
+        let node = nana_ui::runtime::view::node_ref();
+        super::motion::periodic(node, period, move |t| {
+            let (dy, opacity, scale) = continue_motion(motion, bob, period, t as f32);
+            (affine(ox, oy + dy, 0.0, scale), opacity)
         });
+        mark = mark.node_ref(node);
     }
     widget(anchor_layer(cs.anchor, 3))
         .visible(move || {
@@ -1080,13 +1108,6 @@ pub fn display_animating(ui: Ui, now: u64) -> bool {
     if view.empty {
         return false;
     }
-    if decor_animating(
-        &ui.skin.get_untracked(),
-        &view,
-        ui.reduced_motion.get_untracked(),
-    ) {
-        return true;
-    }
     if let Some((at, ms)) = view.fade
         && now <= at + u64::from(ms) + 50
     {
@@ -1099,21 +1120,9 @@ pub fn display_animating(ui: Ui, now: u64) -> bool {
     }
     let moves = ui.skin.with_untracked(|s| {
         let c = &s.dialogue.continue_;
-        c.motion != ContinueMotion::None || (c.image.is_some() && c.frames > 1)
+        c.image.is_some() && c.frames > 1
     });
     view.continue_indicator && moves && !ui.reduced_motion.get_untracked()
-}
-
-/// Demand frames only for visible, moving ornaments. The remote Ui uses
-/// its own display track, so a partner never borrows the local empty state.
-fn decor_animating(skin: &Skin, view: &DisplayView, reduced: bool) -> bool {
-    !reduced
-        && !view.empty
-        && skin.dialogue.decor.iter().any(|d| {
-            d.opacity > 0.0
-                && d.motion.is_some_and(|m| m.amplitude > 0.0)
-                && (d.when != DecorWhen::Speaker || !view.speaker.name.trim().is_empty())
-        })
 }
 
 pub fn has_effects(doc: &Document) -> bool {
@@ -1131,50 +1140,18 @@ pub fn has_effects(doc: &Document) -> bool {
 #[cfg(test)]
 mod decor_tests {
     use super::*;
-    use nanatype_theme::{DecorMotionKind, DecorMotionSpec};
 
     #[test]
-    fn paint_motion_keeps_rotation_and_multiplies_existing_opacity() {
-        let mut layout = LayoutStyle::default();
-        let mut motion = DecorMotionSpec {
-            kind: DecorMotionKind::Float,
-            amplitude: 2.0,
-            period_s: 8.0,
-            phase: 0.0,
-        };
-        apply_decor_motion(&mut layout, &motion, -25.0, 0.6, 2.0, false);
-        assert_eq!(layout.transform, Some(affine(0.0, 2.0, -25.0, 1.0)));
-        assert_eq!(layout.opacity, Some(0.6));
-        motion.kind = DecorMotionKind::Breathe;
-        motion.amplitude = 0.12;
-        apply_decor_motion(&mut layout, &motion, -25.0, 0.6, 4.0, false);
-        assert!((layout.opacity.unwrap() - 0.6 * 0.88).abs() < 1e-6);
-        apply_decor_motion(&mut layout, &motion, -25.0, 0.6, 4.0, true);
-        assert_eq!(layout.opacity, Some(0.6));
-        assert_eq!(layout.transform, Some(affine(0.0, 0.0, -25.0, 1.0)));
-    }
-
-    #[test]
-    fn decoration_frame_demand_tracks_content_visibility_and_motion_preference() {
-        let mut skin = Skin::default();
-        skin.dialogue.decor = vec![DecorSpec {
-            motion: Some(DecorMotionSpec::default()),
-            ..DecorSpec::default()
-        }];
+    fn a_populated_initial_mount_is_opaque_even_at_clock_zero() {
+        let mut stage = Stage::new();
         let mut view = DisplayView::empty(Entrance {
             kind: EntranceKind::None,
             ms: 0,
         });
-        assert!(!decor_animating(&skin, &view, false));
         view.empty = false;
-        assert!(decor_animating(&skin, &view, false));
-        assert!(!decor_animating(&skin, &view, true));
-        skin.dialogue.decor[0].when = DecorWhen::Speaker;
-        assert!(!decor_animating(&skin, &view, false));
-        view.speaker.name = "Nana".into();
-        assert!(decor_animating(&skin, &view, false));
-        skin.dialogue.decor[0].opacity = 0.0;
-        assert!(!decor_animating(&skin, &view, false));
+        stage.see(Arc::new(view), 0, 0);
+        assert_eq!(stage.presence(0, false), (1.0, 0.0));
+        assert_eq!(stage.presence(48, false), (1.0, 0.0));
     }
 
     #[test]
@@ -1189,7 +1166,10 @@ mod decor_tests {
         remote.empty = false;
         ui.peer_display.set(Arc::new(remote));
         assert!(!display_animating(ui, 100_000));
-        assert!(display_animating(ui.remote(), 100_000));
+        assert!(
+            !display_animating(ui.remote(), 100_000),
+            "decor uses the compositor clock"
+        );
         ui.reduced_motion.set(true);
         assert!(!display_animating(ui.remote(), 100_000));
     }

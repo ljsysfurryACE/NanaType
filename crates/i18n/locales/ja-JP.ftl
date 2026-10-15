@@ -589,3 +589,6 @@ peer-window-toggle = 相手の表示枠
 output-name-conflict = 出力名が重複しています。出力ごとに異なる名前を指定してください。
 
 output-peer-hint = 連携中は相手の画面を個別出力します。ウィンドウを隠しても出力を続けます。
+
+tb-effect-pulse = 脈動
+tb-effect-flicker = 明滅

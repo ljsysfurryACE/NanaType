@@ -907,6 +907,8 @@ fn toolbar(ui: Ui) -> AnyView {
             (ContinuousKind::Wave, "tb-effect-wave"),
             (ContinuousKind::Jump, "tb-effect-jump"),
             (ContinuousKind::Rainbow, "tb-effect-rainbow"),
+            (ContinuousKind::Pulse, "tb-effect-pulse"),
+            (ContinuousKind::Flicker, "tb-effect-flicker"),
         ]
         .into_iter()
         .map(|(kind, key)| item(t(key), fx_open, move || act(Tool::Effect(kind))))

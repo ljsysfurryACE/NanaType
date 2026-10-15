@@ -437,9 +437,12 @@ impl App {
     }
 
     fn edit_status(&self, f: impl FnOnce(&mut crate::ui::Status)) {
-        let mut status = (*self.ui.status.get_untracked()).clone();
+        let previous = self.ui.status.get_untracked();
+        let mut status = (*previous).clone();
         f(&mut status);
-        self.ui.status.set(Arc::new(status));
+        if status != *previous {
+            self.ui.status.set(Arc::new(status));
+        }
     }
 
     fn request_displays(&self) {
@@ -1432,6 +1435,7 @@ impl App {
 
     pub fn update(&mut self, msg: Msg) {
         match msg {
+            Msg::UiChanged => {}
             Msg::PeerStart { invitation, relay } => self.peer_start(invitation, relay),
             Msg::PeerLeave => self.peer_leave(),
             Msg::PeerPanel(expanded) => self.ui.peer_panel.set(expanded),
@@ -2026,7 +2030,7 @@ impl App {
         RuntimeProgramUpdate {
             window_commands,
             exit: self.quitting,
-            ..RuntimeProgramUpdate::redraw_all()
+            ..RuntimeProgramUpdate::default()
         }
     }
 }

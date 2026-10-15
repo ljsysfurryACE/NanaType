@@ -595,3 +595,6 @@ peer-window-toggle = Partner window
 output-name-conflict = Output names must be unique. Choose a different name for each output.
 
 output-peer-hint = Separate partner output during a session; keeps sending while hidden.
+
+tb-effect-pulse = Pulse
+tb-effect-flicker = Flicker

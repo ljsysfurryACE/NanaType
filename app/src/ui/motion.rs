@@ -175,3 +175,70 @@ mod tests {
         assert_eq!((o, t.f), (0.0, ENTER_RISE));
     }
 }
+
+/// Retained samples of a periodic curve. Only the compositor clock advances
+/// after mounting; samples never write back into a widget's logical style.
+/// 64 linear segments keep sine error below 0.13% of its amplitude.
+pub fn periodic(
+    node: nana_ui::runtime::view::NodeRef,
+    period_s: f32,
+    sample: impl Fn(f64) -> (PaintTransform, f32) + 'static,
+) {
+    nana_ui::runtime::view::on_mount(move |cx| {
+        let Some(node) = node.get_untracked() else {
+            return;
+        };
+        let period = f64::from(period_s.max(0.1));
+        let origin = crate::clock::now_ms() as f64 / 1000.0;
+        let values: Vec<_> = (0..=64)
+            .map(|i| sample(origin + period * i as f64 / 64.0))
+            .collect();
+        let mut tracks = Vec::new();
+        for (number, property) in [
+            (1, AnimatableProperty::Transform),
+            (2, AnimatableProperty::Opacity),
+        ] {
+            let get = |i: usize| {
+                if number == 1 {
+                    MotionValue::Transform(values[i].0)
+                } else {
+                    MotionValue::Scalar(values[i].1)
+                }
+            };
+            let from = get(0);
+            if (1..=64).all(|i| get(i) == from) {
+                continue;
+            }
+            tracks.push(MotionGraph::track(MotionTrack {
+                id: MotionTrackId::new(number).unwrap(),
+                target: MotionTargetId::new(1).unwrap(),
+                property,
+                from,
+                to: MotionTo::Keyframes(
+                    (1..=64)
+                        .map(|i| Keyframe {
+                            offset: i as f32 / 64.0,
+                            value: get(i),
+                            easing: None,
+                        })
+                        .collect(),
+                ),
+                timing: MotionTiming::new(Duration::ZERO, Duration::from_secs_f64(period), ms(16)),
+                curve: MotionCurve::Easing(Easing::Linear),
+                playback: AnimationPlayback::running(
+                    AnimationIteration::INFINITE,
+                    AnimationDirection::Normal,
+                    AnimationFillMode::None,
+                ),
+                velocity: from.zero_velocity(),
+            }));
+        }
+        let now = cx.animation_now();
+        let mut queue = nana_ui::runtime::MutationQueue::new();
+        queue
+            .node(node, now)
+            .timeline(MotionGraph::parallel(tracks))
+            .start();
+        let _ = cx.commit_mutations(queue);
+    });
+}

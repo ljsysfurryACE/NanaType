@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 
 use nana_ui::ControlSize;
 use nana_ui::icons_tabler as ti;
-use nana_ui::runtime::view::{AnyView, IntoView, computed, dynamic, each, signal, widget};
+use nana_ui::runtime::view::{
+    AnyView, IntoView, computed, dynamic, each_virtual, node_ref, signal, widget,
+};
 use nana_ui::runtime::{
     Activate, Button, FocusWithinChanged, IconButton, NodeStyle, PointerHoverChanged, RichTextView,
     ScrollAxes, ScrollView, Stack, Text, UserScroll,
@@ -38,9 +40,10 @@ enum RowSource {
 impl RowSource {
     fn get(self, ui: Ui) -> Option<nanatype_core::HistoryRow> {
         match self {
-            Self::History(key) => ui
-                .history
-                .with_untracked(|rows| rows.iter().find(|r| r.key == key).cloned()),
+            Self::History(key) => {
+                let at = ui.history_index.with(|index| index.get(&key).copied())?;
+                ui.history.with_untracked(|rows| rows.get(at).cloned())
+            }
             Self::Chat(seq) => ui.chat.with_untracked(|rows| {
                 rows.iter().find(|m| m.seq == seq).map(|m| {
                     let item = m.history_item(ui.locale.get_untracked());
@@ -654,6 +657,7 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
         feed.lock().unwrap().update(&chat, &history, &filter)
     });
     let follow = signal(true);
+    let scroll = node_ref();
     let list = widget(
         ScrollView::new(ScrollAxes::Vertical)
             .follow_end(true)
@@ -664,6 +668,7 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
                 l.min_height = Some(LengthSpec::Px(0.0));
             }),
     )
+    .node_ref(scroll)
     .bind(move |v: &mut ScrollView| v.follow_end = follow.get())
     .on(move |e: &UserScroll| follow.set(e.at_end))
     .children(dynamic(
@@ -683,8 +688,15 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
                     .width(LengthSpec::Fill),
             )
             .children(
-                each(items, |k: &RowSource| *k, move |k| row_view(ui, k, width))
-                    .transition(super::motion::enter()),
+                each_virtual(
+                    items,
+                    |k: &RowSource| *k,
+                    56.0,
+                    move |k| row_view(ui, k, width),
+                )
+                .measured()
+                .overscan(240.0)
+                .within(scroll),
             )
             .into_any()
         },

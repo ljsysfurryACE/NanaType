@@ -1,0 +1,300 @@
+//! Real retained GPU workload, without image readback in measured frames.
+//! cargo run --release -p nanatype --example gpu_perf -- target/render-perf/gpu-after.json
+use nana_ui::runtime::view::IntoView;
+use nana_ui::runtime::{DocumentId, RuntimeDocument};
+use nana_ui::{
+    GpuContext, GpuTextureDescriptor, GpuTextureFormat, GpuTextureUsages, RenderTargetId,
+    ScenePaintViewport, SceneWgpuPainter, wgpu,
+};
+use nana_ui_devtools::agent::RuntimeAgentSession;
+use nanatype::{
+    clock,
+    ui::{Ui, danmaku, dialogue, history},
+};
+use nanatype_core::{Cmd, Core};
+use nanatype_i18n::Locale;
+use nanatype_settings::Settings;
+use nanatype_theme::SkinRegistry;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+fn distribution(mut samples: Vec<f64>) -> serde_json::Value {
+    if samples.is_empty() {
+        return serde_json::Value::Null;
+    }
+    samples.sort_by(f64::total_cmp);
+    serde_json::json!({"median_ms":samples[samples.len()/2],"p95_ms":samples[samples.len()*95/100]})
+}
+
+fn session(registry: &SkinRegistry, name: &'static str, track: usize) -> (Ui, RuntimeAgentSession) {
+    clock::capture_at(0, || {
+        let mut skin = registry
+            .load(if name == "decor" {
+                "nanatype.sakura"
+            } else {
+                "nanatype.vanilla"
+            })
+            .unwrap()
+            .skin;
+        if name == "sweep" {
+            Arc::make_mut(&mut skin).dialogue.sweep.enabled = true;
+        }
+        let mut settings = Settings::default();
+        settings.history.max_items = 1000;
+        let settings = Arc::new(settings);
+        let ui = Ui::new(settings.clone(), skin.clone(), Locale::ZhCn);
+        ui.reduced_motion.set(name == "reduced");
+        ui.chat_width.set(960.0);
+        let text = match name {
+            "wave" | "multi_output" => "[wave]波浪动效 Retained wave[/wave]".into(),
+            "combo" => "[wave][rainbow]波浪彩虹 Combined[/rainbow][/wave]".into(),
+            "pulse_flicker" => "[pulse][flicker]脉动闪烁 Pulse flicker[/flicker][/pulse]".into(),
+            "pacing_only" => "[speed=20ms]节奏标记 Static pacing[/speed]".into(),
+            "reduced" => "[wave]减少动态效果 Reduced motion[/wave]".into(),
+            "reveal" => "逐字呈现 Typewriter dialogue ".repeat(12),
+            _ => "渲染效率 Rendering workload".into(),
+        };
+        let mut core = Core::new((*settings).clone(), skin.clone());
+        for _ in 0..if name == "chat_1000" { 1000 } else { 1 } {
+            core.handle(Cmd::SendMarkup(text.clone()), 0);
+            if name != "reveal" {
+                core.handle(Cmd::Skip, 1);
+            }
+        }
+        ui.display.set(Arc::new(core.display().clone()));
+        ui.peer_display.set(ui.display.get_untracked());
+        ui.history
+            .set(Arc::new(core.history().iter().cloned().collect()));
+        let id = DocumentId::new((track + 1) as u64).unwrap();
+        let mut doc = RuntimeDocument::new(id);
+        doc.context_mut()
+            .set_theme_tokens(nanatype::skin_theme::compile(&skin, false))
+            .unwrap();
+        doc.context_mut()
+            .mount_view_root(id, move || {
+                if name == "chat_1000" {
+                    danmaku::chat_window(ui).into_any()
+                } else if track == 2 {
+                    history::history_window(ui).into_any()
+                } else if track == 1 {
+                    dialogue::display_window(ui.remote()).into_any()
+                } else {
+                    dialogue::display_window(ui).into_any()
+                }
+            })
+            .unwrap();
+        let mut session = RuntimeAgentSession::new(doc, 960, 540).unwrap();
+        session.flush().unwrap();
+        (ui, session)
+    })
+}
+
+fn main() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::from_env().unwrap_or_default(),
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        ..Default::default()
+    }))
+    .expect("GPU adapter");
+    let info = adapter.get_info();
+    let timestamps =
+        wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS;
+    let supported = adapter.features().contains(timestamps);
+    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("NanaType rendering benchmark"),
+        required_features: if supported {
+            timestamps
+        } else {
+            wgpu::Features::empty()
+        },
+        ..Default::default()
+    }))
+    .unwrap();
+    let queries = supported.then(|| {
+        device.create_query_set(&wgpu::QuerySetDescriptor {
+            label: Some("frame timing"),
+            ty: wgpu::QueryType::Timestamp,
+            count: 2,
+        })
+    });
+    let resolve = supported.then(|| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("timestamp resolve"),
+            size: 256,
+            usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        })
+    });
+    let read = supported.then(|| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("timestamp read"),
+            size: 16,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    });
+    let timestamp_period = queue.get_timestamp_period() as f64;
+    let gpu = GpuContext::from_wgpu(adapter, device, queue);
+    let registry = SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+    let mut cases = Vec::new();
+    for name in [
+        "static",
+        "pacing_only",
+        "reduced",
+        "reveal",
+        "wave",
+        "combo",
+        "decor",
+        "chat_1000",
+        "multi_output",
+        "pulse_flicker",
+        "sweep",
+    ] {
+        let mut sessions: Vec<_> = (0..if name == "multi_output" { 3 } else { 1 })
+            .map(|i| session(&registry, name, i))
+            .collect();
+        let mut painter = SceneWgpuPainter::new(&gpu, GpuTextureFormat::BGRA8_UNORM_SRGB);
+        let outputs = if name == "multi_output" { 2 } else { 1 };
+        let textures: Vec<_> = (0..sessions.len() * outputs)
+            .map(|_| {
+                gpu.create_texture(&GpuTextureDescriptor {
+                    label: Some("benchmark target"),
+                    width: 960,
+                    height: 540,
+                    format: GpuTextureFormat::BGRA8_UNORM_SRGB,
+                    usage: GpuTextureUsages::RENDER_TARGET,
+                })
+                .unwrap()
+            })
+            .collect();
+        let renderers = nanatype::ui::sweep::renderers();
+        let mut trials = Vec::new();
+        for trial in 0..3 {
+            let mut cpu = Vec::new();
+            let mut gpu_times = Vec::new();
+            let (mut rendered, mut shaped, mut layouts, mut draws, mut uploaded, mut primitives) =
+                (0, 0, 0, 0, 0, 0);
+            for frame in 0..180 {
+                let ms = ((trial * 180 + frame) * 16) as u64;
+                let mut count = 0;
+                let start = Instant::now();
+                let mut commands = gpu.begin_frame("benchmark frame");
+                if let Some(q) = &queries {
+                    commands.wgpu_encoder().write_timestamp(q, 0);
+                }
+                clock::capture_at(ms, || {
+                    for (i, (ui, session)) in sessions.iter_mut().enumerate() {
+                        let track_ui = if i == 1 { ui.remote() } else { *ui };
+                        let runtime_animation = dialogue::display_animating(track_ui, ms);
+                        let animate = runtime_animation || nanatype::ui::sweep::animating(track_ui);
+                        if runtime_animation {
+                            track_ui.now.set(ms);
+                        }
+                        session
+                            .document_mut()
+                            .sync_presentation_clock(Duration::from_millis(ms));
+                        let update = session.flush().unwrap();
+                        if frame >= 60 && !update.is_idle() {
+                            let w = session.document().context().last_work_counters();
+                            shaped += w.text_shaped;
+                            layouts += w.layout_nodes;
+                        }
+                        if frame == 0
+                            || animate
+                            || !update.is_idle()
+                            || session.document().compositor_needs_tick()
+                        {
+                            for output in 0..outputs {
+                                let target = i * outputs + output;
+                                painter
+                                    .paint_target(
+                                        RenderTargetId(target as u64 + 1),
+                                        session.document().scene(),
+                                        &mut commands,
+                                        &textures[target].render_target().unwrap(),
+                                        ScenePaintViewport {
+                                            logical_size: [960.0, 540.0],
+                                            physical_size: [960, 540],
+                                            scale_factor: 1.0,
+                                            scene_origin: [0.0; 2],
+                                            target_origin: [0.0; 2],
+                                            clear_color: [0.0; 4],
+                                            clear: true,
+                                        },
+                                        None,
+                                        Some(&renderers),
+                                    )
+                                    .unwrap();
+                                if frame >= 60 {
+                                    if let Some(work) = painter.last_gpu_work() {
+                                        draws += work.draw_calls;
+                                        uploaded += work.gpu_upload_bytes;
+                                    }
+                                }
+                                count += 1;
+                            }
+                        }
+                        primitives = primitives.max(session.document().scene().primitive_count());
+                    }
+                });
+                if let (Some(q), Some(resolve), Some(read)) = (&queries, &resolve, &read) {
+                    commands.wgpu_encoder().write_timestamp(q, 1);
+                    commands
+                        .wgpu_encoder()
+                        .resolve_query_set(q, 0..2, resolve, 0);
+                    commands
+                        .wgpu_encoder()
+                        .copy_buffer_to_buffer(resolve, 0, read, 0, 16);
+                }
+                let submission = commands.submit();
+                if frame >= 60 {
+                    cpu.push(start.elapsed().as_secs_f64() * 1000.0);
+                    rendered += count;
+                }
+                // Completion and timestamp mapping are outside CPU frame timing.
+                gpu.wgpu()
+                    .device()
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: Some(submission.wgpu_index().clone()),
+                        timeout: Some(Duration::from_secs(10)),
+                    })
+                    .unwrap();
+                if let Some(read) = &read {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    read.slice(..)
+                        .map_async(wgpu::MapMode::Read, move |result| {
+                            let _ = tx.send(result);
+                        });
+                    gpu.wgpu()
+                        .device()
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: None,
+                            timeout: Some(Duration::from_secs(10)),
+                        })
+                        .unwrap();
+                    rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+                    let data = read.slice(..).get_mapped_range().unwrap();
+                    let begin = u64::from_ne_bytes(data[..8].try_into().unwrap());
+                    let end = u64::from_ne_bytes(data[8..16].try_into().unwrap());
+                    if frame >= 60 && count > 0 {
+                        gpu_times
+                            .push(end.wrapping_sub(begin) as f64 * timestamp_period / 1_000_000.0);
+                    }
+                    drop(data);
+                    read.unmap();
+                }
+            }
+            trials.push(serde_json::json!({"cpu_record_submit":distribution(cpu),"gpu_timestamp":distribution(gpu_times),"rendered_targets":rendered,"text_shaped":shaped,"layout_nodes":layouts,"draw_calls":draws,"upload_bytes":uploaded,"max_scene_primitives":primitives}));
+        }
+        cases.push(serde_json::json!({"scenario":name,"trials":trials}));
+    }
+    let report = serde_json::json!({"schema":1,"adapter":info.name,"backend":format!("{:?}",info.backend),"timestamps_supported":supported,"measurement":"60 warmup + 120 measured ticks, 3 trials; GPU timestamps, no pixel readback; multi_output is 3 scenes x 2 retained targets on one device (does not include Spout receiver/fences)","cases":cases});
+    let path = std::env::args().nth(1).expect("output JSON path");
+    std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap()).unwrap();
+    std::fs::write(path, serde_json::to_string_pretty(&report).unwrap()).unwrap();
+}

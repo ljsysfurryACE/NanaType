@@ -359,3 +359,19 @@ NanaUI 一次只用一个字体名，NanaType 会从 `families` 里挑第一个�
 ## 热重载
 
 制作皮肤时，在 设置 › 皮肤 打开「文件变化时自动重载」，修改文件夹中的文件后展示框会立即更新。
+
+## 文字组合动效与对话框扫光
+
+`[wave][rainbow]文字[/rainbow][/wave]` 可以组合逐字效果，位移相加、缩放与透明度相乘。新增 `[pulse]` 脉动缩放和 `[flicker]` 闪烁，同样支持 `amp` / `speed`。皮肤默认参数：`effects.pulse_amount`（默认 0.12，0–2）、`effects.pulse_period_s`（默认 1 秒，0.05–3600）、`effects.flicker_amount`（默认 1，0–1）和 `effects.flicker_hz`（默认 8，0–60）。减少动态效果时关闭持续动效；只有节奏或入场设置的文字在揭示完成后停止刷新。
+
+`dialogue.sweep` 在框体表面、正文下方绘制局部扫光，默认关闭。`dialogue.sweep.enabled` 开启；`dialogue.sweep.color` 是光的颜色；`dialogue.sweep.intensity` 为 0–1；`dialogue.sweep.period_s` 为 0.1–3600 秒。示例：
+
+```toml
+[dialogue.sweep]
+enabled = true
+color = "#ffffff"
+intensity = 0.18
+period_s = 4.0
+```
+
+编辑框、皮肤预览和减少动态效果模式显示固定光位。展示框、伙伴展示框及 OBS 输出共享相同效果和透明度。扫光按框体轮廓、圆角、渐变透明度和九宫格图片透明度裁切；静态遮罩随尺寸或皮肤变化更新，动画帧只更新时间参数。

@@ -18,6 +18,7 @@ pub mod msg;
 pub mod output;
 pub mod p2p;
 pub mod paths;
+mod perf;
 pub mod scheduler;
 pub mod services;
 pub mod skin_fonts;

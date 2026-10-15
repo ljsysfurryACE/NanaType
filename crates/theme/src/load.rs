@@ -360,6 +360,33 @@ fn validate(skin: &Skin, files: &dyn SkinFiles, app_version: &str, out: &mut Vec
             "must be 1–2000",
         ));
     }
+    if !in_range(d.sweep.intensity, 0.0, 1.0) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.sweep.intensity",
+            "must be 0–1",
+        ));
+    }
+    if !in_range(d.sweep.period_s, 0.1, 3600.0) {
+        out.push(SkinDiagnostic::error(
+            "dialogue.sweep.period_s",
+            "must be 0.1–3600 seconds",
+        ));
+    }
+    for (field, value, hi) in [
+        ("effects.pulse_amount", skin.effects.pulse_amount, 2.0),
+        ("effects.flicker_amount", skin.effects.flicker_amount, 1.0),
+        ("effects.flicker_hz", skin.effects.flicker_hz, 60.0),
+    ] {
+        if !in_range(value, 0.0, hi) {
+            out.push(SkinDiagnostic::error(field, "out of range or non-finite"));
+        }
+    }
+    if !in_range(skin.effects.pulse_period_s, 0.05, 3600.0) {
+        out.push(SkinDiagnostic::error(
+            "effects.pulse_period_s",
+            "must be 0.05–3600 seconds",
+        ));
+    }
     validate_shapes(skin, out);
 
     for (field, path, kind) in skin.referenced_files() {

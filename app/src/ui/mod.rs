@@ -15,11 +15,12 @@ pub mod quote;
 pub mod rich;
 pub mod settings;
 pub mod surface;
+pub mod sweep;
 
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 
-use nana_ui::runtime::view::{NodeRef, Signal, node_ref, signal};
+use nana_ui::runtime::view::{Computed, NodeRef, Signal, computed, node_ref, signal};
 use nanatype_core::{DisplayView, HistoryRow};
 use nanatype_i18n::{Arg, I18n, Locale};
 use nanatype_model::{ChatRef, Document, Entrance, EntranceKind};
@@ -149,7 +150,10 @@ pub struct Ui {
     pub track_slot: usize,
     /// Animation clock (ms); advanced every frame while something moves.
     pub now: Signal<u64>,
+    pub peer_now: Signal<u64>,
+    pub history_now: Signal<u64>,
     pub history: Signal<Arc<Vec<HistoryRow>>>,
+    pub history_index: Computed<Arc<HashMap<u64, usize>>>,
     pub draft: Signal<Arc<Document>>,
     pub source: Signal<Source>,
     pub diagnostics: Signal<Arc<Vec<String>>>,
@@ -175,6 +179,7 @@ pub struct Ui {
     /// Clock (ms) of the input window's mirroring chip pulse; only advanced
     /// while that chip is showing.
     pub pulse_ms: Signal<u64>,
+    pub settings_pulse_ms: Signal<u64>,
     /// The rich editor's document, as the program last set or received it.
     pub editor_value: Signal<nana_ui_core::RichText>,
     /// Attributes at the editor's selection (toolbar pressed states).
@@ -206,6 +211,12 @@ impl Ui {
             kind: EntranceKind::None,
             ms: 0,
         };
+        let history = signal(Arc::new(Vec::<HistoryRow>::new()));
+        let history_index = computed(move || {
+            Arc::new(
+                history.with(|rows| rows.iter().enumerate().map(|(i, r)| (r.key, i)).collect()),
+            )
+        });
         Self {
             locale: signal(locale),
             settings: signal(settings),
@@ -221,7 +232,10 @@ impl Ui {
             peer_local_line: signal(None),
             track_slot: 0,
             now: signal(crate::clock::now_ms()),
-            history: signal(Arc::new(Vec::new())),
+            peer_now: signal(crate::clock::now_ms()),
+            history_now: signal(crate::clock::now_ms()),
+            history,
+            history_index,
             draft: signal(Arc::new(Document::new())),
             source: signal(Source::default()),
             diagnostics: signal(Arc::new(Vec::new())),
@@ -238,6 +252,7 @@ impl Ui {
             input_shown: signal(true),
             onboard_step: signal(0),
             pulse_ms: signal(0),
+            settings_pulse_ms: signal(0),
             editor_value: signal(nana_ui_core::RichText::new("")),
             sel_attrs: signal(nana_ui::runtime::RichSelectionAttrs::default()),
             source_mode: signal(false),
@@ -264,6 +279,7 @@ impl Ui {
     pub fn remote(self) -> Self {
         Self {
             display: self.peer_display,
+            now: self.peer_now,
             text_node: self.peer_text_node,
             text_port: self.peer_text_port,
             text_scroll: self.peer_text_scroll,

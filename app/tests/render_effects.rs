@@ -1,0 +1,327 @@
+use nana_ui::runtime::view::{signal, widget};
+use nana_ui::runtime::{DocumentId, RuntimeDocument, Stack};
+use nana_ui_core::LengthSpec;
+use nana_ui_devtools::agent::{AgentSession, RuntimeAgentSession};
+use nanatype::ui::{surface::Surface, sweep};
+use nanatype_model::Rgba8;
+use nanatype_theme::{ContourPreset, SweepSpec};
+use std::{sync::Arc, time::Duration};
+
+fn pixel(data: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+    data[((y * width + x) * 4) as usize..((y * width + x) * 4 + 4) as usize]
+        .try_into()
+        .unwrap()
+}
+
+#[test]
+fn combined_effects_keep_ruby_objects_and_partner_animation_without_layout() {
+    use nanatype::ui::{Ui, dialogue};
+    use nanatype_core::{Cmd, Core};
+    use nanatype_i18n::Locale;
+    use nanatype_settings::Settings;
+    let markup = "[wave][rainbow][pulse][flicker]中文 [ruby=かんじ]漢字[/ruby] [sticker=cats/hi h=1.2] [at=1 name=奈奈][/flicker][/pulse][/rainbow][/wave]";
+    let parsed = nanatype_markup::parse(markup);
+    assert!(parsed.diagnostics.is_empty());
+    assert_eq!(
+        nanatype_markup::parse(&nanatype_markup::serialize(&parsed.doc)).doc,
+        parsed.doc
+    );
+    for remote in [false, true] {
+        let skin = nanatype_theme::SkinRegistry::new(None, "1.0.0")
+            .load("nanatype.vanilla")
+            .unwrap()
+            .skin;
+        let settings = Settings::default();
+        let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), Locale::ZhCn);
+        let mut core = Core::new(settings, skin);
+        core.handle(Cmd::SendMarkup(markup.into()), 0);
+        core.handle(Cmd::Skip, 1);
+        ui.display.set(Arc::new(core.display().clone()));
+        ui.peer_display.set(ui.display.get_untracked());
+        ui.now.set(100_000);
+        ui.peer_now.set(100_000);
+        let id = DocumentId::new(1).unwrap();
+        let mut doc = RuntimeDocument::new(id);
+        nanatype::clock::capture_at(100_000, || {
+            doc.context_mut()
+                .mount_view_root(id, move || {
+                    dialogue::display_window(if remote { ui.remote() } else { ui })
+                })
+                .unwrap()
+        });
+        let mut session = RuntimeAgentSession::new(doc, 796, 236).unwrap();
+        let (_, first) = session.screenshot_rgba().unwrap();
+        let layout = session.document().context().world().layout_generation();
+        session
+            .document_mut()
+            .sync_presentation_clock(Duration::from_millis(250));
+        assert!(session.flush().unwrap().is_idle());
+        let (_, next) = session.screenshot_rgba().unwrap();
+        assert_ne!(
+            first, next,
+            "all effects continue on the selected display track"
+        );
+        assert_eq!(
+            session.document().context().world().layout_generation(),
+            layout
+        );
+        assert!(session.document().compositor_needs_tick());
+    }
+}
+
+#[test]
+fn finite_reveals_and_history_presence_stop_requesting_frames() {
+    use nanatype::ui::{Ui, dialogue, history};
+    use nanatype_core::{Cmd, Core};
+    use nanatype_i18n::Locale;
+    use nanatype_settings::Settings;
+    for (markup, reduced) in [
+        ("[speed=20ms]节奏 Only pacing[/speed]", false),
+        ("[fade]入场 Only intro[/fade]", false),
+        ("[wave amp=0]零幅度 Zero amplitude[/wave]", false),
+        ("[wave]减少动态 Reduced[/wave]", true),
+        ("[pause]等待 Paused reveal", false),
+    ] {
+        for history_window in [false, true] {
+            let skin = nanatype_theme::SkinRegistry::new(None, "1.0.0")
+                .load("nanatype.vanilla")
+                .unwrap()
+                .skin;
+            let settings = Settings::default();
+            let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), Locale::ZhCn);
+            ui.reduced_motion.set(reduced);
+            let mut core = Core::new(settings, skin);
+            core.handle(Cmd::SendMarkup(markup.into()), 0);
+            ui.display.set(Arc::new(core.display().clone()));
+            ui.history
+                .set(Arc::new(core.history().iter().cloned().collect()));
+            let id = DocumentId::new(1).unwrap();
+            let mut doc = RuntimeDocument::new(id);
+            nanatype::clock::capture_at(0, || {
+                doc.context_mut()
+                    .mount_view_root(id, move || {
+                        use nana_ui::runtime::view::IntoView;
+                        if history_window {
+                            history::history_window(ui).into_any()
+                        } else {
+                            dialogue::display_window(ui).into_any()
+                        }
+                    })
+                    .unwrap()
+            });
+            let mut session = RuntimeAgentSession::new(doc, 796, 540).unwrap();
+            session.flush().unwrap();
+            // Include presence completion, layer-demotion hold and reveal fade.
+            for ms in (16..=4000).step_by(16) {
+                session
+                    .document_mut()
+                    .context_mut()
+                    .advance_animations(Duration::from_millis(ms));
+                session
+                    .document_mut()
+                    .sync_presentation_clock(Duration::from_millis(ms));
+                nanatype::clock::capture_at(ms, || session.flush().unwrap());
+            }
+            assert!(
+                !session.document().compositor_needs_tick(),
+                "{markup}, history={history_window}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ornaments_animate_without_runtime_work_and_stop_when_reduced_or_cleared() {
+    use nanatype::ui::{Ui, dialogue};
+    use nanatype_core::{Cmd, Core, DisplayView};
+    use nanatype_i18n::Locale;
+    use nanatype_settings::Settings;
+    let registry = nanatype_theme::SkinRegistry::new(None, "1.0.0");
+    let skin = registry.load("nanatype.sakura").unwrap().skin;
+    let settings = Settings::default();
+    let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), Locale::ZhCn);
+    let mut core = Core::new(settings, skin.clone());
+    core.handle(Cmd::SendMarkup("静止台词，装饰仍在动".into()), 0);
+    core.handle(Cmd::Skip, 1);
+    ui.display.set(Arc::new(core.display().clone()));
+    let id = DocumentId::new(1).unwrap();
+    let mut doc = RuntimeDocument::new(id);
+    nanatype::clock::capture_at(0, || {
+        doc.context_mut()
+            .mount_view_root(id, move || dialogue::display_window(ui))
+            .unwrap()
+    });
+    let mut session = RuntimeAgentSession::new(doc, 796, 236).unwrap();
+    session.flush().unwrap();
+    ui.now.set(1000);
+    session
+        .document_mut()
+        .sync_presentation_clock(Duration::from_millis(1000));
+    session.flush().unwrap();
+    assert!(
+        session.document().compositor_needs_tick(),
+        "visible decorations own live tracks"
+    );
+    let layout = session.document().context().world().layout_generation();
+    session
+        .document_mut()
+        .sync_presentation_clock(Duration::from_millis(1100));
+    assert!(
+        session.flush().unwrap().is_idle(),
+        "compositor ticks do not write Runtime styles"
+    );
+    assert_eq!(
+        layout,
+        session.document().context().world().layout_generation()
+    );
+    ui.reduced_motion.set(true);
+    session.flush().unwrap();
+    assert!(
+        !session.document().compositor_needs_tick(),
+        "reduced motion removes ornament loops"
+    );
+    ui.reduced_motion.set(false);
+    session.flush().unwrap();
+    assert!(session.document().compositor_needs_tick());
+    ui.display
+        .set(Arc::new(DisplayView::empty(core.display().entrance)));
+    ui.now.set(10_000);
+    nanatype::clock::capture_at(10_000, || session.flush().unwrap());
+    assert!(
+        !session.document().compositor_needs_tick(),
+        "an empty display never retains ornament loops"
+    );
+}
+
+#[test]
+fn chat_materializes_the_viewport_and_keeps_scrolling_available() {
+    use nanatype::ui::{Ui, danmaku};
+    use nanatype_core::{Cmd, Core};
+    use nanatype_i18n::Locale;
+    use nanatype_settings::Settings;
+    let skin = nanatype_theme::SkinRegistry::new(None, "1.0.0")
+        .load("nanatype.halo")
+        .unwrap()
+        .skin;
+    let mut settings = Settings::default();
+    settings.history.max_items = 1000;
+    let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), Locale::ZhCn);
+    let mut core = Core::new(settings, skin);
+    for i in 0..1000 {
+        core.handle(
+            Cmd::SendMarkup(format!("消息 {i} {}", "长文本 ".repeat(i % 6 + 1))),
+            0,
+        );
+        core.handle(Cmd::Skip, 1);
+    }
+    ui.history
+        .set(Arc::new(core.history().iter().cloned().collect()));
+    let id = DocumentId::new(1).unwrap();
+    let mut doc = RuntimeDocument::new(id);
+    doc.context_mut()
+        .mount_view_root(id, move || danmaku::chat_window(ui))
+        .unwrap();
+    let mut session = RuntimeAgentSession::new(doc, 400, 600).unwrap();
+    session.flush().unwrap();
+    let mounted = session.document().context().world().len();
+    assert!(
+        mounted < 1000,
+        "a viewport does not mount 1000 message trees: {mounted}"
+    );
+    session.set_viewport(400, 1200, 1.0).unwrap();
+    session.flush().unwrap();
+    let tall = session.document().context().world().len();
+    assert!(
+        tall > mounted && tall < 1000,
+        "mounted nodes follow viewport height: {mounted} -> {tall}"
+    );
+    session.set_viewport(400, 600, 1.0).unwrap();
+    session.flush().unwrap();
+    assert!(
+        session.document().scene().primitive_count() < 500,
+        "1000 messages keep only viewport nodes"
+    );
+    session.scroll_by(200.0, 300.0, 0.0, -450.0).unwrap();
+    assert!(session.document().scene().primitive_count() < 500);
+    ui.chat_width.set(320.0);
+    session.flush().unwrap();
+    assert!(
+        session.document().scene().primitive_count() < 500,
+        "resize remeasures the virtual viewport"
+    );
+}
+
+#[test]
+fn sweep_is_clipped_premultiplied_and_retained_across_dpi_and_opacity() {
+    for scale in [1.0, 1.5, 2.0] {
+        let opacity = signal(1.0);
+        let mut surface = Surface::default();
+        surface.contour = Some(ContourPreset::Cloud);
+        surface.fill = Some([0.0, 0.0, 0.0, 0.5]);
+        surface.radii = [12.0; 4];
+        let id = DocumentId::new(1).unwrap();
+        let mut doc = RuntimeDocument::new(id);
+        doc.context_mut()
+            .mount_view_root(id, move || {
+                widget(
+                    Stack::column(0.0)
+                        .width(LengthSpec::Px(320.0))
+                        .height(LengthSpec::Px(120.0)),
+                )
+                .bind(move |node: &mut Stack| {
+                    nanatype::ui::restyle(node, |l| l.opacity = Some(opacity.get()))
+                })
+                .children(sweep::view(
+                    surface,
+                    SweepSpec {
+                        enabled: true,
+                        color: Rgba8::WHITE,
+                        intensity: 0.6,
+                        period_s: 4.0,
+                    },
+                    true,
+                ))
+            })
+            .unwrap();
+        let mut session = RuntimeAgentSession::new_scaled(doc, 320, 120, scale).unwrap();
+        session.set_clear(Some([0.0; 4]));
+        session.set_gpu_renderers(sweep::renderers());
+        let (size, first) =
+            nanatype::clock::capture_at(2000, || session.screenshot_rgba().unwrap());
+        let center = pixel(
+            &first,
+            size.width,
+            (160.0 * scale) as u32,
+            (60.0 * scale) as u32,
+        );
+        assert!(
+            (65..=85).contains(&center[3]),
+            "mask alpha * intensity at {scale}: {center:?}"
+        );
+        assert_eq!(
+            pixel(&first, size.width, 0, 0)[3],
+            0,
+            "cloud corner stays transparent"
+        );
+        let layout = session.document().context().world().layout_generation();
+        opacity.set(0.5);
+        let (_, faded) = nanatype::clock::capture_at(2000, || session.screenshot_rgba().unwrap());
+        let center_faded = pixel(
+            &faded,
+            size.width,
+            (160.0 * scale) as u32,
+            (60.0 * scale) as u32,
+        );
+        assert!(
+            (i16::from(center_faded[3]) * 2 - i16::from(center[3])).abs() <= 3,
+            "inherited alpha at {scale}: {center_faded:?}"
+        );
+        assert_eq!(
+            layout,
+            session.document().context().world().layout_generation(),
+            "opacity is presentation only"
+        );
+        let (_, next) = nanatype::clock::capture_at(500, || session.screenshot_rgba().unwrap());
+        assert_ne!(faded, next, "only the time uniform moves the sweep");
+    }
+}

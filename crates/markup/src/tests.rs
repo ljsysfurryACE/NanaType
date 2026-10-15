@@ -229,7 +229,7 @@ fn arb_style() -> impl Strategy<Value = Style> {
 
 fn arb_effects() -> impl Strategy<Value = Effects> {
     (
-        prop::collection::btree_set(0usize..4, 0..3),
+        prop::collection::btree_set(0usize..ContinuousKind::ALL.len(), 0..3),
         prop::option::of((0usize..4, 1u16..900)),
     )
         .prop_map(|(kinds, entrance)| Effects {
@@ -380,4 +380,16 @@ fn malformed_vts_tags_are_reported() {
         assert!(!parsed.diagnostics.is_empty(), "{bad}");
         assert!(parsed.doc.markers().is_empty(), "{bad}");
     }
+}
+
+#[test]
+fn pulse_flicker_and_nested_continuous_effects_roundtrip() {
+    let input = "[pulse amp=0.5 speed=2][flicker][wave][rainbow]脉动漢字[/rainbow][/wave][/flicker][/pulse]";
+    let parsed = parse(input);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let fx = &runs(&parsed.doc)[0].effects;
+    assert_eq!(fx.continuous.len(), 4);
+    assert!(fx.has(ContinuousKind::Pulse) && fx.has(ContinuousKind::Flicker));
+    let markup = crate::serialize(&parsed.doc);
+    assert_eq!(parse(&markup).doc, parsed.doc);
 }

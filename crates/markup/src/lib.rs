@@ -28,7 +28,7 @@ pub use template::expand_template;
 /// Tag names the parser understands, for editor autocompletion.
 pub const SPAN_TAGS: &[&str] = &[
     "b", "i", "u", "s", "color", "size", "stroke", "shadow", "font", "ruby", "shake", "wave",
-    "jump", "rainbow", "fade", "pop", "slide", "speed", "instant",
+    "jump", "rainbow", "pulse", "flicker", "fade", "pop", "slide", "speed", "instant",
 ];
 pub const POINT_TAGS: &[&str] = &[
     "wait",

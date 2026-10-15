@@ -97,10 +97,19 @@ pub enum ContinuousKind {
     Wave,
     Jump,
     Rainbow,
+    Pulse,
+    Flicker,
 }
 
 impl ContinuousKind {
-    pub const ALL: [Self; 4] = [Self::Shake, Self::Wave, Self::Jump, Self::Rainbow];
+    pub const ALL: [Self; 6] = [
+        Self::Shake,
+        Self::Wave,
+        Self::Jump,
+        Self::Rainbow,
+        Self::Pulse,
+        Self::Flicker,
+    ];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -108,6 +117,8 @@ impl ContinuousKind {
             Self::Wave => "wave",
             Self::Jump => "jump",
             Self::Rainbow => "rainbow",
+            Self::Pulse => "pulse",
+            Self::Flicker => "flicker",
         }
     }
 

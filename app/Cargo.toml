@@ -42,6 +42,7 @@ unicode-segmentation.workspace = true
 arboard = "3"
 raw-window-handle = "0.6"
 imagesize = "0.15"
+tiny-skia = "0.12"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 crossbeam-channel = "0.5"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
@@ -74,4 +75,5 @@ windows = { version = "0.62", features = [
 embed-resource = "3"
 
 [dev-dependencies]
+pollster = "1"
 nana-ui-devtools = { workspace = true, features = ["runtime-agent"] }

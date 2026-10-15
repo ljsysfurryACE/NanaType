@@ -105,8 +105,12 @@ pwsh scripts/package.ps1
 | --- | --- |
 | `NANATYPE_DEBUG=<文件>` | 把窗口与输出事件追加写入该文件 |
 | `NANATYPE_DEMO=1` | 启动 1.5 秒后播放示例台词（调试构建） |
+| `NANATYPE_DEMO_MARKUP=<标记文本>` | 覆盖自动播放的示例台词（需 `NANATYPE_DEMO`） |
 | `NANATYPE_EXIT_AFTER=<毫秒>` | 到时正常退出（用于测量启动、刷出日志） |
 | `NANATYPE_OPAQUE=1` | 叠加窗口改为不透明（调试构建） |
+| `NANATYPE_PERF=<JSON 文件>` | 退出时保存各原生窗口呈现／输出帧数、宿主回调耗时与可用工作计数；丢弃前 2 秒 |
+
+渲染测量、GPU 时间戳、截图比较及限制见 [渲染优化验证记录](docs/rendering-performance.md)。
 
 ## 结构
 

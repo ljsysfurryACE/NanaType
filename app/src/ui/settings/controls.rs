@@ -294,7 +294,7 @@ fn breathing_badge(
         .bind(move |s: &mut Stack| {
             let connecting = connecting();
             let opacity = if connecting && !ui.reduced_motion.get() {
-                let phase = (ui.pulse_ms.get() % PULSE_MS) as f32 / PULSE_MS as f32;
+                let phase = (ui.settings_pulse_ms.get() % PULSE_MS) as f32 / PULSE_MS as f32;
                 let wave = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
                 0.55 + 0.45 * wave
             } else {

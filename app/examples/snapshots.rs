@@ -38,23 +38,40 @@ fn shot(
     theme: Arc<nana_ui::CompiledTheme>,
     mount: impl FnOnce(&mut RuntimeDocument, DocumentId),
 ) {
-    let id = DocumentId::new(1).unwrap();
-    let mut doc = RuntimeDocument::new(id);
-    let _ = doc.context_mut().set_theme_tokens(theme);
-    mount(&mut doc, id);
-    let scale = std::env::var("NANATYPE_SNAPSHOT_SCALE")
-        .ok()
-        .map(|s| s.parse::<f32>().expect("snapshot scale is a number"))
-        .unwrap_or(1.0);
-    let mut session = RuntimeAgentSession::new_scaled(doc, w, h, scale).expect("session");
-    if std::env::var_os("NANATYPE_SNAPSHOT_TRANSPARENT").is_some() {
-        session.set_clear(Some([0.0; 4]));
+    if let Ok(views) = std::env::var("NANATYPE_SNAPSHOT_VIEWS")
+        && !views.split(',').any(|view| view.trim() == name)
+    {
+        return;
     }
-    let path = out.join(format!("{name}.png"));
-    match session.screenshot_png(&path) {
-        Ok(stats) => println!("{name}: {stats:?}"),
-        Err(e) => println!("{name}: {e:?}"),
-    }
+    let at = nanatype::clock::now_ms();
+    nanatype::clock::capture_at(at.saturating_sub(1000), || {
+        let id = DocumentId::new(1).unwrap();
+        let mut doc = RuntimeDocument::new(id);
+        let _ = doc.context_mut().set_theme_tokens(theme);
+        mount(&mut doc, id);
+        let scale = std::env::var("NANATYPE_SNAPSHOT_SCALE")
+            .ok()
+            .map(|s| s.parse::<f32>().expect("snapshot scale is a number"))
+            .unwrap_or(1.0);
+        let mut session = RuntimeAgentSession::new_scaled(doc, w, h, scale).expect("session");
+        session.set_gpu_renderers(nanatype::ui::sweep::renderers());
+        if std::env::var_os("NANATYPE_SNAPSHOT_TRANSPARENT").is_some() {
+            session.set_clear(Some([0.0; 4]));
+        }
+        session.flush().expect("initial snapshot layout");
+        session
+            .document_mut()
+            .context_mut()
+            .advance_animations(std::time::Duration::from_secs(1));
+        session
+            .document_mut()
+            .sync_presentation_clock(std::time::Duration::from_secs(1));
+        let path = out.join(format!("{name}.png"));
+        nanatype::clock::capture_at(at, || match session.screenshot_png(&path) {
+            Ok(stats) => println!("{name}: {stats:?}"),
+            Err(e) => panic!("{name}: {e:?}"),
+        });
+    });
 }
 
 fn main() {
@@ -443,6 +460,13 @@ fn assert_consistent(settings: &Settings, status: &Status) {
 }
 
 fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
+    let at = std::env::var("NANATYPE_SNAPSHOT_TIME_MS")
+        .ok()
+        .map(|s| s.parse::<u64>().expect("snapshot time in milliseconds"))
+        .unwrap_or(100_000);
+    nanatype::clock::capture_at(at, || render_at(registry, out, skin_id, locale));
+}
+fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale: Locale) {
     std::fs::create_dir_all(out).unwrap();
     // A saved manifest set makes before/after comparisons use identical
     // fonts, sample content and rendering rather than stale screenshots.
@@ -478,12 +502,15 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         println!("font: {e}");
     }
     let families = roles.map(|s| builtin_ref(&s).and_then(|r| builtin.family(&r)));
-    let skin = Arc::new(nanatype::skin_theme::prepare(
+    let mut skin = Arc::new(nanatype::skin_theme::prepare(
         &loaded.skin,
         &Default::default(),
         &families,
         locale.tag(),
     ));
+    if std::env::var_os("NANATYPE_SNAPSHOT_SWEEP").is_some() {
+        Arc::make_mut(&mut skin).dialogue.sweep.enabled = true;
+    }
     let mut settings = Settings::default();
     settings.general.speaker_name = "奈奈".into();
     settings.skin.id = skin_id.to_owned();
@@ -535,6 +562,10 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     );
     core.handle(Cmd::Send, 0);
     core.handle(Cmd::Skip, 1);
+    if let Ok(line) = std::env::var("NANATYPE_SNAPSHOT_MARKUP") {
+        core.handle(Cmd::SendMarkup(line), 0);
+        core.handle(Cmd::Skip, 1);
+    }
     ui.chat
         .set(Arc::new(chat.iter().cloned().map(Arc::new).collect()));
     ui.reply.set(Some(chat[1].quote(locale)));
@@ -543,7 +574,7 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
         link_text::blive(locale, &BliveStatus::Connected, "21452505");
     assert_consistent(&settings, &status);
     ui.status.set(Arc::new(status));
-    std::thread::sleep(std::time::Duration::from_millis(1500));
+
     let draft = "[at=1002 name=路过的猫 avatar=blob:bili-face-1002] [b]粗体[/b]和[shake]抖动[/shake]，[wait=500]然后[pause]继续。[sticker=nana/heart][se=coin]";
     let parsed = parse(draft);
     ui.draft.set(Arc::new(parsed.doc.clone()));
@@ -563,7 +594,9 @@ fn render(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, locale:
     ui.display.set(Arc::new(core.display().clone()));
     ui.history
         .set(Arc::new(core.history().iter().cloned().collect()));
-    ui.now.set(100_000);
+    ui.now.set(nanatype::clock::now_ms());
+    ui.peer_now.set(nanatype::clock::now_ms());
+    ui.history_now.set(nanatype::clock::now_ms());
 
     let d = &skin.dialogue;
     let (w, h) = (
@@ -1068,12 +1101,14 @@ fn theme_audit(
     theme: Arc<nana_ui::CompiledTheme>,
 ) {
     let display_shot = |name: &str, ui: Ui, w, h| {
-        shot(name, out, w, h, theme.clone(), |doc, id| {
-            doc.context_mut()
-                .mount_view_root(id, move || {
-                    dialogue::dialogue_box(ui, dialogue::Source::Display, None)
-                })
-                .unwrap();
+        nanatype::clock::capture_at(ui.now.get_untracked(), || {
+            shot(name, out, w, h, theme.clone(), |doc, id| {
+                doc.context_mut()
+                    .mount_view_root(id, move || {
+                        dialogue::dialogue_box(ui, dialogue::Source::Display, None)
+                    })
+                    .unwrap();
+            })
         });
     };
     let input_shot = |name: &str, w, h| {
@@ -1095,6 +1130,7 @@ fn theme_audit(
         ui.peer_display.set(ui.display.get_untracked());
         for i in 0..=frames {
             ui.now.set(120_000 + i * period_ms / frames);
+            ui.peer_now.set(120_000 + i * period_ms / frames);
             display_shot(&format!("motion-{i:02}"), ui, w, h);
             display_shot(&format!("motion-peer-{i:02}"), ui.remote(), w, h);
         }
