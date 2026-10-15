@@ -397,6 +397,11 @@ err-syphon = Syphon 输出失败：{ $message }
 # blivechat
 window-chat = 弹幕
 chat-reply = 回复
+chat-at-short = 提及
+chat-style-compact = 紧凑
+chat-style-history = 气泡
+chat-panel-style = 操作面板样式
+chat-panel-style-hint = 紧凑列表或跟随当前历史皮肤的气泡；悬浮或键盘聚焦消息时显示回复与 @ 按钮
 chat-replying = 回复 { $name }
 chat-reply-cancel = 取消回复
 chat-clear = 清空

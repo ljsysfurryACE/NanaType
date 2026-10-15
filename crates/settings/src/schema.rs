@@ -598,6 +598,14 @@ pub enum BliveRoomKind {
     RoomId,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatPanelStyle {
+    #[default]
+    Compact,
+    History,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BlivechatSettings {
@@ -609,6 +617,8 @@ pub struct BlivechatSettings {
     pub room: String,
     /// What the chat panel lists.
     pub panel: ChatFilter,
+    /// Presentation of the operator's panel, independent of its message filter.
+    pub panel_style: ChatPanelStyle,
     /// Quote the answered message on the dialogue box.
     pub quote_on_display: bool,
     /// The chat panel was open when the app last quit.
@@ -624,6 +634,7 @@ impl Default for BlivechatSettings {
             room_kind: BliveRoomKind::AuthCode,
             room: String::new(),
             panel: ChatFilter::default(),
+            panel_style: ChatPanelStyle::default(),
             quote_on_display: true,
             panel_open: false,
         }

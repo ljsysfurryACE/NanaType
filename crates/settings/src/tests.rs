@@ -34,6 +34,33 @@ const V0: &str = r#"{
 }"#;
 
 #[test]
+fn chat_panel_style_defaults_and_round_trips_without_a_schema_change() {
+    let old: Settings =
+        serde_json::from_str(r#"{"schema":1,"integrations":{"blivechat":{"panel_open":true}}}"#)
+            .unwrap();
+    assert_eq!(
+        old.integrations.blivechat.panel_style,
+        ChatPanelStyle::Compact
+    );
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("settings.json");
+    for (style, wire) in [
+        (ChatPanelStyle::Compact, "compact"),
+        (ChatPanelStyle::History, "history"),
+    ] {
+        let mut settings = old.clone();
+        settings.integrations.blivechat.panel_style = style;
+        save_json(&path, &settings).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(json["integrations"]["blivechat"]["panel_style"], wire);
+        let loaded = load_settings(&path, None).value;
+        assert_eq!(loaded.integrations.blivechat.panel_style, style);
+        assert!(loaded.integrations.blivechat.panel_open);
+        assert_eq!(loaded.schema, SETTINGS_SCHEMA);
+    }
+}
+
+#[test]
 fn v0_settings_migrate_into_the_new_schema() {
     let tmp = tempfile::tempdir().unwrap();
     let legacy = tmp.path().join("legacy.json");

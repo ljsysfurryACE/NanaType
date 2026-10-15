@@ -2618,6 +2618,12 @@ fn blivechat(ui: Ui) -> AnyView {
         ),
         row(
             ui,
+            "chat-panel-style",
+            Some("chat-panel-style-hint"),
+            super::chat_panel_style(ui),
+        ),
+        row(
+            ui,
             "int-blive-quote-display",
             Some("int-blive-quote-display-hint"),
             switch(

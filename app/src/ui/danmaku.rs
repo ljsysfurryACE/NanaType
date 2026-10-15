@@ -1,6 +1,6 @@
 //! The chat panel: live chat from blivechat for the streamer to read and
-//! answer. The control window uses compact rows in the app's chrome; the
-//! captured history keeps its skin's bubbles, nameplates and animations.
+//! answer. The operator can choose compact rows or the current history skin.
+//! Both presentations share hover/focus actions and the same retained feed.
 //!
 //! Each message has two buttons: **@** puts a label with the viewer's avatar
 //! and name at the editor's caret; **reply** only quotes the message above
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use nana_ui::ControlSize;
 use nana_ui::icons_tabler as ti;
 use nana_ui::runtime::view::{
-    AnyView, IntoView, computed, dynamic, each_virtual, node_ref, signal, widget,
+    AnyView, IntoView, Signal, computed, dynamic, each_virtual, node_ref, signal, widget,
 };
 use nana_ui::runtime::{
     Activate, Button, FocusWithinChanged, IconButton, NodeStyle, PointerHoverChanged, RichTextView,
@@ -21,9 +21,9 @@ use nana_ui::runtime::{
 use nana_ui::theme::space;
 use nana_ui_core::{
     AlignSpec, BackgroundImage, BackgroundImageFit, JustifySpec, LengthSpec, OverflowSpec,
-    SemanticColorRole,
+    PointerEventsSpec, SemanticColorRole,
 };
-use nanatype_settings::{ChatFilter, Settings};
+use nanatype_settings::{ChatFilter, ChatPanelStyle, Settings};
 
 use super::history;
 use super::rich::{Env, Look, MentionLook, to_rich};
@@ -33,12 +33,23 @@ use crate::msg::Msg;
 
 /// Disjoint identities keep live chat and local lines from colliding in this feed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum RowSource {
+pub(super) enum RowSource {
     Chat(u64),
     History(u64),
 }
 impl RowSource {
-    fn get(self, ui: Ui) -> Option<nanatype_core::HistoryRow> {
+    pub(super) fn track(self, ui: Ui) {
+        match self {
+            Self::Chat(_) => {
+                ui.chat.with(|_| ());
+            }
+            Self::History(_) => {
+                ui.history.with(|_| ());
+            }
+        }
+    }
+
+    pub(super) fn get(self, ui: Ui) -> Option<nanatype_core::HistoryRow> {
         match self {
             Self::History(key) => {
                 let at = ui.history_index.with(|index| index.get(&key).copied())?;
@@ -171,39 +182,25 @@ fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
         }),
         _ => None,
     };
-    let actions = if let RowSource::Chat(seq) = source {
-        let button = move |reply: bool| {
-            widget(
-                IconButton::new(
-                    if reply { ti::ARROW_BACK_UP } else { ti::AT },
-                    ui.now_t(if reply {
-                        "chat-reply"
-                    } else {
-                        "chat-at-action"
-                    }),
-                )
-                .size(ControlSize::Small)
-                .with_tooltip(ui.now_t(if reply {
-                    "chat-reply"
-                } else {
-                    "chat-at-action"
-                })),
-            )
-            .on_cx(move |_, _: &Activate, cx| {
-                super::motion::press(cx, ui.reduced_motion.get_untracked());
-                cx.dispatch_program_all(Msg::ChatMention { seq, reply });
-            })
-        };
-        Some(
-            widget(Stack::row(2.0).with_layout(|l| l.flex_shrink = Some(0.0)))
-                .children((button(true), button(false)))
-                .into_any(),
-        )
-    } else {
-        None
-    };
+    let content = dynamic(
+        move || ui.settings.with(|s| s.integrations.blivechat.panel_style),
+        move |style| {
+            let actions = if let RowSource::Chat(seq) = source {
+                Some(row_actions(ui, seq, *style, hovered, focused))
+            } else {
+                None
+            };
+            match style {
+                ChatPanelStyle::Compact => compact_message(ui, source, width, actions),
+                ChatPanelStyle::History => {
+                    history::message_view(ui, source, false, Some(width - 28.0), actions)
+                }
+            }
+        },
+    );
     widget(
         Stack::column(0.0)
+            .hittable()
             .width(LengthSpec::Fill)
             .padding_xy(6.0, 4.0)
             .with_layout(|l| {
@@ -227,8 +224,7 @@ fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
         } else {
             0.0
         };
-        let mut next = std::mem::replace(s, Stack::row(0.0));
-        next = next.with_layout(|l| {
+        super::restyle(s, |l| {
             l.background = Some(if !active {
                 paid.map_or(accent, |mut p| {
                     p[3] = 0.18;
@@ -239,9 +235,104 @@ fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
             });
             l.border_color = Some(border);
         });
-        *s = next;
     })
-    .children(compact_message(ui, source, width, actions))
+    .children(content)
+    .into_any()
+}
+
+/// Stable action slots: opacity hides paint without removing keyboard targets.
+/// Pointer hit testing is disabled until the row is hovered or focus enters it.
+pub(super) fn actions_width(ui: Ui) -> f32 {
+    action_widths(ui).into_iter().sum::<f32>() + 4.0
+}
+
+fn action_widths(ui: Ui) -> [f32; 2] {
+    match ui.locale.get_untracked() {
+        nanatype_i18n::Locale::ZhCn => [54.0, 54.0],
+        nanatype_i18n::Locale::EnUs => [64.0, 80.0],
+        nanatype_i18n::Locale::JaJp => [54.0, 90.0],
+    }
+}
+
+fn row_actions(
+    ui: Ui,
+    seq: u64,
+    style: ChatPanelStyle,
+    hovered: Signal<bool>,
+    focused: Signal<bool>,
+) -> AnyView {
+    let height = if style == ChatPanelStyle::Compact {
+        22.0
+    } else {
+        26.0
+    };
+    let width = actions_width(ui);
+    let button = move |reply: bool| {
+        let mut b = Button::new(ui.now_t(if reply { "chat-reply" } else { "chat-at-short" }))
+            .accessible_name(ui.now_t(if reply {
+                "chat-reply"
+            } else {
+                "chat-at-action"
+            }))
+            .icon(if reply { ti::ARROW_BACK_UP } else { ti::AT })
+            .icon_size(12.0)
+            .icon_gap(3.0);
+        let layout = Arc::make_mut(&mut b.style.layout);
+        layout.width = Some(LengthSpec::Px(action_widths(ui)[usize::from(!reply)]));
+        layout.height = Some(LengthSpec::Px(height));
+        layout.min_height = Some(LengthSpec::Px(height));
+        layout.border_radius = Some(999.0);
+        layout.font_size = Some(11.0);
+        layout.line_height = Some(nana_ui_core::LineHeightSpec::Absolute(14.0));
+        layout.padding_left = Some(LengthSpec::Px(6.0));
+        layout.padding_right = Some(LengthSpec::Px(6.0));
+        layout.flex_shrink = Some(0.0);
+        let layout = b.style.layout.clone();
+        b = b.layout(layout);
+        let (foreground, background, hover, pressed) = if reply {
+            (
+                SemanticColorRole::AccentOnSoft,
+                SemanticColorRole::AccentSoft,
+                SemanticColorRole::AccentSoftHover,
+                SemanticColorRole::AccentSoftPressed,
+            )
+        } else {
+            (
+                SemanticColorRole::HighlightText,
+                SemanticColorRole::Highlight,
+                SemanticColorRole::HighlightHover,
+                SemanticColorRole::HighlightPressed,
+            )
+        };
+        let mut st = std::mem::take(&mut b.style);
+        st.foreground = Some(foreground);
+        st.background = Some(background);
+        st.interaction.hovered.background = Some(hover);
+        st.interaction.pressed.background = Some(pressed);
+        b = b.style(st);
+        widget(b)
+            .bind(move |b: &mut Button| {
+                let show = hovered.get() || focused.get();
+                let l = Arc::make_mut(&mut b.style.layout);
+                l.opacity = Some(if show { 1.0 } else { 0.0 });
+                l.pointer_events = Some(if show {
+                    PointerEventsSpec::Auto
+                } else {
+                    PointerEventsSpec::None
+                });
+            })
+            .on_cx(move |_, _: &Activate, cx| {
+                super::motion::press(cx, ui.reduced_motion.get_untracked());
+                cx.dispatch_program_all(Msg::ChatMention { seq, reply });
+            })
+    };
+    widget(
+        Stack::row(4.0)
+            .width(LengthSpec::Px(width))
+            .height(LengthSpec::Px(height))
+            .with_layout(|l| l.flex_shrink = Some(0.0)),
+    )
+    .children((button(true), button(false)))
     .into_any()
 }
 
@@ -257,7 +348,11 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
     let col_w = (width - 74.0).max(100.0);
     let show_time = width >= 360.0;
     let name_w = (col_w
-        - if actions.is_some() { 62.0 } else { 0.0 }
+        - if actions.is_some() {
+            actions_width(ui)
+        } else {
+            0.0
+        }
         - if show_time { 42.0 } else { 0.0 }
         - if host { 32.0 } else { 0.0 }
         - 8.0)
@@ -272,7 +367,8 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
     let header = widget(
         Stack::row(4.0)
             .align(AlignSpec::Center)
-            .width(LengthSpec::Fill),
+            .width(LengthSpec::Fill)
+            .with_layout(|l| l.min_height = Some(LengthSpec::Px(22.0))),
     )
     .children((
         widget(
@@ -493,7 +589,7 @@ fn filter_toggle(
 
 fn header(ui: Ui) -> AnyView {
     dynamic(
-        move || ui.chat_width.get() < 360.0,
+        move || ui.chat_width.get() < 560.0,
         move |narrow| header_layout(ui, *narrow),
     )
     .into_any()
@@ -542,10 +638,11 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
             l.flex_grow = Some(1.0);
             l.flex_shrink = Some(1.0);
             l.min_width = Some(LengthSpec::Px(0.0));
+            l.overflow_x = OverflowSpec::Hidden;
         }))
         .children(status),
     ));
-    let controls = vec![
+    let mut controls = vec![
         filter_toggle(
             ui,
             ti::MESSAGE_CIRCLE,
@@ -580,10 +677,27 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
         }),
     ];
     let bar = if narrow {
+        let utilities = controls.split_off(4);
         widget(Stack::column(4.0).width(LengthSpec::Fill))
             .children((
-                status.into_any(),
-                widget(Stack::row(4.0)).children(controls).into_any(),
+                widget(
+                    Stack::row(4.0)
+                        .align(AlignSpec::Center)
+                        .width(LengthSpec::Fill),
+                )
+                .children((status.into_any(), utilities))
+                .into_any(),
+                widget(
+                    Stack::row(4.0)
+                        .align(AlignSpec::Center)
+                        .width(LengthSpec::Fill),
+                )
+                .children((
+                    super::settings::chat_panel_style(ui),
+                    widget(Stack::spacer()),
+                    widget(Stack::row(0.0)).children(controls),
+                ))
+                .into_any(),
             ))
             .into_any()
     } else {
@@ -592,7 +706,11 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
                 .align(AlignSpec::Center)
                 .width(LengthSpec::Fill),
         )
-        .children((status.into_any(), controls))
+        .children((
+            status.into_any(),
+            controls,
+            super::settings::chat_panel_style(ui),
+        ))
         .into_any()
     };
     widget(

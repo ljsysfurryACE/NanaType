@@ -20,6 +20,32 @@ use nana_ui_core::{LengthSpec, SemanticColorRole};
 use super::Ui;
 use crate::msg::Msg;
 
+/// The panel and settings page use the same persisted style control.
+pub(super) fn chat_panel_style(ui: Ui) -> AnyView {
+    use controls::{segmented, select_keys};
+    use nanatype_settings::ChatPanelStyle;
+    segmented(
+        ui,
+        select_keys(
+            ui,
+            &[
+                ("compact", "chat-style-compact"),
+                ("history", "chat-style-history"),
+            ],
+        ),
+        |s| match s.integrations.blivechat.panel_style {
+            ChatPanelStyle::Compact => "compact".into(),
+            ChatPanelStyle::History => "history".into(),
+        },
+        |s, v| {
+            s.integrations.blivechat.panel_style = match v {
+                "history" => ChatPanelStyle::History,
+                _ => ChatPanelStyle::Compact,
+            }
+        },
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Page {
     General,

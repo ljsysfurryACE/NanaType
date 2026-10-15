@@ -403,6 +403,11 @@ err-syphon = Syphon output failed: { $message }
 # blivechat
 window-chat = Chat
 chat-reply = Reply
+chat-at-short = Mention
+chat-style-compact = Compact
+chat-style-history = Bubbles
+chat-panel-style = Chat panel style
+chat-panel-style-hint = Compact list or bubbles using the current history skin; hover or focus a message to reply or mention
 chat-replying = Replying to { $name }
 chat-reply-cancel = Cancel reply
 chat-clear = Clear

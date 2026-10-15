@@ -397,6 +397,11 @@ err-syphon = Syphon 出力に失敗しました：{ $message }
 # blivechat
 window-chat = コメント
 chat-reply = 返信
+chat-at-short = メンション
+chat-style-compact = コンパクト
+chat-style-history = 吹き出し
+chat-panel-style = 操作パネルのスタイル
+chat-panel-style-hint = コンパクトな一覧、または現在の履歴スキンの吹き出し。メッセージにカーソルを重ねるかフォーカスすると返信・メンションボタンを表示します
 chat-replying = { $name } に返信
 chat-reply-cancel = 返信をやめる
 chat-clear = クリア

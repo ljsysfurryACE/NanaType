@@ -186,11 +186,6 @@ fn follow_ups(rows: &[HistoryRow], shown: &[u64]) -> Vec<u64> {
         .collect()
 }
 
-fn find_row(ui: Ui, key: u64) -> Option<HistoryRow> {
-    let at = ui.history_index.with(|index| index.get(&key).copied())?;
-    ui.history.with_untracked(|rows| rows.get(at).cloned())
-}
-
 /// Halo's presentation follows the approved interaction preview. Other skins
 /// retain their own log layout and speaker grouping. All histories start at the top.
 fn interaction_presentation(skin: &Skin) -> bool {
@@ -210,11 +205,25 @@ fn entry_view(ui: Ui, key: u64, first: bool, follows: bool) -> AnyView {
                 l.margin_top = Some(LengthSpec::Px(gap));
             }),
     )
-    .children(row_view(ui, key, follows))
+    .children(message_view(
+        ui,
+        super::danmaku::RowSource::History(key),
+        follows,
+        None,
+        None,
+    ))
     .into_any()
 }
 
-fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
+/// Shared history presentation. A panel supplies its own width and controls,
+/// while retaining its feed and reading lifetime rather than history's policies.
+pub(super) fn message_view(
+    ui: Ui,
+    source: super::danmaku::RowSource,
+    follows: bool,
+    panel_width: Option<f32>,
+    actions: Option<AnyView>,
+) -> AnyView {
     let mut skin = ui.skin.get_untracked();
     let settings = ui.settings.get_untracked();
     let fitted = interaction_presentation(&skin);
@@ -229,27 +238,27 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         .as_ref()
         .and_then(|p| super::quote::backdrop(p.color, false))
         .is_none();
-    let col_w = if fitted {
-        let (width, _) =
-            crate::windows::size_of(crate::windows::WindowKind::History, &skin, &settings);
+    let show_avatar = settings.history.show_avatar && h.avatar.shape != AvatarShape::None;
+    let col_w = if panel_width.is_some() || fitted {
+        let width = panel_width.unwrap_or_else(|| {
+            crate::windows::size_of(crate::windows::WindowKind::History, &skin, &settings).0 - 38.0
+        });
         (width
-            - 38.0
-            - if !settings.history.show_avatar || h.avatar.shape == AvatarShape::None {
-                0.0
-            } else {
+            - if show_avatar {
                 h.avatar.size + 10.0
+            } else {
+                0.0
             })
         .max(60.0)
     } else {
         column_width(&skin, &settings)
     };
-    let Some(row) = find_row(ui, key) else {
+    let Some(row) = source.get(ui) else {
         return widget(Stack::row(0.0)).into_any();
     };
     let inline = h.layout == HistoryLayout::Inline && !fitted;
     // Echo-Live's log names every line; bubble lists group.
     let follows = follows && !inline;
-    let show_avatar = settings.history.show_avatar && h.avatar.shape != AvatarShape::None;
     let size = h.avatar.size;
     let radius = match h.avatar.shape {
         AvatarShape::Circle => size / 2.0,
@@ -401,7 +410,8 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         super::tnum(l);
     }
     let show_name = settings.history.show_name && !row.item.author.is_empty() && !follows;
-    let show_time = settings.history.show_time && !follows;
+    let show_time =
+        settings.history.show_time && !follows && panel_width.is_none_or(|w| w >= 332.0);
     let inline_name_w = inline_name_width(&h, col_w, show_time);
     // Who is talking, once live chat shares the list.
     let role = (show_name && !inline && (chat || settings.history.chat.enabled)).then(|| {
@@ -414,7 +424,17 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     });
     let name = show_name.then(|| {
         let plate = name_plate.clone();
-        let max_name = if inline { inline_name_w } else { col_w - 64.0 }.max(32.0);
+        let action_width = if actions.is_some() {
+            super::danmaku::actions_width(ui)
+        } else {
+            0.0
+        };
+        let max_name = if inline {
+            inline_name_w
+        } else {
+            col_w - 64.0 - action_width
+        }
+        .max(if panel_width.is_some() { 24.0 } else { 32.0 });
         Arc::make_mut(&mut name_style.layout).max_width =
             Some(LengthSpec::Px((max_name - plate_pad[0] * 2.0).max(12.0)));
         widget(
@@ -451,8 +471,8 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     let body_skin = skin.clone();
     let body = dynamic(
         move || {
-            ui.history.with(|_| ());
-            find_row(ui, key).map(|r| {
+            source.track(ui);
+            source.get(ui).map(|r| {
                 (
                     r.reveal.is_some(),
                     r.reveal.as_ref().map(|x| {
@@ -466,7 +486,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
             })
         },
         move |_| {
-            let Some(row) = find_row(ui, key) else {
+            let Some(row) = source.get(ui) else {
                 return widget(Stack::row(0.0)).into_any();
             };
             let skin = body_skin.clone();
@@ -536,89 +556,102 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
         None => bubble.into_any(),
     };
 
-    let content =
-        if inline {
-            let name_w = inline_name_w;
-            let quote_indent = if show_name { name_w + 10.0 } else { 0.0 };
-            let quote_w = (col_w - quote_indent).max(40.0);
-            let quote_line = inline_quote.map(|q| {
-                widget(
-                    Stack::column(0.0)
-                        .width(LengthSpec::Px(quote_w))
-                        .with_layout(move |l| {
-                            l.margin_left = Some(LengthSpec::Px(quote_indent));
-                            l.min_width = Some(LengthSpec::Px(0.0));
-                            l.flex_shrink = Some(0.0);
-                        }),
-                )
-                .children(q)
-            });
-            let line = widget(
-                Stack::row(10.0)
-                    .width(LengthSpec::Px(col_w))
-                    .with_layout(|l| {
+    // Inline skins keep their name/body/time baseline. Their operator controls
+    // get a separate header so they never squeeze that baseline's text column.
+    let content = if inline {
+        let name_w = inline_name_w;
+        let quote_indent = if show_name { name_w + 10.0 } else { 0.0 };
+        let quote_w = (col_w - quote_indent).max(40.0);
+        let quote_line = inline_quote.map(|q| {
+            widget(
+                Stack::column(0.0)
+                    .width(LengthSpec::Px(quote_w))
+                    .with_layout(move |l| {
+                        l.margin_left = Some(LengthSpec::Px(quote_indent));
                         l.min_width = Some(LengthSpec::Px(0.0));
-                        // Name, first line and time share a baseline.
-                        l.align_items = AlignSpec::Baseline;
+                        l.flex_shrink = Some(0.0);
                     }),
+            )
+            .children(q)
+        });
+        let line = widget(
+            Stack::row(10.0)
+                .width(LengthSpec::Px(col_w))
+                .with_layout(|l| {
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    // Name, first line and time share a baseline.
+                    l.align_items = AlignSpec::Baseline;
+                }),
+        )
+        .children((
+            name.map(|n| {
+                widget(
+                    Stack::row(0.0)
+                        .width(LengthSpec::Px(name_w))
+                        .with_layout(|l| l.flex_shrink = Some(0.0)),
+                )
+                .children(n)
+            }),
+            // Takes the spare width, so the time sits at the right edge.
+            widget(Stack::row(0.0).with_layout(|l| {
+                l.flex_grow = Some(1.0);
+                l.flex_shrink = Some(1.0);
+                l.min_width = Some(LengthSpec::Px(0.0));
+            }))
+            .children(bubble),
+            time.map(|t| {
+                widget(Stack::row(0.0).with_layout(|l| {
+                    l.flex_shrink = Some(0.0);
+                }))
+                .children(t)
+            }),
+        ));
+        let actions = actions.map(|actions| {
+            widget(Stack::row(0.0).width(LengthSpec::Fill))
+                .children((widget(Stack::spacer()), actions))
+        });
+        widget(
+            Stack::column(2.0)
+                .width(LengthSpec::Px(col_w))
+                .with_layout(|l| {
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.align_items = AlignSpec::Start;
+                }),
+        )
+        .children((actions, quote_line, line))
+        .into_any()
+    } else {
+        let header = (name.is_some() || time.is_some() || actions.is_some()).then(|| {
+            widget(
+                Stack::row(6.0)
+                    .align(AlignSpec::Center)
+                    .width(LengthSpec::Fill),
             )
             .children((
-                name.map(|n| {
-                    widget(
-                        Stack::row(0.0)
-                            .width(LengthSpec::Px(name_w))
-                            .with_layout(|l| l.flex_shrink = Some(0.0)),
-                    )
-                    .children(n)
-                }),
-                // Takes the spare width, so the time sits at the right edge.
-                widget(Stack::row(0.0).with_layout(|l| {
-                    l.flex_grow = Some(1.0);
-                    l.flex_shrink = Some(1.0);
-                    l.min_width = Some(LengthSpec::Px(0.0));
-                }))
-                .children(bubble),
-                time.map(|t| {
-                    widget(Stack::row(0.0).with_layout(|l| {
-                        l.flex_shrink = Some(0.0);
-                    }))
-                    .children(t)
-                }),
-            ));
-            match quote_line {
-                Some(q) => widget(Stack::column(2.0).width(LengthSpec::Px(col_w)).with_layout(
-                    |l| {
-                        l.min_width = Some(LengthSpec::Px(0.0));
-                        l.align_items = AlignSpec::Start;
-                    },
-                ))
-                .children((q, line))
-                .into_any(),
-                None => line.into_any(),
-            }
-        } else {
-            let header = (name.is_some() || time.is_some()).then(|| {
-                widget(
-                    Stack::row(6.0)
-                        .align(AlignSpec::Center)
-                        .width(LengthSpec::Fill),
-                )
-                .children((name, role, time))
-                .into_any()
-            });
-            widget(
-                Stack::column(6.0)
-                    .width(LengthSpec::Px(col_w))
-                    .with_layout(|l| {
-                        l.min_width = Some(LengthSpec::Px(0.0));
-                        l.align_items = AlignSpec::Start;
-                    }),
-            )
-            .children((header, bubble))
+                name,
+                role,
+                time,
+                actions.as_ref().map(|_| widget(Stack::spacer())),
+                actions,
+            ))
             .into_any()
-        };
+        });
+        widget(
+            Stack::column(6.0)
+                .width(LengthSpec::Px(col_w))
+                .with_layout(|l| {
+                    l.min_width = Some(LengthSpec::Px(0.0));
+                    l.align_items = AlignSpec::Start;
+                }),
+        )
+        .children((header, bubble))
+        .into_any()
+    };
 
-    let fade_after = settings.history.fade_after_s;
+    let fade_after = settings
+        .history
+        .fade_after_s
+        .filter(|_| panel_width.is_none());
     let at = row.item.at;
     let view = widget(
         Stack::row(10.0)
@@ -639,7 +672,7 @@ fn row_view(ui: Ui, key: u64, follows: bool) -> AnyView {
     // Inline rows drop the empty avatar slot, so the name sits at the edge.
     .children(((show_avatar || !inline).then_some(avatar), content))
     .into_any();
-    if fitted {
+    if fitted && panel_width.is_none() {
         widget(
             Stack::column(0.0)
                 .width(LengthSpec::Fill)

@@ -1,5 +1,5 @@
 //! Real NanaUI interaction capture, driven through its buttons and editor.
-//! cargo run -p nanatype --example chat_parity -- <out> [skin|all] [locale] [profile]
+//! cargo run -p nanatype --example chat_parity -- <out> [skin|all] [locale] [profile] [compact|history]
 //! Profiles: capture (150 frames), capture-panel, stills, audit, verify, source, compose, queue, reduced.
 use nana_ui::runtime::view::{entity_ref, with_refs};
 use nana_ui::runtime::{
@@ -15,7 +15,7 @@ use nanatype::{
 use nanatype_core::{Cmd, Core, Effects, Wake};
 use nanatype_i18n::Locale;
 use nanatype_model::{AssetRef, ChatUser, Document, Inline, Mention};
-use nanatype_settings::{HideLatest, InputMode, Settings};
+use nanatype_settings::{ChatPanelStyle, HideLatest, InputMode, Settings};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -42,9 +42,15 @@ fn document(id: u64, theme: Arc<nana_ui::CompiledTheme>, locale: Locale) -> Runt
     doc
 }
 impl Rig {
-    fn new(skin: Arc<nanatype_theme::Skin>, locale: Locale, profile: &str) -> Self {
+    fn new(
+        skin: Arc<nanatype_theme::Skin>,
+        locale: Locale,
+        profile: &str,
+        panel_style: ChatPanelStyle,
+    ) -> Self {
         let mut settings = Settings::default();
         settings.general.speaker_name = "奈奈".into();
+        settings.integrations.blivechat.panel_style = panel_style;
         settings.general.input_mode = if matches!(profile, "compose" | "queue") {
             InputMode::Compose
         } else {
@@ -280,6 +286,12 @@ impl Rig {
                     self.feedback(self.ui.now_t("status-sent"));
                 }
             }
+            Msg::Edit(edit) => {
+                let mut settings = (*self.ui.settings.get_untracked()).clone();
+                edit(&mut settings);
+                self.ui.settings.set(Arc::new(settings.clone()));
+                self.cmd(Cmd::SetSettings(Box::new(settings)), now);
+            }
             Msg::ClearReply => {
                 self.cmd(Cmd::SetReply(None), now);
                 self.ui.chat_target.set(None);
@@ -377,7 +389,11 @@ impl Rig {
                 .collect();
             if let Some(button) = buttons.get(1) {
                 assert!(
-                    button.bounds.y - buttons[0].bounds.y <= 72.0,
+                    self.ui
+                        .settings
+                        .with(|s| s.integrations.blivechat.panel_style)
+                        != ChatPanelStyle::Compact
+                        || button.bounds.y - buttons[0].bounds.y <= 72.0,
                     "short messages stay compact in the operator panel"
                 );
                 self.panel
@@ -680,6 +696,30 @@ impl Rig {
                 session
                     .screenshot_png(out.join(format!("{surface}-{name}.png")))
                     .unwrap();
+                if surface == "panel" {
+                    // Keep both the long-message tail and the first messages:
+                    // tall skins may have no viewer action inside the tail viewport.
+                    session.scroll_by(150.0, 200.0, 0.0, 10_000.0).unwrap();
+                    session.flush().unwrap();
+                    session
+                        .screenshot_png(out.join(format!("panel-{name}-top.png")))
+                        .unwrap();
+                    let nodes = session.accessibility_dump();
+                    let reply = self.ui.now_t("chat-reply");
+                    if let Some(b) = nodes.iter().find(|n| {
+                        n.role == "button"
+                            && n.label.as_deref() == Some(reply.as_str())
+                            && n.bounds.y >= 76.0
+                            && n.bounds.y < 410.0
+                    }) {
+                        session
+                            .hover_xy(b.bounds.x + 2.0, b.bounds.y + 2.0)
+                            .unwrap();
+                        session
+                            .screenshot_png(out.join(format!("panel-{name}-top-hover.png")))
+                            .unwrap();
+                    }
+                }
             }
         }
     }
@@ -848,7 +888,12 @@ fn run() {
         };
         std::fs::create_dir_all(&dir).unwrap();
         nanatype::clock::capture_at(0, || {
-            let mut rig = Rig::new(skin, locale, profile);
+            let panel_style = if args.get(4).is_some_and(|s| s == "history") {
+                ChatPanelStyle::History
+            } else {
+                ChatPanelStyle::Compact
+            };
+            let mut rig = Rig::new(skin, locale, profile, panel_style);
             for f in 0..150 {
                 nanatype::clock::capture_at(f * 1000 / 30, || {
                     rig.step(f, &dir, matches!(profile, "capture" | "capture-panel"))
