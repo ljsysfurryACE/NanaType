@@ -393,6 +393,8 @@ fn dock_inserts_real_stickers_and_disables_them_during_sync_sending() {
             name: "Hello sticker".into(),
             lib: "test".into(),
             url: String::new(),
+            height_em: 1.6,
+            pack_title: "test".into(),
         }]));
         let id = DocumentId::new(1).unwrap();
         let mut document = RuntimeDocument::new(id);
@@ -485,6 +487,8 @@ fn dock_tabs_allocate_sidebar_space_retain_content_and_keep_the_canvas_size() {
                                 name: format!("Sticker {i:02}"),
                                 lib: "test".into(),
                                 url: url.clone(),
+                                height_em: 1.6,
+                                pack_title: "test".into(),
                             })
                             .collect(),
                     ));
@@ -970,5 +974,248 @@ fn fixed_canvas_and_controls_survive_resize_theme_scale_and_peer_panel_changes()
                 .screenshot_png(out.join(format!("settings-dark{dark}.png")))
                 .unwrap();
         }
+    }
+}
+
+#[test]
+fn sticker_series_stay_at_bottom_filter_search_and_accept_folder_drops() {
+    use nana_ui::runtime::{Entity, Tabs};
+    use nanatype::msg::Msg;
+    let out =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../target/sticker-sidebar-acceptance");
+    std::fs::create_dir_all(out.join("import-me")).unwrap();
+    let folder = out.join("import-me").canonicalize().unwrap();
+    for (width, dark) in [(720, false), (1200, true)] {
+        let skin = nanatype_theme::SkinRegistry::new(None, "test")
+            .load("nanatype.halo")
+            .unwrap()
+            .skin;
+        let ui = Ui::new(Arc::new(preview_settings()), skin, Locale::ZhCn);
+        let mut rows: Vec<_> = (0..70)
+            .map(|i| nanatype::ui::StickerRow {
+                asset: format!("lib:cats/cat-{i}"),
+                name: format!("Cat {i:02}"),
+                lib: "cats".into(),
+                url: String::new(),
+                height_em: 1.6,
+                pack_title: "猫猫".into(),
+            })
+            .collect();
+        rows.push(nanatype::ui::StickerRow {
+            asset: "lib:dogs/dog".into(),
+            name: "Dog".into(),
+            lib: "dogs".into(),
+            url: String::new(),
+            height_em: 4.0,
+            pack_title: "狗狗".into(),
+        });
+        ui.stickers.set(Arc::new(rows));
+        let id = DocumentId::new(1).unwrap();
+        let mut document = RuntimeDocument::new(id);
+        document
+            .context_mut()
+            .set_theme_tokens(nanatype::skin_theme::compile(dark))
+            .unwrap();
+        document
+            .context_mut()
+            .mount_view_root(id, move || input::input_window(ui))
+            .unwrap();
+        let mut session = RuntimeAgentSession::new(document, width, 640).unwrap();
+        click_keyed(&mut session, "input-dock-stickers");
+        let select = |session: &mut RuntimeAgentSession, value: &str| {
+            let tabs = Entity::<Tabs>::from_stable_id(
+                StableNodeId::new(keyed(session, "input-dock-sticker-series").id).unwrap(),
+            );
+            let child = session
+                .document()
+                .context()
+                .read(tabs, |t| t.option_node(value).unwrap())
+                .unwrap();
+            let node = session
+                .accessibility_dump()
+                .into_iter()
+                .find(|n| n.id == child.get())
+                .unwrap();
+            click_node(session, node);
+        };
+        let footer = keyed(&session, "input-dock-sticker-footer").bounds;
+        let port = keyed(&session, "input-dock-stickers-scroll").bounds;
+        assert!(
+            port.y + port.height <= footer.y + 0.5,
+            "the footer must be outside the scroller"
+        );
+        select(&mut session, "cats");
+        assert!(
+            !session
+                .accessibility_dump()
+                .iter()
+                .any(|n| n.label.as_deref() == Some("Dog"))
+        );
+        session
+            .scroll_by(port.x + 4.0, port.y + 4.0, 0.0, -2000.0)
+            .unwrap();
+        assert_eq!(keyed(&session, "input-dock-sticker-footer").bounds, footer);
+        session
+            .scroll_by(port.x + 4.0, port.y + 4.0, 0.0, 2000.0)
+            .unwrap();
+        let search = keyed(&session, "input-dock-sticker-search");
+        session.set_value(search.id, "Dog").unwrap();
+        select(&mut session, "dogs");
+        assert!(
+            session
+                .accessibility_dump()
+                .iter()
+                .any(|n| n.label.as_deref() == Some("Dog"))
+        );
+        click_label(&mut session, "Dog", "button");
+        assert!(
+            session
+                .document_mut()
+                .context_mut()
+                .take_program_messages()
+                .into_iter()
+                .any(|m| m.downcast::<Msg>().is_ok_and(|m| matches!(
+                    *m,
+                    Msg::Tool(nanatype::msg::Tool::Insert(nanatype_model::Inline::Atom(
+                        nanatype_model::Atom { height_em: 4.0, .. }
+                    )))
+                )))
+        );
+        click_keyed(&mut session, "input-dock-commands");
+        click_keyed(&mut session, "input-dock-stickers");
+        let tabs = Entity::<Tabs>::from_stable_id(
+            StableNodeId::new(keyed(&session, "input-dock-sticker-series").id).unwrap(),
+        );
+        assert_eq!(
+            session
+                .document()
+                .context()
+                .read(tabs, |t| t.selected.clone())
+                .unwrap()
+                .as_deref(),
+            Some("dogs")
+        );
+        session
+            .set_value(keyed(&session, "input-dock-sticker-search").id, "")
+            .unwrap();
+        session
+            .screenshot_png(out.join(format!("series-{width}.png")))
+            .unwrap();
+        ui.stickers
+            .update(|s| Arc::make_mut(s).retain(|r| r.lib != "dogs"));
+        settle(&mut session);
+        assert_eq!(
+            session
+                .document()
+                .context()
+                .read(tabs, |t| t.selected.clone())
+                .unwrap()
+                .as_deref(),
+            Some("")
+        );
+        ui.stickers.set(Arc::new(Vec::new()));
+        settle(&mut session);
+        let port = keyed(&session, "input-dock-stickers-scroll").bounds;
+        session
+            .file_drag_xy(
+                nana_ui_core::FileDragKind::Hover,
+                &[folder.clone()],
+                port.x + 8.0,
+                port.y + 8.0,
+            )
+            .unwrap();
+        assert!(
+            session
+                .accessibility_dump()
+                .iter()
+                .any(|n| n.label.as_deref() == Some("松开以导入表情包文件夹"))
+        );
+        session
+            .file_drag_xy(
+                nana_ui_core::FileDragKind::Cancel,
+                &[folder.clone()],
+                0.0,
+                0.0,
+            )
+            .unwrap();
+        assert!(
+            !session
+                .accessibility_dump()
+                .iter()
+                .any(|n| n.label.as_deref() == Some("松开以导入表情包文件夹"))
+        );
+        session
+            .drop_files_xy(&[folder.clone()], port.x + 8.0, port.y + 8.0)
+            .unwrap();
+        assert!(session.document_mut().context_mut().take_program_messages().into_iter().any(|m|m.downcast::<Msg>().is_ok_and(|m|matches!(*m,Msg::StickerImportFolders(ref dirs) if dirs==&vec![folder.clone()]))));
+        click_keyed(&mut session, "input-dock-commands");
+        let port = keyed(&session, "input-dock-commands-scroll").bounds;
+        session
+            .drop_files_xy(&[folder.clone()], port.x + 8.0, port.y + 8.0)
+            .unwrap();
+        assert!(
+            !session
+                .document_mut()
+                .context_mut()
+                .take_program_messages()
+                .into_iter()
+                .any(|m| m
+                    .downcast::<Msg>()
+                    .is_ok_and(|m| matches!(*m, Msg::StickerImportFolders(_))))
+        );
+        if width == 720 {
+            drag_sidebar(&mut session, 140.0);
+        }
+        let header = if width == 720 {
+            keyed(&session, "input-dock-icon-stickers")
+        } else {
+            let tabs = Entity::<Tabs>::from_stable_id(
+                StableNodeId::new(keyed(&session, "input-dock-tabs").id).unwrap(),
+            );
+            let child = session
+                .document()
+                .context()
+                .read(tabs, |t| t.option_node("stickers").unwrap())
+                .unwrap();
+            session
+                .accessibility_dump()
+                .into_iter()
+                .find(|n| n.id == child.get())
+                .unwrap()
+        }
+        .bounds;
+        session
+            .file_drag_xy(
+                nana_ui_core::FileDragKind::Hover,
+                &[folder.clone()],
+                header.x + header.width / 2.0,
+                header.y + header.height / 2.0,
+            )
+            .unwrap();
+        assert!(
+            session.accessibility_dump().iter().any(|n| n
+                .agent_path
+                .as_deref()
+                .is_some_and(|p| p.ends_with("input-dock-stickers-panel"))),
+            "hovering the sticker tab opens its panel"
+        );
+        session
+            .drop_files_xy(
+                &[folder.clone()],
+                header.x + header.width / 2.0,
+                header.y + header.height / 2.0,
+            )
+            .unwrap();
+        assert!(
+            session
+                .document_mut()
+                .context_mut()
+                .take_program_messages()
+                .into_iter()
+                .any(|m| m
+                    .downcast::<Msg>()
+                    .is_ok_and(|m| matches!(*m, Msg::StickerImportFolders(_)))),
+            "both caption and compact icon tabs accept folder drops"
+        );
     }
 }

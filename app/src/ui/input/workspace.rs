@@ -165,6 +165,26 @@ fn region_value(region: &Region) -> String {
     }
 }
 
+fn register_sticker_tab_drop<V: nana_ui::runtime::ComponentView>(
+    cx: &mut nana_ui::runtime::AppContext,
+    target: nana_ui::runtime::Entity<V>,
+    selected: Signal<u64>,
+    region: u64,
+) {
+    let _ = cx.set_drop_target(target, nana_ui_core::DropAccepts::files());
+    let _ = cx.on(
+        target,
+        move |_, event: &nana_ui::runtime::FileDropEvent, cx| match event {
+            nana_ui::runtime::FileDropEvent::Hovered { .. } => selected.set(region),
+            nana_ui::runtime::FileDropEvent::Dropped { paths, .. } => {
+                selected.set(region);
+                cx.dispatch_program_all(Msg::StickerImportFolders(paths.to_vec()));
+            }
+            nana_ui::runtime::FileDropEvent::Left => {}
+        },
+    );
+}
+
 fn phrases(ui: Ui) -> AnyView {
     dynamic(
         move || ui.settings.with(|s| s.assets.phrases.clone()),
@@ -204,7 +224,7 @@ fn phrases(ui: Ui) -> AnyView {
 
 fn dock_panel(ui: Ui, region: Region, selected: Signal<u64>, width: Signal<f32>) -> AnyView {
     let body = match region.kind {
-        RegionKind::Stickers => sticker_panel_content(ui, None),
+        RegionKind::Stickers => stickers::panel(ui, None, Some(region.id)),
         RegionKind::Commands | RegionKind::Unknown => commands(ui, width),
         RegionKind::Phrases => phrases(ui),
     };
@@ -220,7 +240,9 @@ fn dock_panel(ui: Ui, region: Region, selected: Signal<u64>, width: Signal<f32>)
         id => format!("input-dock-region-{id}-panel"),
     })
     .visible(move || selected.get() == region.id)
-    .children(
+    .children(if region.kind == RegionKind::Stickers {
+        body
+    } else {
         widget(
             ScrollView::new(ScrollAxes::Vertical)
                 .scrollbars(nana_ui_core::ScrollbarVisibility::Always)
@@ -237,8 +259,9 @@ fn dock_panel(ui: Ui, region: Region, selected: Signal<u64>, width: Signal<f32>)
             1 => "input-dock-stickers-scroll".into(),
             id => format!("input-dock-region-{id}-scroll"),
         })
-        .children(body),
-    )
+        .children(body)
+        .into_any()
+    })
     .into_any()
 }
 
@@ -302,11 +325,20 @@ fn compact_tab_bar(
             |r| r.id,
             move |region| {
                 let title = region_title(ui, &region);
+                let target = entity_ref::<IconButton>();
+                if region.kind == RegionKind::Stickers {
+                    nana_ui::runtime::view::on_mount(move |cx| {
+                        if let Some(target) = target.get() {
+                            register_sticker_tab_drop(cx, target, selected, region.id);
+                        }
+                    });
+                }
                 widget(tool_button(
                     region_meta(region.kind).1,
                     title.clone(),
                     title,
                 ))
+                .entity_ref(target)
                 .key(format!("input-dock-icon-{}", region_value(&region)))
                 .bind(move |button: &mut IconButton| {
                     button.selected = selected.get() == region.id;
@@ -444,48 +476,84 @@ fn dock(ui: Ui) -> AnyView {
                         }))
                         .key("input-dock-tab-area")
                         .children((
-                            widget(Tabs::new("commands").accepts_external_drop(false))
-                                .key("input-dock-tabs")
-                                .bind(move |tabs: &mut Tabs| {
-                                    let regions = regions.get();
-                                    let selected = selected.get();
-                                    tabs.options = regions
-                                        .iter()
-                                        .map(|region| {
-                                            TabOption::new(
-                                                region_value(region),
-                                                region_title(ui, region),
-                                            )
-                                            .icon(region_meta(region.kind).1)
-                                            .draggable(false)
-                                            .closable(true)
-                                        })
-                                        .collect();
-                                    tabs.selected = regions
-                                        .iter()
-                                        .find(|r| r.id == selected)
-                                        .map(|r| Arc::from(region_value(r)));
-                                    let l = Arc::make_mut(&mut tabs.style.layout);
-                                    l.flex_shrink = Some(0.0);
-                                })
-                                .visible(move || !compact_tabs(ui, &regions.get(), width.get()))
-                                .on(move |e: &TabsEvent| {
-                                    let (TabsEvent::Select(value) | TabsEvent::Close(value)) = e
-                                    else {
-                                        return;
-                                    };
-                                    if let Some(region) = regions
-                                        .get_untracked()
-                                        .iter()
-                                        .find(|r| region_value(r) == value.as_ref())
-                                    {
-                                        if matches!(e, TabsEvent::Close(_)) {
-                                            close_region(regions, selected, region.id);
-                                        } else {
-                                            selected.set(region.id);
+                            dynamic(
+                                move || regions.get(),
+                                move |all| {
+                                    let target = entity_ref::<Tabs>();
+                                    let all = all.clone();
+                                    nana_ui::runtime::view::on_mount(move |cx| {
+                                        if let Some(tabs) = target.get() {
+                                            for region in all
+                                                .iter()
+                                                .filter(|r| r.kind == RegionKind::Stickers)
+                                            {
+                                                if let Some(node) = cx
+                                                    .read(tabs, |tabs| {
+                                                        tabs.option_node(&region_value(region))
+                                                    })
+                                                    .ok()
+                                                    .flatten()
+                                                {
+                                                    let option = nana_ui::runtime::Entity::<
+                                                        nana_ui::runtime::SegmentedOption,
+                                                    >::from_stable_id(
+                                                        node
+                                                    );
+                                                    register_sticker_tab_drop(
+                                                        cx, option, selected, region.id,
+                                                    );
+                                                }
+                                            }
                                         }
-                                    }
-                                }),
+                                    });
+                                    widget(Tabs::new("commands").accepts_external_drop(false))
+                                        .key("input-dock-tabs")
+                                        .entity_ref(target)
+                                        .bind(move |tabs: &mut Tabs| {
+                                            let regions = regions.get();
+                                            let selected = selected.get();
+                                            tabs.options = regions
+                                                .iter()
+                                                .map(|region| {
+                                                    TabOption::new(
+                                                        region_value(region),
+                                                        region_title(ui, region),
+                                                    )
+                                                    .icon(region_meta(region.kind).1)
+                                                    .draggable(false)
+                                                    .closable(true)
+                                                })
+                                                .collect();
+                                            tabs.selected = regions
+                                                .iter()
+                                                .find(|r| r.id == selected)
+                                                .map(|r| Arc::from(region_value(r)));
+                                            let l = Arc::make_mut(&mut tabs.style.layout);
+                                            l.flex_shrink = Some(0.0);
+                                        })
+                                        .visible(move || {
+                                            !compact_tabs(ui, &regions.get(), width.get())
+                                        })
+                                        .on(move |e: &TabsEvent| {
+                                            let (TabsEvent::Select(value)
+                                            | TabsEvent::Close(value)) = e
+                                            else {
+                                                return;
+                                            };
+                                            if let Some(region) = regions
+                                                .get_untracked()
+                                                .iter()
+                                                .find(|r| region_value(r) == value.as_ref())
+                                            {
+                                                if matches!(e, TabsEvent::Close(_)) {
+                                                    close_region(regions, selected, region.id);
+                                                } else {
+                                                    selected.set(region.id);
+                                                }
+                                            }
+                                        })
+                                },
+                            ),
                             compact_tab_bar(ui, regions, selected, width),
                         )),
                         widget(Stack::row(0.0).with_layout(|l| {

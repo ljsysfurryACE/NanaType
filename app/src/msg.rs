@@ -176,6 +176,12 @@ pub enum Msg {
     Bridge(BridgeStatus),
     /// A sticker file changed on disk.
     AssetsChanged,
+    Stickers(crate::stickers::Event),
+    StickerDownload(crate::stickers::Preset),
+    StickerRetry(std::path::PathBuf),
+    StickerRemove(std::path::PathBuf),
+    StickerRepository(std::path::PathBuf),
+    StickerImportFolders(Vec<std::path::PathBuf>),
     /// A file of the active (folder) skin changed and hot reload is on.
     SkinFilesChanged,
     /// A second instance asked us to come forward.

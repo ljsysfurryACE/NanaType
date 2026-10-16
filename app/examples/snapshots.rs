@@ -400,6 +400,8 @@ fn sample_stickers(
                 name: s.name.clone(),
                 lib: s.lib.clone(),
                 url,
+                height_em: 1.6,
+                pack_title: s.lib.clone(),
             })
         })
         .collect()

@@ -2,7 +2,7 @@
 pub mod bilibili;
 pub mod douyin;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -69,6 +69,7 @@ pub struct App {
     pub peer: crate::p2p::Session,
     pub ui: Ui,
     pub assets: AssetLibrary,
+    pub sticker_manager: crate::stickers::Manager,
     pub windows: WindowManager,
     pub scheduler: Scheduler,
     pub audio: AudioHandle,
@@ -219,8 +220,13 @@ impl App {
             move |event| post(Msg::Douyin(event))
         });
         let core = Core::new(settings.clone(), skin.clone());
+        let sticker_manager = crate::stickers::Manager::new(&paths.data, {
+            let post = post.clone();
+            move |event| post(Msg::Stickers(event))
+        });
         let mut app = Self {
             assets: AssetLibrary::new(paths.blobs()),
+            sticker_manager,
             paths,
             readonly_settings: matches!(loaded_settings.note, LoadNote::TooNew { .. }),
             registry,
@@ -303,6 +309,7 @@ impl App {
         app.register_fonts();
         app.apply_skin();
         app.refresh_skin_rows();
+        app.sticker_manager.sync(&app.settings.assets.sticker_dirs);
         app.refresh_assets();
         app.load_sounds();
         app.apply_services();
@@ -529,27 +536,59 @@ impl App {
         }
     }
 
+    fn publish_sticker_packs(&self) {
+        self.ui
+            .sticker_packs
+            .set(Arc::new(self.sticker_manager.rows.clone()));
+    }
+
     /// Asset URLs for skin files and stickers, for the views.
     fn refresh_assets(&mut self) {
-        self.assets.scan(&self.settings.assets.sticker_dirs);
+        let locale = self.ui.locale.get_untracked();
+        let mut seen = HashSet::new();
+        let mut stickers = Vec::new();
+        let mut rows = Vec::new();
+        let mut images = Vec::new();
         let mut urls = crate::assets::skin_urls(&*self.loaded.files);
-        let stickers: Vec<StickerRow> = self
-            .assets
-            .stickers
-            .iter()
-            .filter_map(|s| {
-                // A sticker NanaUI cannot load (too large, a link out of
-                // its folder) is left out of the panel.
-                let url = s.url()?;
-                urls.insert(s.asset().to_string(), url.clone());
-                Some(StickerRow {
-                    asset: s.asset().to_string(),
-                    name: s.name.clone(),
-                    lib: s.lib.clone(),
-                    url,
-                })
-            })
-            .collect();
+        for dir in &self.settings.assets.sticker_dirs {
+            let root = crate::stickers::folder(std::path::Path::new(dir));
+            if let Some(pack) = self.sticker_manager.loaded.get(&root) {
+                for (entry, image) in pack.definition.entries.iter().zip(&pack.images) {
+                    let sticker = crate::assets::Sticker {
+                        lib: entry.lib.clone(),
+                        name: entry.name.clone(),
+                        path: image.frame_path(0),
+                        root: image.dir.clone(),
+                    };
+                    let asset = sticker.asset().to_string();
+                    if !seen.insert(asset.clone()) {
+                        continue;
+                    }
+                    if let Some(url) = sticker.url() {
+                        urls.insert(asset.clone(), url.clone());
+                        rows.push(StickerRow {
+                            asset,
+                            name: entry
+                                .translations
+                                .get(locale.tag())
+                                .unwrap_or(&entry.title)
+                                .clone(),
+                            lib: entry.lib.clone(),
+                            url,
+                            height_em: entry.height_em,
+                            pack_title: entry.pack_title.clone(),
+                        });
+                    }
+                    stickers.push(sticker);
+                    images.push(image.clone());
+                }
+            }
+        }
+        crate::stickers::cache::publish(images.into_iter());
+        stickers.sort_by(|a, b| (&a.lib, &a.name).cmp(&(&b.lib, &b.name)));
+        rows.sort_by(|a, b| (&a.lib, &a.asset).cmp(&(&b.lib, &b.asset)));
+        self.assets.stickers = stickers;
+        self.publish_sticker_packs();
         // Pictures of files, pasted images and chat in the current views.
         let mut wanted = doc_assets(self.core.draft());
         wanted.extend(display_assets(self.core.display()));
@@ -584,7 +623,7 @@ impl App {
             }
         }
         self.ui.asset_urls.set(Arc::new(urls));
-        self.ui.stickers.set(Arc::new(stickers));
+        self.ui.stickers.set(Arc::new(rows));
         self.ui.portraits.set(Arc::new(portraits));
     }
 
@@ -791,7 +830,12 @@ impl App {
             .unwrap_or_default();
         if stickers != current {
             self.sticker_watch = (!stickers.is_empty()).then(|| {
-                crate::services::watch::Watch::start(stickers, post, || Msg::AssetsChanged)
+                crate::services::watch::Watch::start_excluding(
+                    stickers,
+                    vec![self.paths.data.join("media")],
+                    post,
+                    || Msg::AssetsChanged,
+                )
             });
         }
     }
@@ -916,6 +960,8 @@ impl App {
             self.apply_skin();
         }
         if assets_changed {
+            self.sticker_manager
+                .sync(&self.settings.assets.sticker_dirs);
             self.refresh_assets();
         }
         if device_changed {
@@ -1474,21 +1520,21 @@ impl App {
                 }
             }
             FileTarget::StickerFolder => {
-                let p = path.display().to_string();
-                self.edit(|s| {
-                    if !s.assets.sticker_dirs.contains(&p) {
-                        s.assets.sticker_dirs.push(p);
-                    }
-                });
+                self.import_sticker_folders(vec![path]);
             }
         }
     }
 
     // ---- update ---------------------------------------------------------------
 
+    fn import_sticker_folders(&mut self, paths: Vec<PathBuf>) {
+        self.edit(|s| crate::stickers::add_folders(&mut s.assets.sticker_dirs, &paths));
+    }
+
     pub fn update(&mut self, msg: Msg) {
         match msg {
             Msg::UiChanged => {}
+            Msg::StickerImportFolders(paths) => self.import_sticker_folders(paths),
             Msg::PeerStart { invitation, relay } => self.peer_start(invitation, relay),
             Msg::PeerLeave => self.peer_leave(),
             Msg::PeerPanel(expanded) => self.ui.peer_panel.set(expanded),
@@ -1740,7 +1786,70 @@ impl App {
                 self.ui.chat_target.set(None);
                 self.publish_chat();
             }
-            Msg::AssetsChanged => self.refresh_assets(),
+            Msg::AssetsChanged => {
+                self.sticker_manager
+                    .rebuild(&self.settings.assets.sticker_dirs);
+                self.publish_sticker_packs();
+            }
+            Msg::Stickers(event) => {
+                let completed = matches!(&event, crate::stickers::Event::Done { .. });
+                if let Some(root) = self.sticker_manager.accept(event) {
+                    let path = root.display().to_string();
+                    if !self
+                        .settings
+                        .assets
+                        .sticker_dirs
+                        .iter()
+                        .any(|d| crate::stickers::folder(std::path::Path::new(d)) == root)
+                    {
+                        self.edit(|s| s.assets.sticker_dirs.push(path));
+                    }
+                }
+                if completed {
+                    self.refresh_assets();
+                } else {
+                    self.publish_sticker_packs();
+                }
+            }
+            Msg::StickerDownload(preset) => {
+                if let Some(root) = self
+                    .sticker_manager
+                    .rows
+                    .iter()
+                    .find(|r| r.preset == Some(preset))
+                    .map(|r| r.root.clone())
+                {
+                    self.sticker_manager.start(&root, Some(preset));
+                    self.publish_sticker_packs();
+                }
+            }
+            Msg::StickerRetry(root) => {
+                self.sticker_manager.start(&root, None);
+                self.publish_sticker_packs();
+            }
+            Msg::StickerRepository(root) => {
+                if let Some(url) = self
+                    .sticker_manager
+                    .rows
+                    .iter()
+                    .find(|r| r.root == root)
+                    .and_then(|r| r.repository.as_deref())
+                    .filter(|url| {
+                        url.starts_with("https://") && !url.chars().any(char::is_whitespace)
+                    })
+                {
+                    crate::services::open_url(url);
+                }
+            }
+            Msg::StickerRemove(root) => {
+                self.sticker_manager.remove(&root);
+                self.edit(|s| {
+                    s.assets
+                        .sticker_dirs
+                        .retain(|d| crate::stickers::folder(std::path::Path::new(d)) != root)
+                });
+                self.refresh_assets();
+            }
             Msg::SkinFilesChanged => {
                 self.registry.rescan();
                 self.reload_skin();

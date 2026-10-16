@@ -121,6 +121,8 @@ pub struct StickerRow {
     pub name: String,
     pub lib: String,
     pub url: String,
+    pub height_em: f32,
+    pub pack_title: String,
 }
 
 /// The editor's markup source and selection.
@@ -176,6 +178,7 @@ pub struct Ui {
     pub status: Signal<Arc<Status>>,
     pub skins: Signal<Arc<Vec<SkinRow>>>,
     pub stickers: Signal<Arc<Vec<StickerRow>>>,
+    pub sticker_packs: Signal<Arc<Vec<crate::stickers::PackRow>>>,
     pub recording: Signal<Option<GlobalAction>>,
     pub hotkeys: Signal<Arc<HashMap<GlobalAction, HotkeyState>>>,
     /// Asset reference → `file://` URL, for documents' atoms.
@@ -276,6 +279,7 @@ impl Ui {
             status: signal(Arc::new(Status::default())),
             skins: signal(Arc::new(Vec::new())),
             stickers: signal(Arc::new(Vec::new())),
+            sticker_packs: signal(Arc::new(Vec::new())),
             recording: signal(None),
             hotkeys: signal(Arc::new(HashMap::new())),
             asset_urls: signal(Arc::new(HashMap::new())),

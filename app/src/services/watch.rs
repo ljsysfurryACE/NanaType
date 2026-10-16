@@ -26,9 +26,27 @@ impl Watch {
         post: impl Fn(Msg) + Send + 'static,
         msg: fn() -> Msg,
     ) -> Self {
+        Self::start_excluding(paths, Vec::new(), post, msg)
+    }
+
+    pub fn start_excluding(
+        paths: Vec<PathBuf>,
+        excluded: Vec<PathBuf>,
+        post: impl Fn(Msg) + Send + 'static,
+        msg: fn() -> Msg,
+    ) -> Self {
         let (tx, rx) = mpsc::channel::<()>();
         let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-            if event.is_ok_and(|e| !e.kind.is_access()) {
+            if event.is_ok_and(|e| {
+                !e.kind.is_access()
+                    && (e.paths.is_empty()
+                        || e.paths.iter().any(|p| {
+                            !excluded.iter().any(|root| {
+                                crate::stickers::folder(p)
+                                    .starts_with(crate::stickers::folder(root))
+                            })
+                        }))
+            }) {
                 let _ = tx.send(());
             }
         });

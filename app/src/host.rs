@@ -47,6 +47,7 @@ pub struct Host {
     pager: overflow::Pager,
     /// The toast stack of each control window (settings, input, chat).
     toasts: HashMap<WindowId, Entity<ToastStack>>,
+    stickers: crate::stickers::playback::Playback,
 }
 
 /// Application-clock work is separate from rendering-only work (GPU sweep,
@@ -706,9 +707,16 @@ impl RuntimeProgram for Host {
             peer_follow: overflow::Follow::default(),
             pager: overflow::Pager::default(),
             toasts: HashMap::new(),
+            stickers: Default::default(),
         };
         // The primary window exists before `initialize_window` is ever
         // called, so its document is built here.
+        host.stickers.prepare(
+            WindowKind::Input.id(),
+            context.gpu(),
+            clock::now_ms(),
+            host.app.ui.reduced_motion.get_untracked(),
+        );
         host.mount(WindowKind::Input.id(), WindowKind::Input)?;
         Ok((host, Vec::new()))
     }
@@ -777,16 +785,23 @@ impl RuntimeProgram for Host {
     fn initialize_window(
         &mut self,
         id: WindowId,
-        _: &RuntimeProgramContext<Msg>,
+        context: &RuntimeProgramContext<Msg>,
     ) -> Result<(), String> {
         let kind = WindowKind::from_id(id).ok_or_else(|| format!("unknown window {id:?}"))?;
         if self.docs.contains_key(&id) {
             return Ok(());
         }
+        self.stickers.prepare(
+            id,
+            context.gpu(),
+            clock::now_ms(),
+            self.app.ui.reduced_motion.get_untracked(),
+        );
         self.mount(id, kind)
     }
 
     fn discard_window(&mut self, id: WindowId) {
+        self.stickers.discard(id);
         self.docs.remove(&id);
         self.toasts.remove(&id);
     }
@@ -1003,6 +1018,10 @@ impl RuntimeProgram for Host {
         Some(crate::ui::sweep::renderers())
     }
 
+    fn host_textures(&self, id: WindowId) -> Option<nana_ui::HostTextureRegistry> {
+        self.stickers.registry(id)
+    }
+
     fn window_output(&self, id: WindowId) -> Option<nana_ui::WindowOutputConfig> {
         let kind = WindowKind::from_id(id)?;
         crate::output::resolve(kind, &self.app.settings, self.app.peer.handle.is_some()).config()
@@ -1073,7 +1092,7 @@ impl RuntimeProgram for Host {
     }
 
     fn frame_demand(&self, id: WindowId) -> FrameDemand {
-        frame_policy(
+        let demand = frame_policy(
             self.app.ui,
             WindowKind::from_id(id),
             clock::now_ms(),
@@ -1081,14 +1100,38 @@ impl RuntimeProgram for Host {
             &self.peer_follow,
             &self.pager,
         )
-        .demand
+        .demand;
+        match (
+            demand,
+            self.stickers.next_at(
+                id,
+                clock::now_ms(),
+                self.app.ui.reduced_motion.get_untracked(),
+            ),
+        ) {
+            (FrameDemand::Continuous(fps), _) => FrameDemand::Continuous(fps),
+            (FrameDemand::At(at), Some(sticker)) => {
+                FrameDemand::At(at.min(clock::instant(sticker)))
+            }
+            (_, Some(sticker)) => FrameDemand::At(clock::instant(sticker)),
+            (demand, None) => demand,
+        }
     }
 
-    fn prepare_window_frame(&mut self, id: WindowId, _: &RuntimeProgramContext<Msg>) {
+    fn prepare_window_frame(&mut self, id: WindowId, context: &RuntimeProgramContext<Msg>) {
         if let Some(perf) = &mut self.perf {
             perf.begin(id);
         }
         let now = clock::now_ms();
+        self.stickers.prepare(
+            id,
+            context.gpu(),
+            now,
+            self.app.ui.reduced_motion.get_untracked(),
+        );
+        if self.stickers.take_rebuild() {
+            context.dispatch(Msg::AssetsChanged);
+        }
         match WindowKind::from_id(id) {
             Some(WindowKind::Display) => self.follow_track(now, false),
             Some(WindowKind::PeerDisplay) if self.app.peer.handle.is_some() => {

@@ -36,6 +36,7 @@ use super::{I18N, Ui, c, restyle};
 use crate::msg::{FileTarget, MarkupEdit, Msg, Tool};
 use crate::windows::{INPUT_MODE_H, TOOLBAR_H};
 
+mod stickers;
 mod workspace;
 
 pub fn marker_label(m: &Marker, locale: Locale) -> String {
@@ -522,111 +523,7 @@ fn expression_panel(ui: Ui, open: Signal<bool>) -> AnyView {
 
 /// The toolbar's sticker picker; `open` is its popover's state.
 pub fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
-    sticker_panel_content(ui, Some(open))
-}
-
-/// Dock content remains open for repeated insertions; popup pickers close.
-fn sticker_panel_content(ui: Ui, close_on_insert: Option<Signal<bool>>) -> AnyView {
-    let query = signal(String::new());
-    let mut search = TextInput::new("").placeholder(ui.now_t("tb-sticker-search"));
-    let layout = Arc::make_mut(&mut search.style.layout);
-    layout.width = Some(LengthSpec::Fill);
-    layout.min_width = Some(LengthSpec::Px(0.0));
-    widget(Stack::column(8.0).padding(4.0).with_layout(|l| {
-        l.width = Some(LengthSpec::Fill);
-        l.min_width = Some(LengthSpec::Px(0.0));
-    }))
-    .children((
-        widget(search)
-            .key(if close_on_insert.is_some() {
-                "input-sticker-search"
-            } else {
-                "input-dock-sticker-search"
-            })
-            .on(move |e: &TextChanged| query.set(e.value.to_string())),
-        dynamic(
-            move || (query.get(), ui.stickers.with(|s| Arc::as_ptr(s) as usize)),
-            move |(q, _)| {
-                let stickers = ui.stickers.get_untracked();
-                if stickers.is_empty() {
-                    if close_on_insert.is_none() {
-                        let mut style = text_style(13.0, 400);
-                        let l = Arc::make_mut(&mut style.layout);
-                        l.width = Some(LengthSpec::Fill);
-                        l.min_width = Some(LengthSpec::Px(0.0));
-                        return widget(Stack::column(8.0).width(LengthSpec::Fill))
-                            .children((
-                                widget(
-                                    Text::new(ui.now_t("empty-stickers"))
-                                        .style(style)
-                                        .color(SemanticColorRole::Muted),
-                                ),
-                                widget(
-                                    Button::new(ui.now_t("window-settings"))
-                                        .kind(ButtonKind::Text)
-                                        .size(ControlSize::Small),
-                                )
-                                .on_cx(|_, _: &Activate, cx| {
-                                    cx.dispatch_program_all(Msg::SettingsPage(
-                                        super::settings::Page::Assets,
-                                    ))
-                                }),
-                            ))
-                            .into_any();
-                    }
-                    return super::feedback::empty_state(
-                        ui.now_t("empty-stickers"),
-                        Some((
-                            ui.now_t("empty-open-assets"),
-                            Box::new(move || {
-                                if let Some(open) = close_on_insert {
-                                    open.set(false);
-                                }
-                                Msg::SettingsPage(super::settings::Page::Assets)
-                            }),
-                        )),
-                    );
-                }
-                let q = q.to_lowercase();
-                let cells: Vec<AnyView> = stickers
-                    .iter()
-                    .filter(|s| {
-                        q.is_empty()
-                            || s.name.to_lowercase().contains(&q)
-                            || s.lib.to_lowercase().contains(&q)
-                    })
-                    .take(60)
-                    .map(|s| {
-                        let url = s.url.clone();
-                        let asset: Option<AssetRef> = s.asset.parse().ok();
-                        widget(image_button(s.name.clone(), url))
-                            .bind(move |b: &mut Button| b.disabled = ui.bilibili.get().sending)
-                            .on_cx(move |_, _: &Activate, cx| {
-                                if let Some(open) = close_on_insert {
-                                    open.set(false);
-                                }
-                                if let Some(asset) = asset.clone() {
-                                    cx.dispatch_program_all(act(Tool::Insert(Inline::Atom(
-                                        Atom {
-                                            kind: AtomKind::Sticker,
-                                            asset,
-                                            height_em: 1.6,
-                                            alt: String::new(),
-                                            effects: Default::default(),
-                                        },
-                                    ))));
-                                }
-                            })
-                            .into_any()
-                    })
-                    .collect();
-                widget(Stack::row(6.0).wrap(true).width(LengthSpec::Fill))
-                    .children(cells)
-                    .into_any()
-            },
-        ),
-    ))
-    .into_any()
+    stickers::panel(ui, Some(open), None)
 }
 
 /// A small caption over a group in a toolbar panel.

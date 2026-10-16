@@ -3559,31 +3559,103 @@ fn remove_button(ui: Ui, armed: Signal<bool>) -> AnyView {
 
 fn assets(ui: Ui) -> AnyView {
     let dirs = dynamic(
-        move || ui.settings.with(|s| s.assets.sticker_dirs.clone()),
-        move |dirs| {
-            if dirs.is_empty() {
-                return crate::ui::feedback::empty_state(ui.now_t("empty-stickers"), None);
-            }
-            let rows: Vec<AnyView> = dirs
+        move || (ui.sticker_packs.get(), ui.locale.get()),
+        move |(packs, _)| {
+            use crate::stickers::Phase;
+            let rows: Vec<AnyView> = packs
                 .iter()
-                .enumerate()
-                .map(|(i, d)| {
-                    row_text(
-                        d.clone(),
-                        None,
-                        confirm(
-                            ui,
-                            ui.now_t("assets-remove-folder-confirm"),
-                            ui.now_t("assets-remove"),
-                            |armed| remove_button(ui, armed),
-                            move || {
-                                edit(move |s| {
-                                    if i < s.assets.sticker_dirs.len() {
-                                        s.assets.sticker_dirs.remove(i);
-                                    }
-                                })
-                            },
+                .map(|pack| {
+                    let title = pack
+                        .preset
+                        .map(|p| ui.now_t(p.title_key()))
+                        .unwrap_or_else(|| pack.title.clone());
+                    let status = match &pack.phase {
+                        Phase::NotDownloaded => ui.now_t("stickers-not-downloaded"),
+                        Phase::Downloading(done, total) => ui.tr(
+                            "stickers-downloading",
+                            &[
+                                ("done", (*done as u64).into()),
+                                ("total", (*total as u64).into()),
+                            ],
                         ),
+                        Phase::Processing(done, total) => ui.tr(
+                            "stickers-processing",
+                            &[
+                                ("done", (*done as u64).into()),
+                                ("total", (*total as u64).into()),
+                            ],
+                        ),
+                        Phase::Ready => {
+                            ui.tr("stickers-ready", &[("count", (pack.count as u64).into())])
+                        }
+                        Phase::Failed(error) => {
+                            ui.tr("stickers-failed", &[("message", error.clone().into())])
+                        }
+                    };
+                    let details = [
+                        status,
+                        pack.author.clone(),
+                        pack.license.clone(),
+                        if pack.preset.is_none() {
+                            pack.root.display().to_string()
+                        } else {
+                            String::new()
+                        },
+                    ]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                    let mut actions = Vec::new();
+                    if pack
+                        .repository
+                        .as_deref()
+                        .is_some_and(|url| url.starts_with("https://"))
+                    {
+                        let root = pack.root.clone();
+                        actions.push(button(ui, "stickers-repository", move || {
+                            Msg::StickerRepository(root.clone())
+                        }));
+                    }
+                    if !pack.phase.busy() && pack.phase != Phase::Ready {
+                        let root = pack.root.clone();
+                        let preset = pack.preset;
+                        actions.push(button(
+                            ui,
+                            if pack.phase == Phase::NotDownloaded {
+                                "stickers-download"
+                            } else {
+                                "stickers-retry"
+                            },
+                            move || {
+                                preset
+                                    .map(Msg::StickerDownload)
+                                    .unwrap_or_else(|| Msg::StickerRetry(root.clone()))
+                            },
+                        ));
+                    }
+                    if pack.phase != Phase::NotDownloaded {
+                        let root = pack.root.clone();
+                        if pack.phase.busy() {
+                            actions.push(button(ui, "common-cancel", move || {
+                                Msg::StickerRemove(root.clone())
+                            }));
+                        } else {
+                            actions.push(confirm(
+                                ui,
+                                ui.now_t("assets-remove-folder-confirm"),
+                                ui.now_t("assets-remove"),
+                                |armed| remove_button(ui, armed),
+                                move || Msg::StickerRemove(root.clone()),
+                            ));
+                        }
+                    }
+                    row_text(
+                        title,
+                        Some(details),
+                        widget(Stack::row(space::SM).wrap(true))
+                            .children(actions)
+                            .into_any(),
                     )
                 })
                 .collect();

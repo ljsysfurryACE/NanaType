@@ -23,6 +23,7 @@ pub mod scheduler;
 pub mod services;
 pub mod skin_fonts;
 pub mod skin_theme;
+pub mod stickers;
 pub mod ui;
 pub mod windows;
 

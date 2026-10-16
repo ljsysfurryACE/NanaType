@@ -681,7 +681,20 @@ pub fn to_rich(doc: &Document, env: &Env<'_>) -> RichText {
                     let h = env.look.size * a.height_em;
                     let object = match env.urls.get(&a.asset.to_string()) {
                         Some(url) => {
-                            RichObject::image(id, url.clone(), h * aspect(url), h).descent(h * 0.15)
+                            if let Some(cached) =
+                                crate::stickers::cache::lookup(url).filter(|c| c.animated())
+                            {
+                                RichObject::texture(
+                                    id,
+                                    cached.slot(),
+                                    h * cached.width as f32 / cached.height.max(1) as f32,
+                                    h,
+                                )
+                                .descent(h * 0.15)
+                            } else {
+                                RichObject::image(id, url.clone(), h * aspect(url), h)
+                                    .descent(h * 0.15)
+                            }
                         }
                         // Missing picture: keep its place, labelled in the
                         // editor.
