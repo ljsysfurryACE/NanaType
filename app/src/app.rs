@@ -85,6 +85,7 @@ pub struct App {
     /// Editor commands for the host to apply to the input window's editor.
     pub rich_commands: Vec<nana_ui::runtime::RichEditCommand>,
     pub focus_editor: bool,
+    pub source_edit_undoable: bool,
     /// Fonts packaged with the active skin, registered while it is active.
     fonts: nana_ui::HostFontScope,
     /// Built-in (embedded) fonts the active skin names, each registered once.
@@ -236,6 +237,7 @@ impl App {
             spout: crate::output::Spout::default(),
             rich_commands: Vec::new(),
             focus_editor: false,
+            source_edit_undoable: false,
             fonts: nana_ui::HostFontScope::new(),
             builtin_fonts: Default::default(),
             skin_families: [None, None, None],
@@ -1139,25 +1141,14 @@ impl App {
 
     /// The user edited the rich text.
     fn editor_changed(&mut self, rich: nana_ui_core::RichText) {
-        let doc = crate::ui::rich::from_rich(&rich, &self.editor_look());
-        self.ui.editor_value.set(rich);
-        let text = serialize(&doc);
-        let mut src = self.ui.source.get_untracked();
-        if src.text != text {
-            let len = text.len();
-            src.text = text;
-            src.selection = (len, len);
-            src.revision += 1;
-            self.ui.source.set(src);
-        }
-        self.ui.diagnostics.set(Arc::new(Vec::new()));
-        self.ui.draft.set(Arc::new(doc.clone()));
+        let doc = sync_rich_draft(self.ui, rich);
         self.run(Cmd::DraftChanged(doc));
         self.refresh_atom_urls();
     }
 
     /// A toolbar action: an editor command, or a markup edit in source mode.
     fn tool(&mut self, tool: crate::msg::Tool) {
+        self.focus_editor = true;
         use crate::msg::Tool;
         use nana_ui::runtime::{RichAttrMask, RichEditCommand};
         use nana_ui_core::{PaintColor, RichSpanStyle, RichTextShadow, RichTextStroke};
@@ -1263,56 +1254,13 @@ impl App {
     }
 
     fn markup(&mut self, edit: MarkupEdit) {
+        self.source_edit_undoable |= !matches!(&edit, MarkupEdit::Typed { .. });
         let mut src = self.ui.source.get_untracked();
-        match edit {
-            MarkupEdit::Typed { text, selection } => {
-                src.selection = selection;
-                let changed = src.text != text;
-                src.text = text;
-                self.ui.source.set(src.clone());
-                if changed {
-                    self.reparse(&src.text);
-                }
-            }
-            MarkupEdit::Wrap { open, close } => {
-                let (a, b) = clamp_sel(&src.text, src.selection);
-                let mut text = src.text.clone();
-                text.insert_str(b, &close);
-                text.insert_str(a, &open);
-                let caret = if a == b {
-                    a + open.len()
-                } else {
-                    b + open.len() + close.len()
-                };
-                src.text = text;
-                src.selection = (caret, caret);
-                src.revision += 1;
-                self.ui.source.set(src.clone());
-                self.reparse(&src.text);
-            }
-            MarkupEdit::Insert(tag) => {
-                let (a, b) = clamp_sel(&src.text, src.selection);
-                let mut text = src.text.clone();
-                text.replace_range(a..b, &tag);
-                src.text = text;
-                src.selection = (a + tag.len(), a + tag.len());
-                src.revision += 1;
-                self.ui.source.set(src.clone());
-                self.reparse(&src.text);
-            }
-            MarkupEdit::ClearFormat => {
-                let (a, b) = clamp_sel(&src.text, src.selection);
-                let (a, b) = if a == b { (0, src.text.len()) } else { (a, b) };
-                let inner = &src.text[a..b];
-                let plain = strip_tags(inner);
-                let mut text = src.text.clone();
-                text.replace_range(a..b, &plain);
-                src.text = text;
-                src.selection = (a, a + plain.len());
-                src.revision += 1;
-                self.ui.source.set(src.clone());
-                self.reparse(&src.text);
-            }
+        let before = src.text.clone();
+        apply_source_markup(&mut src, edit);
+        self.ui.source.set(src.clone());
+        if src.text != before {
+            self.reparse(&src.text);
         }
     }
 
@@ -1493,7 +1441,9 @@ impl App {
             Msg::ToggleSource => {
                 let on = !self.ui.source_mode.get_untracked();
                 self.ui.source_mode.set(on);
+                self.focus_editor = true;
             }
+            Msg::EditorContext { .. } | Msg::EditorAction { .. } => {}
             Msg::Hotkey(action) => self.hotkey(action),
             Msg::RecordHotkey(action) => {
                 self.ui.recording.set(action);
@@ -1534,6 +1484,7 @@ impl App {
             Msg::ShowWindow(kind) => match kind {
                 WindowKind::Input => {
                     self.summoned = true;
+                    self.focus_editor = true;
                     if !self.settings.overlays.input.visible {
                         self.edit(|s| s.overlays.input.visible = true);
                     }
@@ -2081,6 +2032,60 @@ fn message_assets(m: &ChatMessage) -> Vec<AssetRef> {
     out
 }
 
+/// Synchronize an actual editor event before reactive views read the draft.
+pub(crate) fn sync_rich_draft(ui: Ui, rich: nana_ui_core::RichText) -> Document {
+    let look = crate::ui::dialogue::Base::editor(&ui.skin.get_untracked()).look();
+    let doc = crate::ui::rich::from_rich(&rich, &look);
+    ui.editor_value.set(rich);
+    let text = serialize(&doc);
+    let mut src = ui.source.get_untracked();
+    if src.text != text {
+        let len = text.len();
+        src.text = text;
+        src.selection = (len, len);
+        src.revision += 1;
+        ui.source.set(src);
+    }
+    ui.diagnostics.set(Arc::new(Vec::new()));
+    ui.draft.set(Arc::new(doc.clone()));
+    doc
+}
+
+pub(crate) fn apply_source_markup(src: &mut crate::ui::Source, edit: MarkupEdit) {
+    match edit {
+        MarkupEdit::Typed { text, selection } => {
+            src.text = text;
+            src.selection = selection;
+        }
+        MarkupEdit::Wrap { open, close } => {
+            let (a, b) = clamp_sel(&src.text, src.selection);
+            src.text.insert_str(b, &close);
+            src.text.insert_str(a, &open);
+            let caret = if a == b {
+                a + open.len()
+            } else {
+                b + open.len() + close.len()
+            };
+            src.selection = (caret, caret);
+            src.revision += 1;
+        }
+        MarkupEdit::Insert(tag) => {
+            let (a, b) = clamp_sel(&src.text, src.selection);
+            src.text.replace_range(a..b, &tag);
+            src.selection = (a + tag.len(), a + tag.len());
+            src.revision += 1;
+        }
+        MarkupEdit::ClearFormat => {
+            let (a, b) = clamp_sel(&src.text, src.selection);
+            let (a, b) = if a == b { (0, src.text.len()) } else { (a, b) };
+            let plain = strip_tags(&src.text[a..b]);
+            src.text.replace_range(a..b, &plain);
+            src.selection = (a, a + plain.len());
+            src.revision += 1;
+        }
+    }
+}
+
 fn clamp_sel(text: &str, (a, b): (usize, usize)) -> (usize, usize) {
     let fix = |mut i: usize| {
         i = i.min(text.len());
@@ -2145,7 +2150,7 @@ fn demo_editor(ctx: &RuntimeProgramContext<Msg>) {
 }
 
 /// The markup equivalent of a toolbar action (source mode).
-fn markup_for(tool: &crate::msg::Tool) -> Option<MarkupEdit> {
+pub(crate) fn markup_for(tool: &crate::msg::Tool) -> Option<MarkupEdit> {
     use crate::msg::Tool;
     let wrap = |open: String, close: &str| MarkupEdit::Wrap {
         open,

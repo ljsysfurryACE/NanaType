@@ -596,3 +596,11 @@ output-peer-hint = 連携中は相手の画面を個別出力します。ウィ�
 
 tb-effect-pulse = 脈動
 tb-effect-flicker = 明滅
+
+# Editor context menu
+edit-undo = 元に戻す
+edit-redo = やり直す
+edit-cut = 切り取り
+edit-copy = コピー
+edit-paste = 貼り付け
+edit-select-all = すべて選択

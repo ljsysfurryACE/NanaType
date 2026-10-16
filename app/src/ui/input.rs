@@ -1371,6 +1371,39 @@ fn reply_bar(ui: Ui) -> AnyView {
     .into_any()
 }
 
+/// Localized editor commands, in `TextEditAction::ALL` order.
+pub fn editor_context_menu(
+    ui: Ui,
+    x: f32,
+    y: f32,
+    enabled: [bool; 6],
+) -> nana_ui::runtime::ContextMenu {
+    use nana_ui::runtime::{ContextMenu, ContextMenuItem, TextEditAction};
+    let labels = [
+        "edit-undo",
+        "edit-redo",
+        "edit-cut",
+        "edit-copy",
+        "edit-paste",
+        "edit-select-all",
+    ];
+    let hints = if cfg!(target_os = "macos") {
+        ["⌘Z", "⇧⌘Z", "⌘X", "⌘C", "⌘V", "⌘A"]
+    } else {
+        ["Ctrl+Z", "Ctrl+Y", "Ctrl+X", "Ctrl+C", "Ctrl+V", "Ctrl+A"]
+    };
+    ContextMenu::new(x, y).items(
+        TextEditAction::ALL
+            .into_iter()
+            .enumerate()
+            .map(|(i, action)| {
+                ContextMenuItem::new(action.key(), ui.now_t(labels[i]))
+                    .hint(hints[i])
+                    .disabled(!enabled[i])
+            }),
+    )
+}
+
 /// The draft inside the dialogue box: the rich editor, or the markup source.
 /// Both are built once and shown by `source_mode`, so the editor keeps its
 /// selection and undo history across toggles.
@@ -1379,11 +1412,14 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
         let mut st = Base::editor(&ui.skin.get()).node_style();
         let l = Arc::make_mut(&mut st.layout);
         l.width = Some(LengthSpec::Fill);
+        l.min_width = Some(LengthSpec::Px(0.0));
         l.flex_grow = Some(1.0);
         // Held to the text area, so a long draft scrolls inside the editor
         // (which keeps the caret in view) instead of running off the box.
         l.flex_shrink = Some(1.0);
         l.min_height = Some(LengthSpec::Px(0.0));
+        l.overflow_x = OverflowSpec::Hidden;
+        l.overflow_y = OverflowSpec::Hidden;
         l.cursor = Some(nana_ui_core::CursorSpec::Text);
         st
     };
@@ -1406,105 +1442,126 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
     widget(Stack::fill_column(0.0).with_layout(|l| {
         l.position = PositionSpec::Relative;
         l.flex_grow = Some(1.0);
+        l.min_height = Some(LengthSpec::Px(0.0));
     }))
     .children((
-        widget(Stack::fill_column(0.0).with_layout(|l| l.flex_grow = Some(1.0)))
-            .visible(move || !ui.source_mode.get())
-            .children((
-                widget(RichTextEditor::new(ui.editor_value.get_untracked()))
-                    .entity_ref(editor)
-                    .bind(move |e: &mut RichTextEditor| {
-                        // Rehydrate image objects in place. NanaUI preserves this
-                        // editor's selection and undo stack when its value updates.
-                        let urls = ui.asset_urls.get();
-                        let look = Base::editor(&ui.skin.get()).look();
-                        let value = super::rich::to_rich(
-                            &ui.draft.get(),
-                            &super::rich::Env {
-                                look: &look,
-                                urls: &urls,
-                                editor: true,
-                                locale: ui.locale.get(),
-                            },
-                        );
-                        if e.value != value {
-                            if e.value.text() != value.text() {
-                                // Binding directly to `value` bypasses NanaUI's
-                                // reconciliation: a cleared draft would retain an
-                                // out-of-bounds caret and crash the next @ insertion.
-                                let mut next = e.clone();
-                                next.value = value;
-                                nana_ui::runtime::ComponentView::reconcile(e, next);
-                            } else {
-                                // Image/style-only updates preserve IME preedit,
-                                // typing attributes, selection and undo history.
-                                e.value = value;
-                            }
-                        }
-                        let st = style();
-                        if e.style != st {
-                            e.style = st;
-                        }
-                    })
-                    .on_cx(move |_, e: &RichTextEditorEvent, cx| match e {
-                        RichTextEditorEvent::Changed(rich) => {
-                            cx.dispatch_program_all(Msg::EditorChanged(rich.clone()))
-                        }
-                        RichTextEditorEvent::SelectionChanged { attrs, .. } => {
-                            if ui.sel_attrs.with_untracked(|a| a != attrs) {
-                                ui.sel_attrs.set(attrs.clone());
-                            }
-                        }
-                        RichTextEditorEvent::PasteRequested => {
-                            cx.dispatch_program_all(Msg::EditorPaste)
-                        }
-                        _ => {}
-                    }),
-                widget(Text::new(ui.now_t("editor-placeholder")))
-                    .bind(move |t: &mut Text| {
-                        let st = placeholder_style();
-                        if t.style != st {
-                            t.style = st;
-                        }
-                        let value = I18N.t_in(ui.locale.get(), "editor-placeholder");
-                        if t.value != value {
-                            t.value = value;
-                        }
-                    })
-                    .visible(move || ui.draft.with(|d| d.is_blank())),
-            )),
-        widget(Stack::fill_column(0.0).with_layout(|l| l.flex_grow = Some(1.0)))
-            .visible(move || ui.source_mode.get())
-            .children(
-                widget({
-                    let mut area =
-                        TextArea::new("").placeholder(ui.now_t("editor-source-placeholder"));
-                    let l = Arc::make_mut(&mut area.style.layout);
-                    l.width = Some(LengthSpec::Fill);
-                    l.height = Some(LengthSpec::Percent(100.0));
-                    // Markup source reads in the mono role.
-                    super::mono(l);
-                    area
+        widget(Stack::fill_column(0.0).with_layout(|l| {
+            l.flex_grow = Some(1.0);
+            l.min_height = Some(LengthSpec::Px(0.0));
+        }))
+        .visible(move || !ui.source_mode.get())
+        .children((
+            widget(RichTextEditor::new(ui.editor_value.get_untracked()))
+                .entity_ref(editor)
+                .on_cx(|_, e: &nana_ui::runtime::SecondaryPress, cx| {
+                    cx.dispatch_program_all(Msg::EditorContext {
+                        source: false,
+                        x: e.x,
+                        y: e.y,
+                        keyboard: e.keyboard,
+                    });
                 })
-                .entity_ref(source)
-                .bind(move |a: &mut TextArea| {
-                    let source = ui.source.get();
-                    if a.state.value.as_str() != source.text {
-                        a.state.replace_value(source.text);
-                        a.state.selection = nana_ui::runtime::TextSelection::new(
-                            source.selection.0,
-                            source.selection.1,
-                        );
+                .bind(move |e: &mut RichTextEditor| {
+                    // Rehydrate image objects in place. NanaUI preserves this
+                    // editor's selection and undo stack when its value updates.
+                    let urls = ui.asset_urls.get();
+                    let look = Base::editor(&ui.skin.get()).look();
+                    let value = super::rich::to_rich(
+                        &ui.draft.get(),
+                        &super::rich::Env {
+                            look: &look,
+                            urls: &urls,
+                            editor: true,
+                            locale: ui.locale.get(),
+                        },
+                    );
+                    if e.value != value {
+                        if e.value.text() != value.text() {
+                            // Binding directly to `value` bypasses NanaUI's
+                            // reconciliation: a cleared draft would retain an
+                            // out-of-bounds caret and crash the next @ insertion.
+                            let mut next = e.clone();
+                            next.value = value;
+                            nana_ui::runtime::ComponentView::reconcile(e, next);
+                        } else {
+                            // Image/style-only updates preserve IME preedit,
+                            // typing attributes, selection and undo history.
+                            e.value = value;
+                        }
+                    }
+                    let st = style();
+                    if e.style != st {
+                        e.style = st;
                     }
                 })
-                .on_cx(move |_, e: &TextChanged, cx| {
-                    let range = e.selection.range();
-                    cx.dispatch_program_all(Msg::Markup(MarkupEdit::Typed {
-                        text: e.value.to_string(),
-                        selection: (range.start, range.end),
-                    }));
+                .on_cx(move |_, e: &RichTextEditorEvent, cx| match e {
+                    RichTextEditorEvent::Changed(rich) => {
+                        cx.dispatch_program_all(Msg::EditorChanged(rich.clone()))
+                    }
+                    RichTextEditorEvent::SelectionChanged { attrs, .. } => {
+                        if ui.sel_attrs.with_untracked(|a| a != attrs) {
+                            ui.sel_attrs.set(attrs.clone());
+                        }
+                    }
+                    RichTextEditorEvent::PasteRequested => {
+                        cx.dispatch_program_all(Msg::EditorPaste)
+                    }
+                    _ => {}
                 }),
-            ),
+            widget(Text::new(ui.now_t("editor-placeholder")))
+                .bind(move |t: &mut Text| {
+                    let st = placeholder_style();
+                    if t.style != st {
+                        t.style = st;
+                    }
+                    let value = I18N.t_in(ui.locale.get(), "editor-placeholder");
+                    if t.value != value {
+                        t.value = value;
+                    }
+                })
+                .visible(move || ui.draft.with(|d| d.is_blank())),
+        )),
+        widget(Stack::fill_column(0.0).with_layout(|l| {
+            l.flex_grow = Some(1.0);
+            l.min_height = Some(LengthSpec::Px(0.0));
+        }))
+        .visible(move || ui.source_mode.get())
+        .children(
+            widget({
+                let mut area = TextArea::new("").placeholder(ui.now_t("editor-source-placeholder"));
+                let l = Arc::make_mut(&mut area.style.layout);
+                l.width = Some(LengthSpec::Fill);
+                l.height = Some(LengthSpec::Percent(100.0));
+                // Markup source reads in the mono role.
+                super::mono(l);
+                area
+            })
+            .entity_ref(source)
+            .on_cx(|_, e: &nana_ui::runtime::SecondaryPress, cx| {
+                cx.dispatch_program_all(Msg::EditorContext {
+                    source: true,
+                    x: e.x,
+                    y: e.y,
+                    keyboard: e.keyboard,
+                });
+            })
+            .bind(move |a: &mut TextArea| {
+                let source = ui.source.get();
+                if a.state.value.as_str() != source.text {
+                    a.state.replace_value(source.text);
+                    a.state.selection = nana_ui::runtime::TextSelection::new(
+                        source.selection.0,
+                        source.selection.1,
+                    );
+                }
+            })
+            .on_cx(move |_, e: &TextChanged, cx| {
+                cx.dispatch_program_all(Msg::Markup(MarkupEdit::Typed {
+                    text: e.value.to_string(),
+                    selection: (e.selection.anchor, e.selection.focus),
+                }));
+            }),
+        ),
     ))
     .into_any()
 }
@@ -1572,6 +1629,13 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
                 let mut taken = std::mem::replace(s, Stack::row(0.0));
                 taken = taken.height(LengthSpec::Px(h));
                 *s = taken;
+                // Transparent broadcast skins need their own preview backdrop:
+                // their ink may be black while the application's chrome is dark.
+                let skin = ui.skin.get();
+                restyle(s, |l| {
+                    l.background = (skin.dialogue.box_.color.a < 255)
+                        .then(|| super::c(skin.chrome.background));
+                });
             })
             .on(move |e: &FocusWithinChanged| {
                 if focused.get_untracked() != e.focused {
@@ -1602,9 +1666,9 @@ pub fn capture_source_selection(
         return;
     };
     let mut current = ui.source.get_untracked();
-    let range = state.selection.range();
-    if current.text == state.value && current.selection != (range.start, range.end) {
-        current.selection = (range.start, range.end);
+    let selection = (state.selection.anchor, state.selection.focus);
+    if current.text == state.value && current.selection != selection {
+        current.selection = selection;
         ui.source.set(current);
     }
 }

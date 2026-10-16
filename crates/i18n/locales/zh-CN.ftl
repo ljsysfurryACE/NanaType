@@ -596,3 +596,11 @@ output-peer-hint = 联机期间独立输出伙伴画面；隐藏窗口仍会输�
 
 tb-effect-pulse = 脉动
 tb-effect-flicker = 闪烁
+
+# Editor context menu
+edit-undo = 撤销
+edit-redo = 重做
+edit-cut = 剪切
+edit-copy = 复制
+edit-paste = 粘贴
+edit-select-all = 全选

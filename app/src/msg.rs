@@ -123,6 +123,16 @@ pub enum Msg {
     EditorChanged(nana_ui_core::RichText),
     /// The rich editor found no text to paste (try an image).
     EditorPaste,
+    EditorContext {
+        source: bool,
+        x: f32,
+        y: f32,
+        keyboard: bool,
+    },
+    EditorAction {
+        source: bool,
+        action: nana_ui::runtime::TextEditAction,
+    },
     /// Switch between the rich editor and the markup source.
     ToggleSource,
     Hotkey(GlobalAction),

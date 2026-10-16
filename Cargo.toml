@@ -35,10 +35,10 @@ nanatype-bridge = { path = "crates/bridge" }
 nanatype-blive = { path = "crates/blive" }
 nanatype-core = { path = "crates/core" }
 nanatype-p2p = { path = "crates/p2p" }
-nana-ui-platform = { git = "https://github.com/sena-nana/NanaUI", rev = "5cd2b70c9f1d17330f146a8121698bbe0ce5e00b", default-features = false }
-nana-ui-core = { git = "https://github.com/sena-nana/NanaUI", rev = "5cd2b70c9f1d17330f146a8121698bbe0ce5e00b", default-features = false }
-nana-ui-devtools = { git = "https://github.com/sena-nana/NanaUI", rev = "5cd2b70c9f1d17330f146a8121698bbe0ce5e00b" }
-nana-ui = { git = "https://github.com/sena-nana/NanaUI", rev = "5cd2b70c9f1d17330f146a8121698bbe0ce5e00b", default-features = false, features = [
+nana-ui-platform = { git = "https://github.com/sena-nana/NanaUI", rev = "8fca5bb6850e959608d371f7b0c01e285773f543", default-features = false }
+nana-ui-core = { git = "https://github.com/sena-nana/NanaUI", rev = "8fca5bb6850e959608d371f7b0c01e285773f543", default-features = false }
+nana-ui-devtools = { git = "https://github.com/sena-nana/NanaUI", rev = "8fca5bb6850e959608d371f7b0c01e285773f543" }
+nana-ui = { git = "https://github.com/sena-nana/NanaUI", rev = "8fca5bb6850e959608d371f7b0c01e285773f543", default-features = false, features = [
     "hosted",
     "bundled-fonts",
     "wgpu-interop",

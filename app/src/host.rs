@@ -35,6 +35,7 @@ pub struct Host {
     /// The input window's rich editor.
     editor: Option<Entity<RichTextEditor>>,
     source: Option<Entity<nana_ui::runtime::TextArea>>,
+    editor_menu: Option<Entity<nana_ui::runtime::OverlayHost>>,
     /// Skin and reduced-motion the editor's effect preview was built for.
     editor_fx: Option<(usize, bool, usize)>,
     /// The typewriter's scroll through long text.
@@ -141,6 +142,65 @@ fn is_modifier(code: &str) -> bool {
 }
 
 impl Host {
+    fn editor_target(&self, source: bool) -> Option<nana_ui::runtime::StableNodeId> {
+        if source {
+            self.source.map(|e| e.stable_id())
+        } else {
+            self.editor.map(|e| e.stable_id())
+        }
+    }
+
+    fn open_editor_menu(&mut self, source: bool, x: f32, y: f32, keyboard: bool) {
+        let Some(target) = self.editor_target(source) else {
+            return;
+        };
+        let ui = self.app.ui;
+        let Some(doc) = self.docs.get_mut(&WindowKind::Input.id()) else {
+            return;
+        };
+        if let Some(menu) = self.editor_menu.take() {
+            let _ = doc.context_mut().remove_view(menu);
+        }
+        let paste_available = arboard::Clipboard::new().is_ok_and(|mut clipboard| {
+            clipboard.get_text().is_ok_and(|text| !text.is_empty()) || clipboard.get_image().is_ok()
+        });
+        self.editor_menu =
+            mount_editor_menu(doc, ui, target, source, (x, y, keyboard), paste_available).ok();
+    }
+
+    fn editor_action(&mut self, source: bool, action: nana_ui::runtime::TextEditAction) {
+        if source != self.app.ui.source_mode.get_untracked() {
+            return;
+        }
+        let Some(target) = self.editor_target(source) else {
+            return;
+        };
+        if source
+            && action == nana_ui::runtime::TextEditAction::Paste
+            && let Some(message) = clipboard_image()
+        {
+            if let Some(menu) = self.editor_menu.take()
+                && let Some(doc) = self.docs.get_mut(&WindowKind::Input.id())
+            {
+                let _ = doc.context_mut().remove_view(menu);
+            }
+            self.app.update(message);
+            self.app.focus_editor = true;
+            return;
+        }
+        let Some(doc) = self.docs.get_mut(&WindowKind::Input.id()) else {
+            return;
+        };
+        let document = doc.document();
+        let cx = doc.context_mut();
+        if let Some(menu) = self.editor_menu.take() {
+            let _ = cx.remove_view(menu);
+        }
+        if let Err(error) = cx.edit_text_action(document, target, action, &mut EditorClipboard) {
+            crate::debug_log(&format!("editor action: {error}"));
+        }
+    }
+
     fn finish(&mut self) -> RuntimeProgramUpdate {
         self.drive_editor();
         let language = self.app.ui.locale.get_untracked().tag();
@@ -177,23 +237,16 @@ impl Host {
         else {
             return;
         };
-        let document_id = doc.document();
+        sync_editor(
+            doc,
+            self.app.ui,
+            editor,
+            self.source,
+            commands,
+            std::mem::take(&mut self.app.focus_editor),
+            std::mem::take(&mut self.app.source_edit_undoable),
+        );
         let cx = doc.context_mut();
-        if std::mem::take(&mut self.app.focus_editor) {
-            let target = if self.app.ui.source_mode.get_untracked() {
-                self.source.map(|s| s.stable_id())
-            } else {
-                Some(editor.stable_id())
-            };
-            if let Some(target) = target {
-                let _ = cx.focus_node(document_id, target);
-            }
-        }
-        for command in commands {
-            if let Err(e) = cx.rich_edit(editor, command) {
-                crate::debug_log(&format!("rich edit: {e}"));
-            }
-        }
         let reduced = self.app.ui.reduced_motion.get_untracked();
         let key = (
             Arc::as_ptr(&self.app.skin) as usize,
@@ -421,6 +474,122 @@ impl Host {
     }
 }
 
+fn mount_editor_menu(
+    doc: &mut RuntimeDocument,
+    ui: crate::ui::Ui,
+    target: nana_ui::runtime::StableNodeId,
+    source: bool,
+    (x, y, keyboard): (f32, f32, bool),
+    paste_available: bool,
+) -> Result<Entity<nana_ui::runtime::OverlayHost>, FrameworkError> {
+    use nana_ui::runtime::{ContextMenuEvent, TextEditAction};
+    let document = doc.document();
+    let cx = doc.context_mut();
+    let mut root = target;
+    while let Some(parent) = cx.world().parent_id(root) {
+        root = parent;
+    }
+    let bounds = cx
+        .world()
+        .layout_box(root)
+        .ok_or(FrameworkError::MissingView(root))?;
+    let mut enabled = TextEditAction::ALL.map(|action| cx.text_edit_action_enabled(target, action));
+    enabled[4] &= paste_available;
+    let mut menu = input::editor_context_menu(ui, x, y, enabled);
+    if keyboard {
+        menu.highlighted = menu.items.iter().position(|item| !item.disabled);
+    }
+    menu.place_in(bounds);
+    let overlay = cx.create_component(document, nana_ui::runtime::OverlayHost::new())?;
+    let result = (|| {
+        let menu = cx.create_component(document, menu)?;
+        cx.append_child(overlay, menu)?;
+        cx.activate_overlay(overlay, menu)?;
+        cx.on(menu, move |_, event: &ContextMenuEvent, cx| {
+            if let ContextMenuEvent::Select(key) = event
+                && let Some(action) = TextEditAction::ALL
+                    .into_iter()
+                    .find(|a| a.key() == key.as_ref())
+            {
+                cx.dispatch_program_all(Msg::EditorAction { source, action });
+            }
+        })?;
+        Ok(overlay)
+    })();
+    if result.is_err() {
+        let _ = cx.remove_view(overlay);
+    }
+    result
+}
+
+/// Commit application edits before bindings observe their new values. This is
+/// also the focus handoff used by mode switches and toolbar operations.
+fn sync_editor(
+    doc: &mut RuntimeDocument,
+    ui: crate::ui::Ui,
+    editor: Entity<RichTextEditor>,
+    source: Option<Entity<nana_ui::runtime::TextArea>>,
+    commands: Vec<nana_ui::runtime::RichEditCommand>,
+    focus: bool,
+    source_undoable: bool,
+) {
+    let document = doc.document();
+    let cx = doc.context_mut();
+    if source_undoable && let Some(source) = source {
+        let value = ui.source.get_untracked();
+        if let Err(error) = cx.edit_text_area_value(
+            source,
+            value.text,
+            nana_ui::runtime::TextSelection::new(value.selection.0, value.selection.1),
+        ) {
+            crate::debug_log(&format!("source edit: {error}"));
+        }
+    }
+    if focus {
+        // Visibility bindings must run before focusing the newly shown field.
+        if let Err(error) = cx.flush_reactive() {
+            crate::debug_log(&format!("editor bindings: {error}"));
+        }
+        let target = if ui.source_mode.get_untracked() {
+            source.map(|s| s.stable_id())
+        } else {
+            Some(editor.stable_id())
+        };
+        if let Some(target) = target {
+            let _ = cx.focus_node(document, target);
+        }
+    }
+    for command in commands {
+        if let Err(error) = cx.rich_edit(editor, command) {
+            crate::debug_log(&format!("rich edit: {error}"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod input_acceptance;
+
+/// The menu uses the Runtime's editing path with the same OS pasteboard as keys.
+struct EditorClipboard;
+impl nana_ui_platform::HostServices for EditorClipboard {
+    fn set_cursor(&mut self, _: nana_ui_platform::CursorIcon) {}
+    fn set_text_input(&mut self, _: Option<&nana_ui_platform::TextInputContext>) {}
+    fn read_clipboard(&mut self) -> Result<Option<String>, nana_ui_platform::HostServiceError> {
+        let mut clipboard =
+            arboard::Clipboard::new().map_err(|_| nana_ui_platform::HostServiceError::Failed)?;
+        match clipboard.get_text() {
+            Ok(text) => Ok(Some(text)),
+            Err(arboard::Error::ContentNotAvailable) => Ok(None),
+            Err(_) => Err(nana_ui_platform::HostServiceError::Failed),
+        }
+    }
+    fn write_clipboard(&mut self, text: &str) -> Result<(), nana_ui_platform::HostServiceError> {
+        arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.set_text(text))
+            .map_err(|_| nana_ui_platform::HostServiceError::Failed)
+    }
+}
+
 /// An image on the clipboard with no text beside it (text pastes normally).
 fn clipboard_image() -> Option<Msg> {
     let mut clipboard = arboard::Clipboard::new().ok()?;
@@ -443,31 +612,39 @@ fn key_policy(
     source: bool,
 ) -> impl FnMut(&nana_ui::KeyInput) -> bool + Send + 'static {
     move |key| {
-        if key.state != KeyState::Pressed {
+        let Some(message) = input_shortcut(key, source, SEND_KEY.load(Ordering::Relaxed) == 1)
+        else {
             return false;
-        }
-        let m = key.modifiers;
-        let logical = key.logical.0.as_ref();
-        let ctrl_enter = SEND_KEY.load(Ordering::Relaxed) == 1;
-        let plain = m.control && !m.shift && !m.alt;
-        let msg = match logical {
-            "Enter" if !ctrl_enter && !m.shift && !m.control => Msg::Core(Cmd::Send),
-            "Enter" if ctrl_enter && m.control => Msg::Core(Cmd::Send),
-            "ArrowUp" if m.control => Msg::Core(Cmd::Recall(-1)),
-            "ArrowDown" if m.control => Msg::Core(Cmd::Recall(1)),
-            "Escape" => Msg::HideInput,
-            "b" | "B" if plain => Msg::Tool(Tool::Bold),
-            "i" | "I" if plain => Msg::Tool(Tool::Italic),
-            "u" | "U" if plain => Msg::Tool(Tool::Underline),
-            "v" | "V" if plain && source => match clipboard_image() {
-                Some(msg) => msg,
-                None => return false,
-            },
-            _ => return false,
         };
-        post.dispatch(msg);
+        post.dispatch(message);
         true
     }
+}
+
+fn input_shortcut(key: &nana_ui::KeyInput, source: bool, ctrl_enter: bool) -> Option<Msg> {
+    if key.state != KeyState::Pressed {
+        return None;
+    }
+    let m = key.modifiers;
+    let logical = key.logical.0.as_ref();
+    let plain = m.control && !m.shift && !m.alt && !m.meta;
+    let unmodified = !m.control && !m.shift && !m.alt && !m.meta;
+    let msg = match logical {
+        "Enter" if !ctrl_enter && unmodified => Msg::Core(Cmd::Send),
+        "Enter" if ctrl_enter && plain => Msg::Core(Cmd::Send),
+        "ArrowUp" if plain => Msg::Core(Cmd::Recall(-1)),
+        "ArrowDown" if plain => Msg::Core(Cmd::Recall(1)),
+        "Escape" if unmodified => Msg::HideInput,
+        "b" | "B" if plain => Msg::Tool(Tool::Bold),
+        "i" | "I" if plain => Msg::Tool(Tool::Italic),
+        "u" | "U" if plain => Msg::Tool(Tool::Underline),
+        "v" | "V" if plain && source => match clipboard_image() {
+            Some(msg) => msg,
+            None => return None,
+        },
+        _ => return None,
+    };
+    Some(msg)
 }
 
 impl RuntimeProgram for Host {
@@ -482,6 +659,7 @@ impl RuntimeProgram for Host {
             docs: HashMap::new(),
             editor: None,
             source: None,
+            editor_menu: None,
             editor_fx: None,
             follow: overflow::Follow::default(),
             peer_follow: overflow::Follow::default(),
@@ -514,7 +692,20 @@ impl RuntimeProgram for Host {
         if let (Some(source), Some(doc)) = (self.source, self.docs.get(&WindowKind::Input.id())) {
             input::capture_source_selection(self.app.ui, doc.context(), source);
         }
+        if matches!(&message, Msg::ToggleSource | Msg::HideInput)
+            && let Some(menu) = self.editor_menu.take()
+            && let Some(doc) = self.docs.get_mut(&WindowKind::Input.id())
+        {
+            let _ = doc.context_mut().remove_view(menu);
+        }
         match message {
+            Msg::EditorContext {
+                source,
+                x,
+                y,
+                keyboard,
+            } => self.open_editor_menu(source, x, y, keyboard),
+            Msg::EditorAction { source, action } => self.editor_action(source, action),
             Msg::ToastDismissed(kind, toast) => self.dismiss_toast(kind, toast),
             message => self.app.update(message),
         }
@@ -743,6 +934,7 @@ impl RuntimeProgram for Host {
         }
         if WindowKind::from_id(id) == Some(WindowKind::Input)
             && key.logical.0 == "Escape"
+            && key.modifiers == nana_ui_platform::InputModifiers::default()
             && !input.disposition.handled
         {
             self.app.update(Msg::HideInput);
@@ -878,6 +1070,63 @@ mod redraw_tests {
     use super::*;
     use nana_ui::runtime::view::{signal, widget};
     use nana_ui::runtime::{LayoutViewport, Text};
+
+    #[test]
+    fn input_shortcuts_match_exact_chords_and_leave_selection_keys_alone() {
+        use nana_ui_platform::{InputModifiers, KeyInput};
+        let plain = InputModifiers::default();
+        let ctrl = InputModifiers {
+            control: true,
+            ..plain
+        };
+        let key =
+            |name, modifiers| KeyInput::named("Unidentified", name, KeyState::Pressed, modifiers);
+        assert!(matches!(
+            input_shortcut(&key("Enter", plain), false, false),
+            Some(Msg::Core(Cmd::Send))
+        ));
+        assert!(
+            input_shortcut(
+                &key(
+                    "Enter",
+                    InputModifiers {
+                        shift: true,
+                        ..plain
+                    }
+                ),
+                false,
+                false
+            )
+            .is_none()
+        );
+        assert!(matches!(
+            input_shortcut(&key("Enter", ctrl), false, true),
+            Some(Msg::Core(Cmd::Send))
+        ));
+        assert!(matches!(
+            input_shortcut(&key("ArrowUp", ctrl), false, false),
+            Some(Msg::Core(Cmd::Recall(-1)))
+        ));
+        for source in [false, true] {
+            for ctrl_enter in [false, true] {
+                for modifiers in [
+                    InputModifiers {
+                        shift: true,
+                        ..ctrl
+                    },
+                    InputModifiers { alt: true, ..ctrl },
+                    InputModifiers { meta: true, ..ctrl },
+                ] {
+                    for name in ["ArrowUp", "ArrowDown", "Enter", "b", "i", "u"] {
+                        assert!(
+                            input_shortcut(&key(name, modifiers), source, ctrl_enter).is_none(),
+                            "{name} {modifiers:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn gpu_only_frames_leave_application_clocks_idle_and_keep_tracks_independent() {

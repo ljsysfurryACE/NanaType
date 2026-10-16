@@ -128,6 +128,7 @@ impl Base {
         l.font_weight = Some(self.weight);
         l.font_family = self.family.clone();
         l.letter_spacing = Some(self.letter_spacing);
+        l.white_space = nana_ui_core::WhiteSpaceSpec::PreWrap;
         l.color = Some(c(self.color));
         l.line_height = Some(nana_ui_core::LineHeightSpec::Absolute(
             self.size * self.line_height,
@@ -470,6 +471,8 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     let cont = continue_indicator(ui, &ctx);
 
     let mut outer = widget(Stack::fill_column(0.0).with_layout(move |l| {
+        l.min_width = Some(LengthSpec::Px(0.0));
+        l.min_height = Some(LengthSpec::Px(0.0));
         l.padding_left = Some(LengthSpec::Px(overscan + ml));
         l.padding_right = Some(LengthSpec::Px(overscan + mr));
         l.padding_top = Some(LengthSpec::Px(overscan + mt));
@@ -498,6 +501,8 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         Stack::fill_column(0.0)
             .width(LengthSpec::Percent(width_fraction * 100.0))
             .with_layout(move |l| {
+                l.min_width = Some(LengthSpec::Px(0.0));
+                l.min_height = Some(LengthSpec::Px(0.0));
                 l.position = PositionSpec::Relative;
                 l.overflow_x = OverflowSpec::Visible;
                 l.overflow_y = OverflowSpec::Visible;
@@ -553,10 +558,24 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         box_surface
             .stack(Stack::fill_column(0.0))
             .with_layout(move |l| {
+                l.min_width = Some(LengthSpec::Px(0.0));
+                l.min_height = Some(LengthSpec::Px(0.0));
                 l.position = PositionSpec::Relative;
-                l.padding_left = Some(LengthSpec::Px(padding[0]));
+                // Large broadcast skins reserve wide decorative columns.
+                // Keep an editable column when their input window is narrow.
+                let horizontal = |px| {
+                    if source == Source::Draft {
+                        LengthSpec::Min2(
+                            nana_ui_core::LengthAtom::Px(px),
+                            nana_ui_core::LengthAtom::Percent(30.0),
+                        )
+                    } else {
+                        LengthSpec::Px(px)
+                    }
+                };
+                l.padding_left = Some(horizontal(padding[0]));
                 l.padding_top = Some(LengthSpec::Px(padding[1]));
-                l.padding_right = Some(LengthSpec::Px(padding[2]));
+                l.padding_right = Some(horizontal(padding[2]));
                 l.padding_bottom = Some(LengthSpec::Px(padding[3]));
             }),
     )
@@ -607,6 +626,8 @@ fn reply_quote(ui: Ui) -> AnyView {
 /// text sits in a column the host scrolls up as typing passes the bottom.
 fn text_port(ui: Ui, source: Source, content: AnyView) -> AnyView {
     let port = widget(Stack::fill_column(0.0).with_layout(|l| {
+        l.min_width = Some(LengthSpec::Px(0.0));
+        l.min_height = Some(LengthSpec::Px(0.0));
         l.overflow_y = OverflowSpec::Hidden;
     }));
     if source != Source::Display {

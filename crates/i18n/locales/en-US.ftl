@@ -602,3 +602,11 @@ output-peer-hint = Separate partner output during a session; keeps sending while
 
 tb-effect-pulse = Pulse
 tb-effect-flicker = Flicker
+
+# Editor context menu
+edit-undo = Undo
+edit-redo = Redo
+edit-cut = Cut
+edit-copy = Copy
+edit-paste = Paste
+edit-select-all = Select all

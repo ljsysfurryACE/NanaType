@@ -77,3 +77,6 @@ embed-resource = "3"
 [dev-dependencies]
 pollster = "1"
 nana-ui-devtools = { workspace = true, features = ["runtime-agent"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { version = "0.62", features = ["Win32_System_Com", "Win32_System_Ole"] }
