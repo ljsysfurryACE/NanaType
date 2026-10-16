@@ -44,6 +44,8 @@ struct Shared {
 pub struct Hotkeys {
     shared: Arc<Mutex<Shared>>,
     input_hwnd: Arc<AtomicIsize>,
+    /// Captured before the hotkey thread restores the native window.
+    summon_restore: Arc<std::sync::atomic::AtomicBool>,
     #[cfg(windows)]
     thread_id: Arc<std::sync::atomic::AtomicU32>,
     #[cfg(target_os = "macos")]
@@ -62,17 +64,20 @@ impl Hotkeys {
             status: HashMap::new(),
         }));
         let input_hwnd = Arc::new(AtomicIsize::new(0));
+        let summon_restore = Arc::new(std::sync::atomic::AtomicBool::new(false));
         #[cfg(windows)]
         {
             let thread_id = Arc::new(std::sync::atomic::AtomicU32::new(0));
             let (s, h, t) = (shared.clone(), input_hwnd.clone(), thread_id.clone());
+            let restore = summon_restore.clone();
             std::thread::Builder::new()
                 .name("nanatype-hotkeys".into())
-                .spawn(move || win::run(s, h, t, hit, status))
+                .spawn(move || win::run(s, h, t, restore, hit, status))
                 .expect("spawn hotkey thread");
             Self {
                 shared,
                 input_hwnd,
+                summon_restore,
                 thread_id,
             }
         }
@@ -88,13 +93,18 @@ impl Hotkeys {
                 shared,
                 input_hwnd,
                 mac: state,
+                summon_restore,
             }
         }
         #[cfg(not(any(windows, target_os = "macos")))]
         {
             let _ = hit;
             let _ = status;
-            Self { shared, input_hwnd }
+            Self {
+                shared,
+                input_hwnd,
+                summon_restore,
+            }
         }
     }
 
@@ -104,6 +114,10 @@ impl Hotkeys {
 
     pub fn input_window(&self) -> isize {
         self.input_hwnd.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn take_summon_restore(&self) -> bool {
+        self.summon_restore.swap(false, Ordering::AcqRel)
     }
 
     /// Replace all registrations. `suspended` unregisters everything (while
@@ -269,6 +283,7 @@ mod win {
         shared: Arc<Mutex<Shared>>,
         input: Arc<AtomicIsize>,
         thread_id: Arc<AtomicU32>,
+        restore: Arc<std::sync::atomic::AtomicBool>,
         hit: impl Fn(GlobalAction),
         status: impl Fn(HashMap<GlobalAction, HotkeyState>),
     ) {
@@ -322,7 +337,15 @@ mod win {
                     let id = msg.wParam.0 as i32;
                     if let Some((_, action)) = registered.iter().find(|(i, _)| *i == id) {
                         if *action == GlobalAction::Summon {
-                            activate(input.load(Ordering::Acquire));
+                            let hwnd = input.load(Ordering::Acquire);
+                            restore.store(
+                                hwnd != 0
+                                    && unsafe {
+                                        IsIconic(HWND(hwnd as *mut core::ffi::c_void)).as_bool()
+                                    },
+                                Ordering::Release,
+                            );
+                            activate(hwnd);
                         }
                         hit(*action);
                     }

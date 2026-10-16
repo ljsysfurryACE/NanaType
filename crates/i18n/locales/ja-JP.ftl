@@ -5,6 +5,13 @@ history-count = { $count } 件
 
 ## ウィンドウタイトル
 window-input = 入力ウィンドウ
+input-management = 配信とセッション
+dock-tab-commands = コマンド
+dock-stickers = スタンプ
+dock-add-region = エリアを追加
+dock-close-region = 現在のエリアを閉じる
+dock-more-regions = その他のエリア
+dock-wait = 0.5秒待つ
 window-display = 表示ウィンドウ
 window-history = 履歴
 window-settings = 設定

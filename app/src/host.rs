@@ -767,7 +767,7 @@ impl RuntimeProgram for Host {
 
     fn appearance_backdrop_opacity_for(&self, id: WindowId) -> f32 {
         match WindowKind::from_id(id) {
-            Some(WindowKind::Settings | WindowKind::Chat) => 1.0,
+            Some(WindowKind::Input | WindowKind::Settings | WindowKind::Chat) => 1.0,
             _ => 0.0,
         }
     }
@@ -802,12 +802,13 @@ impl RuntimeProgram for Host {
                     if kind == WindowKind::Chat {
                         self.app.chat_resized(geometry.logical_size.0);
                     }
-                    if matches!(kind, WindowKind::Settings | WindowKind::Chat) {
+                    if matches!(
+                        kind,
+                        WindowKind::Input | WindowKind::Settings | WindowKind::Chat
+                    ) {
                         self.app.tint_captions();
                     }
-                    self.app
-                        .windows
-                        .moved(kind, geometry.logical_position, geometry.logical_size);
+                    self.app.windows.record_geometry(kind, geometry);
                     if kind == WindowKind::Input {
                         crate::debug_log("input window ready");
                         self.open_overlays();
@@ -834,9 +835,7 @@ impl RuntimeProgram for Host {
             }
             WindowEvent::Moved { id, geometry } | WindowEvent::Resized { id, geometry } => {
                 if let Some(kind) = WindowKind::from_id(id) {
-                    self.app
-                        .windows
-                        .moved(kind, geometry.logical_position, geometry.logical_size);
+                    self.app.windows.record_geometry(kind, geometry);
                     // A drag-resize in layout mode becomes the window's size.
                     let (w, h) = geometry.logical_size;
                     if kind == WindowKind::Chat {
@@ -926,6 +925,15 @@ impl RuntimeProgram for Host {
         input: RoutedInput<'_>,
         _: &RuntimeProgramContext<Msg>,
     ) -> Result<RuntimeProgramUpdate, FrameworkError> {
+        if WindowKind::from_id(id) == Some(WindowKind::Input)
+            && let Some(doc) = self.docs.get(&id)
+            && let Some(width) = input::changed_sidebar_width(self.app.ui, doc.context())
+        {
+            self.app.ui.input_sidebar_width.set(width);
+            self.app.windows.geometry.input_sidebar_width = Some(width);
+            self.app.windows.geometry_dirty = true;
+            self.app.save_geometry();
+        }
         if let InputPayload::Pointer(p) = &input.event.payload
             && p.phase == nana_ui_platform::PointerPhase::Down
             && p.button == 0
@@ -941,7 +949,7 @@ impl RuntimeProgram for Host {
                 Some(WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History) => {
                     editing
                 }
-                Some(WindowKind::Input) => input.pointer_hit.is_none() || editing,
+                Some(WindowKind::Input) => false,
                 _ => false,
             };
             if drag {

@@ -625,12 +625,11 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
             })
             .unwrap();
     });
-    let ih = (nanatype::windows::TOOLBAR_H
-        + d.region[1]
-        + d.overscan * 2.0
-        + nanatype::windows::STATUS_H
-        + nanatype::ui::p2p::card_height(ui)) as u32;
-    shot("input", out, w, ih, theme.clone(), |doc, id| {
+    let (iw, ih) = (
+        nanatype::windows::INPUT_SIZE.0 as u32,
+        nanatype::windows::INPUT_SIZE.1 as u32,
+    );
+    shot("input", out, iw, ih, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();
@@ -755,7 +754,7 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
     ui.douyin.set(before_dy_state);
     ui.page.set(before_dy_page);
     ui.peer_panel.set(true);
-    shot("p2p-create", out, w, ih + 114, theme.clone(), |doc, id| {
+    shot("p2p-create", out, iw, ih, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();
@@ -782,7 +781,7 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
             rtt_ms: 28,
         },
     }));
-    shot("p2p-input", out, w, ih + 114, theme.clone(), |doc, id| {
+    shot("p2p-input", out, iw, ih, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();
@@ -1049,7 +1048,7 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
     ui.draft.set(Arc::new(Document::new()));
     ui.editor_value.set(nana_ui_core::RichText::new(""));
     ui.reply.set(None);
-    shot("input-empty", out, w, ih, theme.clone(), |doc, id| {
+    shot("input-empty", out, iw, ih, theme.clone(), |doc, id| {
         doc.context_mut()
             .mount_view_root(id, move || input::input_window(ui))
             .unwrap();

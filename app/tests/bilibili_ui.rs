@@ -130,12 +130,7 @@ fn narrow_editor_keeps_account_send_and_sync_controls_visible() {
         ]);
         ui.settings.set(Arc::new(settings));
         ui.bilibili.set(Arc::new(ready()));
-        let height = nanatype::windows::size_of(
-            nanatype::windows::WindowKind::Input,
-            &ui.skin.get_untracked(),
-            &ui.settings.get_untracked(),
-        )
-        .1 + nanatype::ui::p2p::card_height(ui);
+        let height = nanatype::windows::INPUT_SIZE.1;
         let id = DocumentId::new(1).unwrap();
         let mut doc = RuntimeDocument::new(id);
         doc.context_mut()
@@ -145,7 +140,10 @@ fn narrow_editor_keeps_account_send_and_sync_controls_visible() {
             .mount_view_root(id, move || nanatype::ui::input::input_window(ui))
             .unwrap();
         let mut session = RuntimeAgentSession::new(doc, 420, height as u32).unwrap();
-        session.flush().unwrap();
+        // Client measurement updates the responsive footer on the following frame.
+        for _ in 0..3 {
+            session.flush().unwrap();
+        }
         let nodes = session.accessibility_dump();
         for key in [
             "bili-account",
@@ -169,5 +167,38 @@ fn narrow_editor_keeps_account_send_and_sync_controls_visible() {
                 "{locale:?}: {node:?}, height={height}"
             );
         }
+        let label = ui.now_t("bili-send-switch");
+        let trigger = nodes
+            .iter()
+            .find(|n| n.role == "menu" && n.label.as_deref() == Some(&label))
+            .unwrap();
+        session
+            .click_xy(
+                trigger.bounds.x + trigger.bounds.width / 2.0,
+                trigger.bounds.y + trigger.bounds.height / 2.0,
+            )
+            .unwrap();
+        let toggle = session
+            .accessibility_dump()
+            .into_iter()
+            .find(|n| n.role == "switch" && n.label.as_deref() == Some(&label))
+            .expect("the compact footer opens the real sync switch");
+        assert!(toggle.bounds.x >= 0.0 && toggle.bounds.x + toggle.bounds.width <= 421.0);
+        session
+            .click_xy(
+                toggle.bounds.x + toggle.bounds.width / 2.0,
+                toggle.bounds.y + toggle.bounds.height / 2.0,
+            )
+            .unwrap();
+        assert!(
+            session
+                .document_mut()
+                .context_mut()
+                .take_program_messages()
+                .into_iter()
+                .any(|m| m
+                    .downcast::<Msg>()
+                    .is_ok_and(|m| matches!(*m, Msg::BilibiliSendToggle)))
+        );
     }
 }

@@ -7,28 +7,28 @@ use nanatype_p2p::Status;
 use super::Ui;
 use crate::msg::Msg;
 
-pub fn card_height(ui: Ui) -> f32 {
-    if ui.peer_panel.get_untracked() {
-        150.0
-    } else {
-        36.0
-    }
-}
-
-fn field() -> Stack {
+fn field(stacked: bool) -> Stack {
     Stack::column(0.0)
         .width(LengthSpec::Fill)
         .with_layout(|layout| {
-            layout.flex_grow = Some(1.0);
+            layout.flex_grow = Some(if stacked { 0.0 } else { 1.0 });
             layout.flex_shrink = Some(1.0);
             layout.min_width = Some(LengthSpec::Px(0.0));
-            layout.width = Some(LengthSpec::Px(0.0));
+            layout.width = Some(if stacked {
+                LengthSpec::Fill
+            } else {
+                LengthSpec::Px(0.0)
+            });
         })
 }
 
-fn action() -> Stack {
+fn action(stacked: bool) -> Stack {
     Stack::row(0.0)
-        .width(LengthSpec::Px(100.0))
+        .width(if stacked {
+            LengthSpec::Fill
+        } else {
+            LengthSpec::Px(100.0)
+        })
         .with_layout(|layout| {
             layout.flex_shrink = Some(0.0);
         })
@@ -37,10 +37,26 @@ fn action() -> Stack {
 pub fn card(ui: Ui) -> AnyView {
     let invitation = signal(String::new());
     let relay = signal(String::new());
+    card_with_fields(ui, invitation, relay, false)
+}
+
+pub(crate) fn card_with_fields(
+    ui: Ui,
+    invitation: nana_ui::runtime::view::Signal<String>,
+    relay: nana_ui::runtime::view::Signal<String>,
+    stacked: bool,
+) -> AnyView {
     dynamic(
         move || (ui.peer_panel.get(), ui.locale.get(), ui.peer.get()),
         move |(expanded, _, state)| {
             let expanded = *expanded;
+            let form_row = || {
+                if stacked {
+                    Stack::column(6.0).width(LengthSpec::Fill)
+                } else {
+                    Stack::row(6.0).width(LengthSpec::Fill)
+                }
+            };
             let status = match &state.status {
                 Status::Starting => ui.now_t("peer-connecting"),
                 Status::Waiting => ui.now_t("peer-waiting"),
@@ -65,7 +81,7 @@ pub fn card(ui: Ui) -> AnyView {
                     .height(LengthSpec::Px(32.0)),
             )
             .children((
-                widget(field()).children(widget(
+                widget(field(false)).children(widget(
                     Text::new(format!("{} · {status}", ui.now_t("peer-title"))).style({
                         let mut style = nana_ui::runtime::NodeStyle::default();
                         let layout = std::sync::Arc::make_mut(&mut style.layout);
@@ -98,7 +114,11 @@ pub fn card(ui: Ui) -> AnyView {
                 widget(Stack::column(8.0))
                     .children((
                         widget(Text::new(ui.now_t("peer-own-controls"))),
-                        widget(Stack::row(8.0)).children((
+                        widget(
+                            Stack::row(8.0)
+                                .with_layout(|l| l.flex_wrap = nana_ui_core::FlexWrap::Wrap),
+                        )
+                        .children((
                             (!code.is_empty()).then(|| {
                                 widget(Button::new(ui.now_t("peer-copy")).size(ControlSize::Small))
                                     .on_cx(move |_, _: &Activate, cx| {
@@ -124,16 +144,23 @@ pub fn card(ui: Ui) -> AnyView {
             } else {
                 widget(Stack::column(6.0))
                     .children((
-                        widget(Stack::row(6.0).width(LengthSpec::Fill)).children((
-                            widget(field()).children(
+                        widget(form_row()).children((
+                            widget(field(stacked)).children(
                                 widget(
                                     TextInput::new(invitation.get_untracked())
                                         .placeholder(ui.now_t("peer-invitation"))
                                         .size(ControlSize::Small),
                                 )
+                                .key("peer-invitation-input")
+                                .bind(move |input: &mut TextInput| {
+                                    let value = invitation.get();
+                                    if input.state.value.as_str() != value {
+                                        input.state.replace_value(value);
+                                    }
+                                })
                                 .on(move |e: &TextChanged| invitation.set(e.value.to_string())),
                             ),
-                            widget(action()).children(
+                            widget(action(stacked)).children(
                                 widget(Button::new(ui.now_t("peer-join")).size(ControlSize::Small))
                                     .on_cx(move |_, _: &Activate, cx| {
                                         cx.dispatch_program_all(Msg::PeerStart {
@@ -143,16 +170,23 @@ pub fn card(ui: Ui) -> AnyView {
                                     }),
                             ),
                         )),
-                        widget(Stack::row(6.0).width(LengthSpec::Fill)).children((
-                            widget(field()).children(
+                        widget(form_row()).children((
+                            widget(field(stacked)).children(
                                 widget(
                                     TextInput::new(relay.get_untracked())
                                         .placeholder(ui.now_t("peer-relay-placeholder"))
                                         .size(ControlSize::Small),
                                 )
+                                .key("peer-relay-input")
+                                .bind(move |input: &mut TextInput| {
+                                    let value = relay.get();
+                                    if input.state.value.as_str() != value {
+                                        input.state.replace_value(value);
+                                    }
+                                })
                                 .on(move |e: &TextChanged| relay.set(e.value.to_string())),
                             ),
-                            widget(action()).children(
+                            widget(action(stacked)).children(
                                 widget(
                                     Button::new(ui.now_t("peer-create"))
                                         .kind(ButtonKind::Primary)
@@ -171,11 +205,10 @@ pub fn card(ui: Ui) -> AnyView {
                     ))
                     .into_any()
             };
-            widget(
-                Stack::column(6.0)
-                    .padding(6.0)
-                    .height(LengthSpec::Px(150.0)),
-            )
+            widget(Stack::column(6.0).padding(6.0).with_layout(|l| {
+                l.min_height = Some(LengthSpec::Px(150.0));
+                l.flex_shrink = Some(0.0);
+            }))
             .children((header, body))
             .into_any()
         },

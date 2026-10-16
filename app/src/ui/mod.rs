@@ -146,6 +146,12 @@ pub struct Ui {
     pub skin: Signal<Arc<Skin>>,
     /// Resolved application appearance, independent of the selected skin.
     pub chrome_dark: Signal<bool>,
+    /// Actual input client width, published by its layout (also in headless views).
+    pub input_width: Signal<f32>,
+    pub(crate) input_sidebar_width: Signal<f32>,
+    pub(crate) input_dock_regions: Signal<Vec<nanatype_settings::InputDockRegion>>,
+    pub(crate) input_dock_selected: Signal<u64>,
+    pub(crate) input_split: NodeRef,
     pub display: Signal<Arc<DisplayView>>,
     pub peer_display: Signal<Arc<DisplayView>>,
     pub peer: Signal<Arc<crate::p2p::SessionUi>>,
@@ -180,7 +186,7 @@ pub struct Ui {
     pub reduced_motion: Signal<bool>,
     /// The system's own reduce-motion preference, as last reported.
     pub system_reduced_motion: Signal<bool>,
-    /// The input window is on screen (its summon plays [`motion`]'s enter).
+    /// Whether the input window is shown by the application's presence policy.
     pub input_shown: Signal<bool>,
     /// The first-run guide's step, 0-based; kept while the user visits other
     /// pages (its "Connect OBS" goes to Output).
@@ -233,19 +239,25 @@ impl Ui {
             avatar: settings.general.avatar.clone(),
             portrait: None,
         };
+        let input_dock = nanatype_settings::InputDockLayout::default();
         Self {
             bilibili: signal(Arc::new(crate::app::bilibili::State::default())),
             douyin: signal(Arc::new(crate::app::douyin::State::default())),
             douyin_cookie: signal(String::new()),
             speaker: signal(speaker),
             chrome_dark: signal(crate::skin_theme::dark_mode(settings.skin.chrome, false)),
+            input_width: signal(crate::windows::INPUT_SIZE.0),
+            input_sidebar_width: signal(nanatype_settings::INPUT_SIDEBAR_DEFAULT),
+            input_dock_regions: signal(input_dock.regions),
+            input_dock_selected: signal(input_dock.selected),
+            input_split: node_ref(),
             locale: signal(locale),
             settings: signal(settings),
             skin: signal(skin),
             display: signal(Arc::new(DisplayView::empty(entrance))),
             peer_display: signal(Arc::new(DisplayView::empty(entrance))),
             peer: signal(Arc::new(crate::p2p::SessionUi::default())),
-            peer_panel: signal(false),
+            peer_panel: signal(true),
             peer_text_node: node_ref(),
             peer_text_port: node_ref(),
             peer_text_scroll: signal(0.0),

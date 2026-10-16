@@ -83,7 +83,7 @@ impl Fixture {
                 doc.context_mut().on_key(editor, policy).unwrap();
             }
         }
-        let mut session = RuntimeAgentSession::new(doc, 796, 354).unwrap();
+        let mut session = RuntimeAgentSession::new(doc, 796, 480).unwrap();
         let input = HeadlessInput::bind(session.document_mut().context_mut(), id);
         Self {
             _clipboard: clipboard,
@@ -125,6 +125,22 @@ impl Fixture {
             .unwrap()
             .y
     }
+    fn visible_bounds(&self) -> LayoutBox {
+        let b = self.bounds();
+        let world = self.session.document().context().world();
+        let (x, y) = world
+            .layout_pointer_position(self.node(), b.x, b.y)
+            .unwrap();
+        let (right, bottom) = world
+            .layout_pointer_position(self.node(), b.x + b.width, b.y + b.height)
+            .unwrap();
+        LayoutBox {
+            x,
+            y,
+            width: right - x,
+            height: bottom - y,
+        }
+    }
     fn selection(&self) -> (usize, usize) {
         let cx = self.session.document().context();
         if self.ui.source_mode.get_untracked() {
@@ -151,6 +167,11 @@ impl Fixture {
                 Some(&mut self.shaper),
             )
             .unwrap();
+        if let Some(width) =
+            input::changed_sidebar_width(self.ui, self.session.document().context())
+        {
+            self.ui.input_sidebar_width.set(width);
+        }
         self.pump();
         self.session.flush().unwrap();
     }
@@ -197,7 +218,7 @@ impl Fixture {
         self.pointer(PointerPhase::Up, x, y);
     }
     fn wheel(&mut self, delta: f32) {
-        let b = self.bounds();
+        let b = self.visible_bounds();
         self.event(InputPayload::Wheel(WheelInput {
             pointer_id: nana_ui_platform::PointerId(0),
             x: b.x + b.width / 2.0,
@@ -393,6 +414,42 @@ fn recheck_repeated_phrases_replace_selected_objects_without_duplicate_edits() {
 }
 
 #[test]
+fn empty_draft_hint_never_overlaps_ime_preedit() {
+    let mut f = Fixture::new(false, false, "");
+    let hint_visible = |f: &Fixture| {
+        f.session.accessibility_dump().iter().any(|n| {
+            n.agent_path
+                .as_deref()
+                .is_some_and(|p| p.ends_with("/input-empty-hint"))
+        })
+    };
+    assert!(hint_visible(&f));
+    f.focus();
+    f.event(InputPayload::Composition(CompositionInput::Start));
+    f.event(InputPayload::Composition(CompositionInput::Update {
+        text: "nihao".into(),
+        selection: None,
+    }));
+    assert!(
+        f.ui.draft.get_untracked().is_blank(),
+        "preedit is not yet committed"
+    );
+    assert!(f.session.document().context().editor_composing(f.id()));
+    assert!(!hint_visible(&f), "the hint must not paint beneath preedit");
+    f.event(InputPayload::Composition(CompositionInput::Commit(
+        "你好".into(),
+    )));
+    assert_eq!(f.text(), "你好");
+    assert!(!hint_visible(&f));
+    f.action(TextEditAction::Undo);
+    assert_eq!(f.text(), "");
+    assert!(
+        !hint_visible(&f),
+        "typing focus still owns the empty editor"
+    );
+}
+
+#[test]
 fn real_input_routes_send_settings_and_ime_before_application_shortcuts() {
     for source in [false, true] {
         for ctrl_enter in [false, true] {
@@ -497,7 +554,7 @@ fn unfocused_wheel_boundaries_hit_testing_caret_follow_and_edge_drag_use_one_vie
         f.wheel(1_000_000.0);
         assert_eq!(f.offset(), 0.0);
         f.wheel(-200.0);
-        let b = f.bounds();
+        let b = f.visible_bounds();
         f.click(b.x + 15.0, b.y + 20.0);
         assert!(f.selection().1 > 0, "click must account for scroll");
         f.key("End", CTRL);
@@ -676,13 +733,220 @@ fn host_handoff_preserves_selection_scroll_and_undo_through_tools_and_refresh() 
 }
 
 #[test]
+fn sidebar_drag_and_small_windows_preserve_the_saved_width_and_editor() {
+    use nana_ui::runtime::SplitPane;
+    use nana_ui_devtools::agent::AgentSession;
+    for source in [false, true] {
+        let mut f = Fixture::new(source, false, "侧栏调整");
+        f.session.set_viewport(1200, 640, 1.0).unwrap();
+        f.focus();
+        f.key("End", CTRL);
+        f.event(InputPayload::Text(nana_ui_platform::CommittedText::new(
+            "后",
+        )));
+        let selection = f.selection();
+        let size = (f.bounds().width, f.bounds().height);
+        let pane = Entity::<SplitPane>::from_stable_id(f.ui.input_split.get_untracked().unwrap());
+        let drag = |f: &mut Fixture, dx: f32| {
+            let handle = f
+                .session
+                .document()
+                .context()
+                .read(pane, |p| p.handle.unwrap())
+                .unwrap();
+            let b = f
+                .session
+                .document()
+                .context()
+                .world()
+                .layout_box(handle)
+                .unwrap();
+            let (x, y) = (b.x + b.width / 2.0, b.y + b.height / 2.0);
+            f.pointer(PointerPhase::Down, x, y);
+            for i in 1..=8 {
+                f.pointer(PointerPhase::Move, x + dx * i as f32 / 8.0, y);
+            }
+            f.pointer(PointerPhase::Up, x + dx, y);
+        };
+        drag(&mut f, -180.0);
+        assert_eq!(f.ui.input_sidebar_width.get_untracked(), 480.0);
+        let stored = nanatype_settings::GeometryStore {
+            input_sidebar_width: Some(f.ui.input_sidebar_width.get_untracked()),
+            ..Default::default()
+        };
+        let restored: nanatype_settings::GeometryStore =
+            serde_json::from_str(&serde_json::to_string(&stored).unwrap()).unwrap();
+        assert_eq!(
+            nanatype_settings::input_sidebar_width(restored.input_sidebar_width),
+            480.0
+        );
+        for (w, expected) in [(720, 392.0), (920, 480.0), (1200, 480.0)] {
+            f.session.set_viewport(w, 480, 1.0).unwrap();
+            f.session.flush().unwrap();
+            assert_eq!(
+                f.session
+                    .document()
+                    .context()
+                    .read(pane, |p| p.model.size())
+                    .unwrap(),
+                expected
+            );
+            assert!(input::changed_sidebar_width(f.ui, f.session.document().context()).is_none());
+            assert_eq!(f.ui.input_sidebar_width.get_untracked(), 480.0);
+            assert_eq!(f.selection(), selection);
+            assert_eq!((f.bounds().width, f.bounds().height), size);
+        }
+        drag(&mut f, -2000.0);
+        assert_eq!(f.ui.input_sidebar_width.get_untracked(), 560.0);
+        drag(&mut f, 2000.0);
+        assert_eq!(
+            f.ui.input_sidebar_width.get_untracked(),
+            nanatype_settings::INPUT_SIDEBAR_MIN
+        );
+        f.key("ArrowLeft", Default::default());
+        assert_eq!(
+            f.ui.input_sidebar_width.get_untracked(),
+            nanatype_settings::INPUT_SIDEBAR_MIN + 8.0
+        );
+        f.action(TextEditAction::Undo);
+        assert_eq!(f.text(), "侧栏调整");
+    }
+}
+
+#[test]
+fn fitted_editor_pointer_and_ime_follow_the_preview_at_the_minimum_width() {
+    use nana_ui_devtools::agent::AgentSession;
+    for source in [false, true] {
+        for scale in [1.0, 1.5, 2.0] {
+            let mut f = Fixture::new(source, false, "hello world");
+            f.ui.input_sidebar_width.set(560.0);
+            f.session.set_viewport(720, 360, scale).unwrap();
+            for _ in 0..4 {
+                f.session.flush().unwrap();
+            }
+            let b = f.visible_bounds();
+            assert!(
+                b.x >= 16.0 && b.x + b.width <= 304.5,
+                "editor must fit before the widest allowed sidebar: {b:?}"
+            );
+            f.click(b.x + b.width - 2.0, b.y + 4.0);
+            assert_eq!(
+                f.session.document().context().world().focused(f.id()),
+                Some(f.node())
+            );
+            assert_eq!(
+                f.selection(),
+                (11, 11),
+                "far-right click reaches end of first line"
+            );
+            f.key("Home", CTRL);
+            f.event(InputPayload::Composition(CompositionInput::Start));
+            f.event(InputPayload::Composition(CompositionInput::Update {
+                text: "nihao".into(),
+                selection: None,
+            }));
+            let caret = f
+                .input
+                .services()
+                .text_input()
+                .and_then(|c| c.cursor_area)
+                .unwrap();
+            assert!(
+                caret.x >= b.x - 1.0
+                    && caret.x <= b.x + b.width + 1.0
+                    && caret.y >= b.y - 1.0
+                    && caret.y + caret.height <= b.y + b.height + 1.0,
+                "IME follows the scaled preview: source={source}, scale={scale}, {caret:?}, {b:?}"
+            );
+            f.event(InputPayload::Composition(CompositionInput::Commit(
+                "你好".into(),
+            )));
+            assert_eq!(f.text(), "你好hello world");
+            f.action(TextEditAction::Undo);
+            assert_eq!(f.text(), "hello world");
+        }
+    }
+}
+
+#[test]
+fn resizing_and_dock_tabs_preserve_both_editors_selection_and_undo_history() {
+    use nana_ui_devtools::agent::AgentSession;
+    for source in [false, true] {
+        let mut f = Fixture::new(source, false, "窗口调整前");
+        f.focus();
+        f.key("End", CTRL);
+        f.event(InputPayload::Text(nana_ui_platform::CommittedText::new(
+            "，草稿仍在",
+        )));
+        let text = f.text();
+        let selection = f.selection();
+        let editor = f.node();
+        let size = (f.bounds().width, f.bounds().height);
+        for (width, height) in [(720, 360), (1280, 720), (920, 480)] {
+            f.session.set_viewport(width, height, 1.0).unwrap();
+            f.ui.peer_panel.set(width == 720);
+            f.session.flush().unwrap();
+            assert_eq!(f.node(), editor);
+            assert_eq!(f.text(), text);
+            assert_eq!(f.selection(), selection);
+            for tab in [
+                "input-dock-commands",
+                "input-dock-stickers",
+                "input-dock-stickers",
+            ] {
+                let strip = f
+                    .session
+                    .accessibility_dump()
+                    .into_iter()
+                    .find(|n| {
+                        n.agent_path
+                            .as_deref()
+                            .is_some_and(|p| p.ends_with("input-dock-tabs"))
+                    })
+                    .unwrap();
+                let strip = Entity::<nana_ui::runtime::Tabs>::from_stable_id(
+                    nana_ui::runtime::StableNodeId::new(strip.id).unwrap(),
+                );
+                let value = if tab == "input-dock-commands" {
+                    "commands"
+                } else {
+                    "stickers"
+                };
+                let trigger = f
+                    .session
+                    .document()
+                    .context()
+                    .read(strip, |t| t.option_node(value).unwrap())
+                    .unwrap();
+                let b = f
+                    .session
+                    .document()
+                    .context()
+                    .world()
+                    .layout_box(trigger)
+                    .unwrap();
+                f.click(b.x + b.width / 2.0, b.y + b.height / 2.0);
+                assert_eq!(f.node(), editor);
+                assert_eq!(f.text(), text);
+                assert_eq!(f.selection(), selection);
+                assert_eq!((f.bounds().width, f.bounds().height), size);
+            }
+        }
+        f.action(TextEditAction::Undo);
+        assert_eq!(f.text(), "窗口调整前");
+        f.action(TextEditAction::Redo);
+        assert_eq!(f.text(), text);
+    }
+}
+
+#[test]
 fn secondary_press_mounts_the_production_menu_and_runs_its_selected_edit() {
     for source in [false, true] {
         let mut f = Fixture::new(source, false, "右键中文 👩‍💻");
         f.focus();
         f.key("a", CTRL);
         let selection = f.selection();
-        let b = f.bounds();
+        let b = f.visible_bounds();
         let mut press = PointerInput::mouse(PointerPhase::Down, b.x + 20.0, b.y + 20.0);
         press.button = 2;
         press.buttons = 2;
@@ -746,7 +1010,7 @@ fn secondary_press_mounts_the_production_menu_and_runs_its_selected_edit() {
             bounds.x >= 0.0
                 && bounds.y >= 0.0
                 && bounds.x + bounds.width <= 796.5
-                && bounds.y + bounds.height <= 354.5
+                && bounds.y + bounds.height <= 480.5
         );
         f.key("Enter", Default::default());
         assert!(
@@ -776,7 +1040,19 @@ fn secondary_press_mounts_the_production_menu_and_runs_its_selected_edit() {
         assert_eq!(f.text(), "右键中文 👩‍💻");
         f.key("Home", CTRL);
         let old = f.selection();
-        let mut press = PointerInput::mouse(PointerPhase::Down, b.x + b.width - 20.0, b.y + 20.0);
+        // Right-click the far edge of the fitted editor, beside the sidebar.
+        let preview = f
+            .session
+            .accessibility_dump()
+            .into_iter()
+            .find(|n| {
+                n.agent_path
+                    .as_deref()
+                    .is_some_and(|p| p.ends_with("/input-preview-scroll"))
+            })
+            .unwrap();
+        let x = (b.x + b.width - 20.0).min(preview.bounds.x + preview.bounds.width - 20.0);
+        let mut press = PointerInput::mouse(PointerPhase::Down, x, b.y + 20.0);
         press.button = 2;
         press.buttons = 2;
         f.event(InputPayload::Pointer(press));
@@ -813,7 +1089,28 @@ fn unicode_navigation_deletion_multiclick_and_ime_geometry_follow_the_visible_ca
             "hello world\n中文👩‍💻",
         )));
         f.key("Home", CTRL);
-        let b = f.bounds();
+        // With the persistent sidebar, the canvas has an outer horizontal
+        // scrollbar. Reveal the start before selecting its first word.
+        let preview = f
+            .session
+            .accessibility_dump()
+            .into_iter()
+            .find(|n| {
+                n.agent_path
+                    .as_deref()
+                    .is_some_and(|p| p.ends_with("input-preview-scroll"))
+            })
+            .unwrap();
+        f.event(InputPayload::Wheel(WheelInput {
+            pointer_id: nana_ui_platform::PointerId(0),
+            x: 2.0,
+            y: preview.bounds.y + 4.0,
+            delta_x: 2000.0,
+            delta_y: 2000.0,
+            unit: WheelUnit::Pixels,
+            modifiers: Default::default(),
+        }));
+        let b = f.visible_bounds();
         f.click(b.x + 15.0, b.y + 10.0);
         f.click(b.x + 15.0, b.y + 10.0);
         assert_eq!(

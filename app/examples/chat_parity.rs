@@ -124,8 +124,8 @@ impl Rig {
             history: RuntimeAgentSession::new_scaled(h, hw, hh, scale).unwrap(),
             input: RuntimeAgentSession::new(
                 i,
-                w,
-                dh + nanatype::windows::TOOLBAR_H as u32 + nanatype::windows::STATUS_H as u32,
+                nanatype::windows::INPUT_SIZE.0 as u32,
+                nanatype::windows::INPUT_SIZE.1 as u32,
             )
             .unwrap(),
             editor,

@@ -15,7 +15,8 @@ use nana_ui::runtime::{
     ActionMenu, ActionMenuItem, Activate, Button, ColorChanged, ColorField, Divider,
     FocusWithinChanged, IconButton, IconGlyph, NodeStyle, Popover, PopoverClosed, PopoverToggled,
     RangeField, RangeInput, RichAttrMask, RichSelectionAttrs, RichTextEditor, RichTextEditorEvent,
-    SegmentedControl, Stack, Text, TextArea, TextChanged, TextInput, TextSubmitted,
+    ScrollAxes, ScrollView, ScrollViewportChanged, SegmentedControl, SizeChanged, Stack, Text,
+    TextArea, TextChanged, TextInput, TextSubmitted,
 };
 use nana_ui::theme::space;
 use nana_ui::{ButtonKind, ControlSize, PopoverPlacement};
@@ -35,7 +36,9 @@ use super::dialogue::{Base, Source, dialogue_box};
 use super::rich::{ChipKind, MarkerLook};
 use super::{I18N, Ui, c, restyle};
 use crate::msg::{FileTarget, MarkupEdit, Msg, Tool};
-use crate::windows::{STATUS_H, TOOLBAR_H, WindowKind};
+use crate::windows::TOOLBAR_H;
+
+mod workspace;
 
 pub fn marker_label(m: &Marker, locale: Locale) -> String {
     let t = |k: &str| I18N.t_in(locale, k);
@@ -82,6 +85,10 @@ fn tool_button(icon: nana_ui::runtime::Icon, label: String, tip: String) -> Icon
         .with_tooltip(tip);
     b.style.square = Some(SquareSize::IconButton);
     b
+}
+
+pub(super) fn footer_icon(icon: nana_ui::runtime::Icon, label: String) -> IconButton {
+    tool_button(icon, label.clone(), label)
 }
 
 /// "Bold · Ctrl+B": a tooltip with the tool's shortcut.
@@ -471,65 +478,111 @@ fn expression_panel(ui: Ui, open: Signal<bool>) -> AnyView {
 
 /// The toolbar's sticker picker; `open` is its popover's state.
 pub fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
+    sticker_panel_content(ui, Some(open))
+}
+
+/// Dock content remains open for repeated insertions; popup pickers close.
+fn sticker_panel_content(ui: Ui, close_on_insert: Option<Signal<bool>>) -> AnyView {
     let query = signal(String::new());
-    widget(Stack::column(8.0).padding(4.0))
-        .children((
-            widget(TextInput::new("").placeholder(ui.now_t("tb-sticker-search")))
-                .on(move |e: &TextChanged| query.set(e.value.to_string())),
-            dynamic(
-                move || (query.get(), ui.stickers.with(|s| Arc::as_ptr(s) as usize)),
-                move |(q, _)| {
-                    let stickers = ui.stickers.get_untracked();
-                    if stickers.is_empty() {
-                        return super::feedback::empty_state(
-                            ui.now_t("empty-stickers"),
-                            Some((
-                                ui.now_t("empty-open-assets"),
-                                Box::new(move || {
-                                    open.set(false);
-                                    Msg::SettingsPage(super::settings::Page::Assets)
+    let mut search = TextInput::new("").placeholder(ui.now_t("tb-sticker-search"));
+    let layout = Arc::make_mut(&mut search.style.layout);
+    layout.width = Some(LengthSpec::Fill);
+    layout.min_width = Some(LengthSpec::Px(0.0));
+    widget(Stack::column(8.0).padding(4.0).with_layout(|l| {
+        l.width = Some(LengthSpec::Fill);
+        l.min_width = Some(LengthSpec::Px(0.0));
+    }))
+    .children((
+        widget(search)
+            .key(if close_on_insert.is_some() {
+                "input-sticker-search"
+            } else {
+                "input-dock-sticker-search"
+            })
+            .on(move |e: &TextChanged| query.set(e.value.to_string())),
+        dynamic(
+            move || (query.get(), ui.stickers.with(|s| Arc::as_ptr(s) as usize)),
+            move |(q, _)| {
+                let stickers = ui.stickers.get_untracked();
+                if stickers.is_empty() {
+                    if close_on_insert.is_none() {
+                        let mut style = text_style(13.0, 400);
+                        let l = Arc::make_mut(&mut style.layout);
+                        l.width = Some(LengthSpec::Fill);
+                        l.min_width = Some(LengthSpec::Px(0.0));
+                        return widget(Stack::column(8.0).width(LengthSpec::Fill))
+                            .children((
+                                widget(
+                                    Text::new(ui.now_t("empty-stickers"))
+                                        .style(style)
+                                        .color(SemanticColorRole::Muted),
+                                ),
+                                widget(
+                                    Button::new(ui.now_t("window-settings"))
+                                        .kind(ButtonKind::Text)
+                                        .size(ControlSize::Small),
+                                )
+                                .on_cx(|_, _: &Activate, cx| {
+                                    cx.dispatch_program_all(Msg::SettingsPage(
+                                        super::settings::Page::Assets,
+                                    ))
                                 }),
-                            )),
-                        );
+                            ))
+                            .into_any();
                     }
-                    let q = q.to_lowercase();
-                    let cells: Vec<AnyView> = stickers
-                        .iter()
-                        .filter(|s| {
-                            q.is_empty()
-                                || s.name.to_lowercase().contains(&q)
-                                || s.lib.to_lowercase().contains(&q)
-                        })
-                        .take(60)
-                        .map(|s| {
-                            let url = s.url.clone();
-                            let asset: Option<AssetRef> = s.asset.parse().ok();
-                            widget(image_button(s.name.clone(), url))
-                                .bind(move |b: &mut Button| b.disabled = ui.bilibili.get().sending)
-                                .on_cx(move |_, _: &Activate, cx| {
+                    return super::feedback::empty_state(
+                        ui.now_t("empty-stickers"),
+                        Some((
+                            ui.now_t("empty-open-assets"),
+                            Box::new(move || {
+                                if let Some(open) = close_on_insert {
                                     open.set(false);
-                                    if let Some(asset) = asset.clone() {
-                                        cx.dispatch_program_all(act(Tool::Insert(Inline::Atom(
-                                            Atom {
-                                                kind: AtomKind::Sticker,
-                                                asset,
-                                                height_em: 1.6,
-                                                alt: String::new(),
-                                                effects: Default::default(),
-                                            },
-                                        ))));
-                                    }
-                                })
-                                .into_any()
-                        })
-                        .collect();
-                    widget(Stack::row(6.0).wrap(true).width(LengthSpec::Fill))
-                        .children(cells)
-                        .into_any()
-                },
-            ),
-        ))
-        .into_any()
+                                }
+                                Msg::SettingsPage(super::settings::Page::Assets)
+                            }),
+                        )),
+                    );
+                }
+                let q = q.to_lowercase();
+                let cells: Vec<AnyView> = stickers
+                    .iter()
+                    .filter(|s| {
+                        q.is_empty()
+                            || s.name.to_lowercase().contains(&q)
+                            || s.lib.to_lowercase().contains(&q)
+                    })
+                    .take(60)
+                    .map(|s| {
+                        let url = s.url.clone();
+                        let asset: Option<AssetRef> = s.asset.parse().ok();
+                        widget(image_button(s.name.clone(), url))
+                            .bind(move |b: &mut Button| b.disabled = ui.bilibili.get().sending)
+                            .on_cx(move |_, _: &Activate, cx| {
+                                if let Some(open) = close_on_insert {
+                                    open.set(false);
+                                }
+                                if let Some(asset) = asset.clone() {
+                                    cx.dispatch_program_all(act(Tool::Insert(Inline::Atom(
+                                        Atom {
+                                            kind: AtomKind::Sticker,
+                                            asset,
+                                            height_em: 1.6,
+                                            alt: String::new(),
+                                            effects: Default::default(),
+                                        },
+                                    ))));
+                                }
+                            })
+                            .into_any()
+                    })
+                    .collect();
+                widget(Stack::row(6.0).wrap(true).width(LengthSpec::Fill))
+                    .children(cells)
+                    .into_any()
+            },
+        ),
+    ))
+    .into_any()
 }
 
 /// A small caption over a group in a toolbar panel.
@@ -759,54 +812,16 @@ fn group_divider() -> AnyView {
     .into_any()
 }
 
-/// A 6×28 grip at the toolbar's left edge: two columns of dots that say the
-/// window moves by dragging when the system frame is hidden. It takes no
-/// pointer events, so a press on it falls through to the toolbar's empty
-/// area, which the host turns into a window drag. Only the input window has
-/// it; the broadcast windows stay clean for capture.
-fn drag_grip() -> AnyView {
-    let dot = || {
-        widget(
-            Stack::row(0.0)
-                .surface(SemanticColorRole::Muted)
-                .with_layout(|l| {
-                    l.width = Some(LengthSpec::Px(2.0));
-                    l.height = Some(LengthSpec::Px(2.0));
-                    l.min_width = Some(LengthSpec::Px(2.0));
-                    l.flex_shrink = Some(0.0);
-                    l.border_radius = Some(1.0);
-                }),
-        )
-        .into_any()
-    };
-    let rows: Vec<AnyView> = (0..4)
-        .map(|_| widget(Stack::row(2.0)).children((dot(), dot())).into_any())
-        .collect();
-    widget(
-        Stack::column(3.0)
-            .justify(nana_ui_core::JustifySpec::Center)
-            .with_layout(|l| {
-                l.width = Some(LengthSpec::Px(6.0));
-                l.min_width = Some(LengthSpec::Px(6.0));
-                l.height = Some(LengthSpec::Px(28.0));
-                l.flex_shrink = Some(0.0);
-                l.margin_right = Some(LengthSpec::Px(6.0));
-                l.opacity = Some(0.6);
-                l.pointer_events = Some(PointerEventsSpec::None);
-            }),
-    )
-    .children(rows)
-    .into_any()
-}
-
 /// Input windows narrower than this fold their low-frequency tools into "…".
-const COMPACT_BELOW: f32 = 900.0;
+const COMPACT_BELOW: f32 = 820.0;
 
 fn toolbar(ui: Ui) -> AnyView {
+    let available_width = signal(920.0_f32);
     let key = move || {
         (
             ui.locale.get(),
             ui.chrome_dark.get(),
+            available_width.get(),
             ui.skin.with(|s| Arc::as_ptr(s) as usize),
             ui.settings.with(|s| {
                 (
@@ -944,26 +959,9 @@ fn toolbar(ui: Ui) -> AnyView {
                 .map(|(i, p)| item(p.label.clone(), phrase_open, move || Msg::InsertPhrase(i)))
                 .collect()
         };
-        let mode = settings.general.input_mode;
-        let mode_switch = widget(SegmentedControl::new().size(ControlSize::Small)).children((
-            segmented_option(t("mode-compose-short"))
-                .selected(mode == InputMode::Compose)
-                .on_cx(|_, _: &nana_ui::runtime::SegmentedSelectionRequested, cx| {
-                    cx.dispatch_program_all(Msg::Edit(Box::new(|s: &mut Settings| {
-                        s.general.input_mode = InputMode::Compose
-                    })))
-                }),
-            segmented_option(t("mode-mirror-short"))
-                .selected(mode == InputMode::Mirror)
-                .on_cx(|_, _: &nana_ui::runtime::SegmentedSelectionRequested, cx| {
-                    cx.dispatch_program_all(Msg::Edit(Box::new(|s: &mut Settings| {
-                        s.general.input_mode = InputMode::Mirror
-                    })))
-                }),
-        ));
         // Below this width the low-frequency tools fold into a "…" menu so
         // Send and the mode switch always stay on screen.
-        let input_width = crate::windows::size_of(WindowKind::Input, &skin, &settings).0;
+        let input_width = available_width.get_untracked();
         let compact = input_width < COMPACT_BELOW;
         let narrow = input_width < 640.0;
         let [more_open] = std::array::from_fn(|_| signal(false));
@@ -979,7 +977,6 @@ fn toolbar(ui: Ui) -> AnyView {
         // Text styling, then colour and size, then the outline and ruby,
         // then what plays (effects, pacing) and what goes in.
         let mut bar: Vec<AnyView> = vec![
-            drag_grip(),
             toggle(
                 ui,
                 ti::BOLD,
@@ -1063,8 +1060,9 @@ fn toolbar(ui: Ui) -> AnyView {
             help_open,
             cheat_sheet(ui),
         );
-        let effects_menu = menu(ti::SPARKLES, t("tb-effects"), true, fx_open, effects);
-        let pacing_menu = menu(ti::HOURGLASS, t("tb-pacing"), true, pace_open, pacing);
+        let labelled = input_width >= 800.0;
+        let effects_menu = menu(ti::SPARKLES, t("tb-effects"), labelled, fx_open, effects);
+        let pacing_menu = menu(ti::HOURGLASS, t("tb-pacing"), labelled, pace_open, pacing);
         // The popovers of folded tools stay mounted, invisible and out of the
         // flow, so the "…" menu can open them in place.
         let mut hidden: Vec<AnyView> = Vec::new();
@@ -1136,7 +1134,6 @@ fn toolbar(ui: Ui) -> AnyView {
             bar.push(tool(ui, ti::CLEAR_FORMATTING, "tb-clear-format", || {
                 act(Tool::ClearFormat)
             }));
-            bar.push(source_toggle(ui));
             bar.push(help);
         }
         bar.push(widget(Stack::spacer()).into_any());
@@ -1144,66 +1141,36 @@ fn toolbar(ui: Ui) -> AnyView {
             bar.push(
                 widget(Stack::row(0.0).with_layout(|l| {
                     l.width = Some(LengthSpec::Px(0.0));
+                    l.height = Some(LengthSpec::Px(0.0));
                     l.flex_shrink = Some(0.0);
-                    l.opacity = Some(0.0);
-                    l.pointer_events = Some(PointerEventsSpec::None);
+                    l.overflow_x = OverflowSpec::Hidden;
+                    l.overflow_y = OverflowSpec::Hidden;
                 }))
                 .children(hidden)
                 .into_any(),
             );
         }
-        // Pinned right: never shrinks, so Send is not clipped.
-        let mut pinned: Vec<AnyView> = vec![
-            group_divider(),
-            mode_switch.into_any(),
-            menu(ti::MESSAGE, t("tb-phrases"), false, phrase_open, phrases),
-            tool(ui, ti::SETTINGS, "window-settings", || Msg::OpenSettings),
-        ];
-        if mode == InputMode::Compose && !narrow {
-            let key = match settings.general.send_key {
-                SendKey::Enter => "Enter",
-                SendKey::CtrlEnter => "Ctrl+Enter",
-            };
-            // The same keycaps as the Hotkeys page and the `?` sheet.
-            pinned.push(
-                widget(Stack::row(0.0).with_layout(|l| {
-                    l.flex_shrink = Some(0.0);
-                    l.margin_left = Some(LengthSpec::Px(4.0));
-                    l.margin_right = Some(LengthSpec::Px(4.0));
-                }))
-                .children(super::keycap::chord(key))
-                .into_any(),
-            );
-        }
-        pinned.push(
-            widget(crate::skin_theme::cta(
-                Button::new(t("tb-send"))
-                    .icon(ti::SEND)
-                    .kind(ButtonKind::Primary)
-                    .size(ControlSize::Small),
-            ))
-            .on_cx(move |_, _: &Activate, cx| {
-                super::motion::press(cx, ui.reduced_motion.get_untracked());
-                cx.dispatch_program_all(Msg::Core(Cmd::Send))
-            })
-            .into_any(),
-        );
-        pinned.push(super::bilibili::account_button(ui));
-        bar.push(
-            widget(Stack::row(2.0).with_layout(|l| {
-                l.flex_shrink = Some(0.0);
-                l.flex_grow = Some(0.0);
-                l.align_items = AlignSpec::Center;
-            }))
-            .children(pinned)
-            .into_any(),
-        );
+        bar.push(menu(
+            ti::MESSAGE,
+            t("tb-phrases"),
+            false,
+            phrase_open,
+            phrases,
+        ));
+        bar.push(source_toggle(ui));
         widget(
             Stack::bar(2.0)
                 .height(LengthSpec::Px(TOOLBAR_H))
                 .padding_xy(space::MD, space::SM)
-                .align(AlignSpec::Center),
+                .align(AlignSpec::Center)
+                .with_layout(|l| l.flex_shrink = Some(0.0)),
         )
+        .key("input-toolbar")
+        .on(move |e: &SizeChanged| {
+            if available_width.get_untracked() != e.width {
+                available_width.set(e.width);
+            }
+        })
         .children(bar)
         .into_any()
     })
@@ -1259,7 +1226,7 @@ pub fn mirror_chip_pulsing(ui: Ui) -> bool {
             .with_untracked(|s| s.general.input_mode == InputMode::Mirror)
 }
 
-fn status_line(ui: Ui) -> AnyView {
+fn status_content(ui: Ui) -> AnyView {
     enum Line {
         Error(String),
         Mirror(String),
@@ -1320,11 +1287,12 @@ fn status_line(ui: Ui) -> AnyView {
     })
     // A chip or an error arrives on the `enter` token.
     .transition(super::motion::enter());
-    widget(
-        Stack::bar(6.0)
-            .height(LengthSpec::Px(STATUS_H))
-            .padding_xy(space::MD, space::XXS),
-    )
+    widget(Stack::bar(0.0).align(AlignSpec::Center).with_layout(|l| {
+        l.width = Some(LengthSpec::Px(0.0));
+        l.min_width = Some(LengthSpec::Px(0.0));
+        l.flex_grow = Some(1.0);
+    }))
+    .key("input-status")
     .children((
         widget(Stack::row(0.0).with_layout(|l| {
             l.width = Some(LengthSpec::Px(0.0));
@@ -1336,7 +1304,6 @@ fn status_line(ui: Ui) -> AnyView {
         widget(Stack::spacer())
             .visible(move || ui.reply.with(Option::is_some))
             .children(reply_bar(ui)),
-        super::bilibili::send_status(ui),
     ))
     .into_any()
 }
@@ -1446,7 +1413,12 @@ pub fn editor_context_menu(
 /// The draft inside the dialogue box: the rich editor, or the markup source.
 /// Both are built once and shown by `source_mode`, so the editor keeps its
 /// selection and undo history across toggles.
-fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<TextArea>) -> AnyView {
+fn editor_area(
+    ui: Ui,
+    editor: EntityRef<RichTextEditor>,
+    source: EntityRef<TextArea>,
+    focused: Signal<bool>,
+) -> AnyView {
     let style = move || {
         let mut st = Base::editor(&ui.skin.get()).node_style();
         let l = Arc::make_mut(&mut st.layout);
@@ -1560,7 +1532,10 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
                         t.value = value;
                     }
                 })
-                .visible(move || ui.draft.with(|d| d.is_blank())),
+                // IME preedit does not enter the draft until committed. Hide
+                // the empty hint while editing so it cannot overlap preedit.
+                .key("input-empty-hint")
+                .visible(move || !focused.get() && ui.draft.with(|d| d.is_blank())),
         )),
         widget(Stack::fill_column(0.0).with_layout(|l| {
             l.flex_grow = Some(1.0);
@@ -1636,61 +1611,145 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
     let source = entity_ref::<TextArea>();
     let toasts = entity_ref::<nana_ui::runtime::ToastStack>();
     let focused = signal(false);
-    let region_h = move || {
+    let canvas_size = move || {
         let skin = ui.skin.get();
         let s = ui.settings.get();
         let region = s.skin.overrides.region.unwrap_or(skin.dialogue.region);
-        region[1] + skin.dialogue.overscan * 2.0
+        let pad = skin.dialogue.overscan * 2.0;
+        (region[0] + pad, region[1] + pad)
     };
+    let viewport = signal((0.0_f32, 0.0_f32));
+    // Fit only the preview presentation. The editor still lays out at the
+    // stream canvas size, so resizing the sidebar cannot change line breaks.
+    let preview_scale = move || {
+        let (w, _) = canvas_size();
+        ((viewport.get().0 - 32.0).max(1.0) / w.max(1.0)).min(1.0)
+    };
+    let preview = widget(
+        ScrollView::new(ScrollAxes::Both)
+            .scrollbars(nana_ui_core::ScrollbarVisibility::Always)
+            .with_layout(|l| {
+                l.width = Some(LengthSpec::Fill);
+                l.height = Some(LengthSpec::Px(0.0));
+                l.min_height = Some(LengthSpec::Px(0.0));
+                l.min_width = Some(LengthSpec::Px(0.0));
+                l.flex_grow = Some(1.0);
+                l.flex_shrink = Some(1.0);
+            }),
+    )
+    .key("input-preview-scroll")
+    .on(move |e: &ScrollViewportChanged| {
+        let size = (e.width, e.height);
+        if viewport.get_untracked() != size {
+            viewport.set(size);
+        }
+    })
+    .children(
+        widget(
+            Stack::column(0.0)
+                .surface(SemanticColorRole::Subtle)
+                .align(AlignSpec::Center)
+                .justify(JustifySpec::Center),
+        )
+        .bind(move |s: &mut Stack| {
+            let (w, h) = canvas_size();
+            let (vw, vh) = viewport.get();
+            let scale = preview_scale();
+            restyle(s, |l| {
+                l.width = Some(LengthSpec::Px(vw.max(w * scale + 32.0)));
+                l.height = Some(LengthSpec::Px(vh.max(h * scale + 32.0)));
+                l.flex_shrink = Some(0.0);
+            });
+        })
+        .children(
+            widget(Stack::column(0.0).with_layout(|l| {
+                l.position = PositionSpec::Relative;
+                l.flex_shrink = Some(0.0);
+                // The unscaled child must not enlarge the scrollable area.
+                l.overflow_x = OverflowSpec::Hidden;
+                l.overflow_y = OverflowSpec::Hidden;
+            }))
+            .key("input-preview-fit")
+            .bind(move |s: &mut Stack| {
+                let (w, h) = canvas_size();
+                let scale = preview_scale();
+                restyle(s, |l| {
+                    l.width = Some(LengthSpec::Px(w * scale));
+                    l.height = Some(LengthSpec::Px(h * scale));
+                });
+            })
+            .children(
+                widget(Stack::column(0.0).with_layout(|l| {
+                    l.position = PositionSpec::Absolute;
+                    l.offset_left = Some(LengthSpec::Px(0.0));
+                    l.offset_top = Some(LengthSpec::Px(0.0));
+                    l.flex_shrink = Some(0.0);
+                }))
+                .key("input-preview-canvas")
+                .bind(move |s: &mut Stack| {
+                    let (w, h) = canvas_size();
+                    let skin = ui.skin.get();
+                    restyle(s, |l| {
+                        l.width = Some(LengthSpec::Px(w));
+                        l.height = Some(LengthSpec::Px(h));
+                        l.transform = Some(super::surface::affine(0.0, 0.0, 0.0, preview_scale()));
+                        l.transform_origin = Some(nana_ui_core::TransformOrigin {
+                            x: LengthSpec::Px(0.0),
+                            y: LengthSpec::Px(0.0),
+                        });
+                        // Skin-specific contrast stays inside the preview.
+                        l.background = Some(super::c(skin.chrome.background));
+                    });
+                })
+                .on(move |e: &FocusWithinChanged| {
+                    if focused.get_untracked() != e.focused {
+                        focused.set(e.focused);
+                    }
+                })
+                .children((
+                    dialogue_box(
+                        ui,
+                        Source::Draft,
+                        Some(editor_area(ui, editor, source, focused)),
+                    ),
+                    focus_ring(focused),
+                )),
+            ),
+        ),
+    );
+    let invitation = signal(String::new());
+    let relay = signal(String::new());
     let view = widget(
         Stack::fill_column(0.0)
             .surface(SemanticColorRole::Background)
-            .radius(nana_ui_core::RadiusTier::Lg)
             .with_layout(|l| {
                 l.position = PositionSpec::Relative;
-                l.overflow_x = nana_ui_core::OverflowSpec::Hidden;
-                l.overflow_y = nana_ui_core::OverflowSpec::Hidden;
+                l.overflow_x = OverflowSpec::Hidden;
+                l.overflow_y = OverflowSpec::Hidden;
             }),
     )
-    // Summoned, it rises in on the `enter` token.
-    .bind(move |s: &mut Stack| {
-        let (opacity, transform) = super::motion::rest(ui.input_shown.get());
-        restyle(s, |l| {
-            l.opacity = Some(opacity);
-            l.transform = Some(transform);
-        });
+    .key("input-window")
+    .on(move |event: &SizeChanged| {
+        if ui.input_width.get_untracked() != event.width {
+            ui.input_width.set(event.width);
+        }
     })
-    .animate(super::motion::enter_implicit())
     .children((
-        super::p2p::card(ui),
-        toolbar(ui),
-        widget(Stack::column(0.0).with_layout(|l| l.position = PositionSpec::Relative))
-            .bind(move |s: &mut Stack| {
-                let h = region_h();
-                let mut taken = std::mem::replace(s, Stack::row(0.0));
-                taken = taken.height(LengthSpec::Px(h));
-                *s = taken;
-                // Transparent broadcast skins need their own preview backdrop:
-                // their ink may be black while the application's chrome is dark.
-                let skin = ui.skin.get();
-                restyle(s, |l| {
-                    l.background = (skin.dialogue.box_.color.a < 255)
-                        .then(|| super::c(skin.chrome.background));
-                });
-            })
-            .on(move |e: &FocusWithinChanged| {
-                if focused.get_untracked() != e.focused {
-                    focused.set(e.focused);
-                }
-            })
-            .children((
-                dialogue_box(ui, Source::Draft, Some(editor_area(ui, editor, source))),
-                focus_ring(focused),
-            )),
-        status_line(ui),
-        super::feedback::toast_stack(toasts, STATUS_H + 4.0, 2),
+        workspace::split(
+            ui,
+            widget(Stack::fill_column(0.0).with_layout(|l| {
+                l.min_width = Some(LengthSpec::Px(0.0));
+            }))
+            .children((toolbar(ui), preview)),
+        ),
+        workspace::footer(ui, invitation, relay),
+        super::feedback::toast_stack(toasts, crate::windows::INPUT_ACTIONS_H + 4.0, 2),
     ));
     with_refs(view, (editor, source, toasts))
+}
+/// Read the split model after native pointer/keyboard routing, before layout.
+pub(crate) fn changed_sidebar_width(ui: Ui, cx: &nana_ui::runtime::AppContext) -> Option<f32> {
+    workspace::changed_width(ui, cx)
 }
 
 /// Selection-only navigation in NanaUI's plain TextArea emits no TextChanged.
@@ -1731,7 +1790,7 @@ mod tests {
             .unwrap()
             .skin;
         for locale in [Locale::ZhCn, Locale::EnUs, Locale::JaJp] {
-            for width in [796, 1200] {
+            for width in [720, 796, 920, 1100, 1200] {
                 for mode in [InputMode::Compose, InputMode::Mirror] {
                     for scale in [1.0, 1.5, 2.0] {
                         let mut settings = Settings::default();
@@ -1764,8 +1823,7 @@ mod tests {
                             "tb-effects",
                             "tb-pacing",
                             "tb-phrases",
-                            "window-settings",
-                            "tb-send",
+                            "tb-source",
                         ]
                         .map(|key| {
                             let label = ui.now_t(key);
@@ -1774,11 +1832,7 @@ mod tests {
                                 .find(|node| node.label.as_deref() == Some(label.as_str()))
                                 .unwrap_or_else(|| panic!("missing toolbar control {label}"))
                         });
-                        let mode_switch = nodes
-                            .iter()
-                            .find(|node| node.role == "radio-group")
-                            .expect("input mode switch");
-                        for node in controls.into_iter().chain([mode_switch]) {
+                        for node in controls {
                             let bounds = &node.bounds;
                             assert!(
                                 (bounds.height - TARGET).abs() <= 1.0 / scale,

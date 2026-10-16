@@ -299,6 +299,112 @@ fn monitor(key: &str, x: f64, primary: bool) -> MonitorInfo {
 }
 
 #[test]
+fn sidebar_geometry_is_backward_compatible_and_survives_a_disk_roundtrip() {
+    let old: GeometryStore = serde_json::from_str(r#"{"profiles":{}}"#).unwrap();
+    assert!(old.input_dock.is_none());
+    assert_eq!(
+        input_sidebar_width(old.input_sidebar_width),
+        INPUT_SIDEBAR_DEFAULT
+    );
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("geometry.json");
+    let mut geometry = old;
+    let monitors = [monitor("A", 0.0, true)];
+    let frame = Placement {
+        x: 10.0,
+        y: 20.0,
+        w: 920.0,
+        h: 480.0,
+    };
+    geometry.remember(&monitors, "input", frame);
+    geometry.input_sidebar_width = Some(420.0);
+    save_json(&path, &geometry).unwrap();
+    let restored: GeometryStore = load_json(&path).value;
+    assert_eq!(restored.restore(&monitors, "input"), Some(frame));
+    assert_eq!(input_sidebar_width(restored.input_sidebar_width), 420.0);
+    assert_eq!(input_sidebar_width(Some(f32::NAN)), INPUT_SIDEBAR_DEFAULT);
+    assert_eq!(
+        input_sidebar_width(Some(f32::INFINITY)),
+        INPUT_SIDEBAR_DEFAULT
+    );
+    assert_eq!(input_sidebar_width(Some(-5.0)), INPUT_SIDEBAR_MIN);
+    assert_eq!(input_sidebar_width(Some(5000.0)), INPUT_SIDEBAR_MAX);
+}
+
+#[test]
+fn input_dock_regions_and_active_tab_survive_disk_roundtrip() {
+    let layout = InputDockLayout {
+        regions: vec![
+            InputDockRegion {
+                id: 9,
+                kind: InputDockRegionKind::Stickers,
+                number: 3,
+            },
+            InputDockRegion {
+                id: 2,
+                kind: InputDockRegionKind::Phrases,
+                number: 1,
+            },
+            InputDockRegion {
+                id: 0,
+                kind: InputDockRegionKind::Commands,
+                number: 1,
+            },
+        ],
+        selected: 2,
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("geometry.json");
+    let monitors = [monitor("A", 0.0, true)];
+    let frame = Placement {
+        x: 10.0,
+        y: 20.0,
+        w: 920.0,
+        h: 480.0,
+    };
+    let mut geometry = GeometryStore {
+        input_sidebar_width: Some(185.0),
+        input_dock: Some(layout.clone()),
+        ..Default::default()
+    };
+    geometry.remember(&monitors, "input", frame);
+    save_json(&path, &geometry).unwrap();
+    let restored: GeometryStore = load_json(&path).value;
+    assert_eq!(restored.input_sidebar_width, Some(185.0));
+    assert_eq!(restored.restore(&monitors, "input"), Some(frame));
+    assert_eq!(restored.input_dock.unwrap().normalized(), layout);
+}
+
+#[test]
+fn input_dock_repairs_unsupported_regions_duplicates_and_missing_selection() {
+    let layout: InputDockLayout = serde_json::from_str(
+        r#"{
+        "regions": [
+            {"id":5,"kind":"phrases","number":0},
+            {"id":5,"kind":"commands","number":1},
+            {"id":9,"kind":"future_region","number":1},
+            {"id":0,"kind":"commands","number":1}
+        ],
+        "selected":9
+    }"#,
+    )
+    .unwrap();
+    let restored = layout.normalized();
+    assert_eq!(
+        restored.regions.iter().map(|r| r.id).collect::<Vec<_>>(),
+        vec![5, 0]
+    );
+    assert_eq!(restored.regions[0].kind, InputDockRegionKind::Phrases);
+    assert_eq!(restored.regions[0].number, 1);
+    assert_eq!(restored.selected, 5);
+    let empty = InputDockLayout {
+        regions: vec![],
+        selected: 99,
+    };
+    assert_eq!(empty.normalized(), InputDockLayout::default());
+}
+
+#[test]
 fn geometry_restores_per_layout_and_falls_back_to_a_connected_monitor() {
     let desk = [monitor("A", 0.0, true), monitor("B", 1920.0, false)];
     let mut store = GeometryStore::default();

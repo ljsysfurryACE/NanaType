@@ -5,6 +5,13 @@ history-count = { $count } 条
 
 ## 窗口标题
 window-input = 输入框
+input-management = 直播与联机
+dock-tab-commands = 命令
+dock-stickers = 表情包
+dock-add-region = 添加区域
+dock-close-region = 关闭当前区域
+dock-more-regions = 更多区域
+dock-wait = 停顿 0.5s
 window-display = 展示框
 window-history = 历史记录
 window-settings = 设置

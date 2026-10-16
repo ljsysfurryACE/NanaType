@@ -184,6 +184,56 @@ pub fn send_status(ui: Ui) -> AnyView {
     ))
     .into_any()
 }
+
+/// Keep delivery history and the real sync switch reachable in a single footer.
+pub(super) fn input_send_status(ui: Ui) -> AnyView {
+    widget(Stack::row(0.0))
+        .children((
+            widget(Stack::row(0.0))
+                .visible(move || ui.input_width.get() >= 1000.0)
+                .children(send_status(ui)),
+            widget(Stack::row(6.0).align(AlignSpec::Center))
+                .visible(move || ui.input_width.get() < 1000.0)
+                .children((
+                    widget(super::input::footer_icon(
+                        ti::HISTORY,
+                        ui.now_t("bili-results"),
+                    ))
+                    .on_cx(|_, _: &Activate, cx| {
+                        cx.dispatch_program_all(Msg::SettingsPage(Page::Bilibili))
+                    }),
+                    widget(
+                        Popover::new()
+                            .trigger(ui.now_t("bili-send-switch"))
+                            .placement(nana_ui::PopoverPlacement::Top)
+                            .width(230.0)
+                            .bare_trigger(true),
+                    )
+                    .trigger(
+                        widget(
+                            Stack::row(0.0)
+                                .width(LengthSpec::Px(8.0))
+                                .height(LengthSpec::Px(14.0))
+                                .align(AlignSpec::Center)
+                                .justify(nana_ui_core::JustifySpec::Center),
+                        )
+                        .children(
+                            widget(IconGlyph::new(ti::SEND).size(14.0).decorative()).bind(
+                                move |glyph: &mut IconGlyph| {
+                                    glyph.style.foreground = Some(if ui.bilibili.get().sending {
+                                        SemanticColorRole::Accent
+                                    } else {
+                                        SemanticColorRole::Muted
+                                    });
+                                },
+                            ),
+                        ),
+                    )
+                    .children(widget(Stack::column(0.0).padding(12.0)).children(send_switch(ui))),
+                )),
+        ))
+        .into_any()
+}
 pub fn confirm_dialog(ui: Ui) -> AnyView {
     widget(
         ConfirmDialog::new(ui.now_t("bili-send-title"), ui.now_t("bili-send-warning"))

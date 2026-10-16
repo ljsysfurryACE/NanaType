@@ -8,6 +8,13 @@ history-count = { $count ->
 
 ## Window titles
 window-input = Input
+input-management = Stream & session
+dock-tab-commands = Commands
+dock-stickers = Stickers
+dock-add-region = Add region
+dock-close-region = Close current region
+dock-more-regions = More regions
+dock-wait = Wait 0.5s
 window-display = Display
 window-history = History
 window-settings = Settings

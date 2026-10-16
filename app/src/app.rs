@@ -167,6 +167,13 @@ impl App {
         );
         let theme = skin_theme::compile(skin_theme::dark_mode(settings.skin.chrome, system_dark));
         let ui = Ui::new(Arc::new(settings.clone()), skin.clone(), locale);
+        let input_dock = geometry.input_dock.clone().unwrap_or_default().normalized();
+        ui.input_dock_regions.set(input_dock.regions);
+        ui.input_dock_selected.set(input_dock.selected);
+        ui.input_sidebar_width
+            .set(nanatype_settings::input_sidebar_width(
+                geometry.input_sidebar_width,
+            ));
         ui.chrome_dark
             .set(skin_theme::dark_mode(settings.skin.chrome, system_dark));
         ui.system_reduced_motion.set(ctx.reduced_motion());
@@ -443,10 +450,9 @@ impl App {
         );
     }
 
-    /// Tint the system title bars (settings and the chat panel) with the
-    /// chrome.
+    /// Tint ordinary windows' system title bars with the application chrome.
     pub fn tint_captions(&self) {
-        for kind in [WindowKind::Settings, WindowKind::Chat] {
+        for kind in [WindowKind::Input, WindowKind::Settings, WindowKind::Chat] {
             if let Some(handle) = self.windows.handle(kind) {
                 windows::tint_caption(handle, &self.theme);
             }
@@ -834,6 +840,21 @@ impl App {
     }
 
     pub fn save_geometry(&mut self) {
+        let selected = self.ui.input_dock_selected.get_untracked();
+        let dock_changed = self.ui.input_dock_regions.with_untracked(|regions| {
+            self.windows
+                .geometry
+                .input_dock
+                .as_ref()
+                .is_none_or(|saved| saved.selected != selected || saved.regions != *regions)
+        });
+        if dock_changed {
+            self.windows.geometry.input_dock = Some(nanatype_settings::InputDockLayout {
+                regions: self.ui.input_dock_regions.get_untracked(),
+                selected,
+            });
+            self.windows.geometry_dirty = true;
+        }
         if self.windows.geometry_dirty {
             self.windows.geometry_dirty = false;
             self.persist
@@ -1984,7 +2005,11 @@ impl App {
     fn hotkey(&mut self, action: GlobalAction) {
         match action {
             GlobalAction::Summon => {
-                if self.settings.general.input_presence == InputPresence::Summon && self.summoned {
+                let restoring = self.hotkeys.take_summon_restore();
+                if self.settings.general.input_presence == InputPresence::Summon
+                    && self.summoned
+                    && !restoring
+                {
                     // The summon key toggles the input window in summon mode.
                     self.summoned = false;
                 } else {
@@ -2040,12 +2065,7 @@ impl App {
     }
 
     pub fn window_size(&self, kind: WindowKind) -> (f32, f32) {
-        let (w, h) = windows::size_of(kind, &self.skin, &self.settings);
-        let h = match kind {
-            WindowKind::Input => h + crate::ui::p2p::card_height(self.ui),
-            _ => h,
-        };
-        (w, h)
+        windows::size_of(kind, &self.skin, &self.settings)
     }
 
     /// Native window state for this frame.
@@ -2080,7 +2100,7 @@ impl App {
     }
 
     pub fn update_result(&mut self) -> RuntimeProgramUpdate {
-        // The input window rises in as it is summoned (see `ui::motion`).
+        // Publish visibility independently of the native window's frame.
         let shown = self.input_visible();
         if self.ui.input_shown.get_untracked() != shown {
             self.ui.input_shown.set(shown);

@@ -28,8 +28,9 @@ pub enum WindowKind {
 
 /// Height of the input window's toolbar.
 pub const TOOLBAR_H: f32 = 48.0;
-/// Status line at the bottom of the input window.
-pub const STATUS_H: f32 = 32.0;
+pub const INPUT_SIZE: (f32, f32) = (1200.0, 640.0);
+pub const INPUT_ACTIONS_H: f32 = 56.0;
+pub const INPUT_MIN: (f64, f64) = (720.0, 360.0);
 /// Smallest a broadcast window may be dragged to.
 pub const OVERLAY_MIN: (f64, f64) = (160.0, 96.0);
 
@@ -116,7 +117,7 @@ impl WindowKind {
 
     pub fn material(self) -> MaterialEffect {
         match self {
-            Self::Settings | Self::Chat => MaterialEffect::Solid,
+            Self::Input | Self::Settings | Self::Chat => MaterialEffect::Solid,
             _ if debug_opaque() => MaterialEffect::Solid,
             _ => MaterialEffect::Transparent,
         }
@@ -147,7 +148,7 @@ pub fn size_of(kind: WindowKind, skin: &Skin, s: &Settings) -> (f32, f32) {
             .size
             .map(|[w, h]| (w, h))
             .unwrap_or((region[0] + pad, region[1] + pad)),
-        WindowKind::Input => (region[0] + pad, TOOLBAR_H + region[1] + pad + STATUS_H),
+        WindowKind::Input => INPUT_SIZE,
         WindowKind::History => s
             .overlays
             .history
@@ -240,6 +241,17 @@ pub fn descriptor(kind: WindowKind, title: &str, skin: &Skin, s: &Settings) -> W
     d.tag = Some(kind.tag().into());
     d.icon = icon();
     match kind {
+        WindowKind::Input => {
+            d.minimum_size = INPUT_MIN;
+            d.system_caption = true;
+            d.resizable = true;
+            d.focus_on_show = true;
+            d.always_on_top = s.overlays.input.always_on_top;
+            d.constrain_to_work_area = true;
+            d.role = WindowRole::Main;
+            // Restore the frame before showing it, like the chat panel.
+            d.visible = false;
+        }
         WindowKind::Settings => {
             d.minimum_size = (720.0, 480.0);
             d.system_caption = true;
@@ -328,7 +340,7 @@ pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool
         visible,
         pass,
         on_top: o.is_some_and(|o| o.always_on_top),
-        resizable: kind == WindowKind::Chat
+        resizable: matches!(kind, WindowKind::Input | WindowKind::Chat)
             || matches!(
                 kind,
                 WindowKind::History | WindowKind::Display | WindowKind::PeerDisplay
@@ -338,11 +350,10 @@ pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool
 }
 
 /// Whether an already-open window should be forced back to `desired`'s size.
-/// A broadcast window the user is resizing keeps the size under the pointer;
-/// the chat panel does too.
+/// Ordinary input/chat windows and unlocked broadcast windows keep the user's size.
 pub fn pins_size(kind: WindowKind, resizable: bool) -> bool {
     match kind {
-        WindowKind::Chat => false,
+        WindowKind::Input | WindowKind::Chat => false,
         WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History if resizable => false,
         _ => true,
     }
@@ -387,6 +398,22 @@ impl WindowManager {
 
     pub fn frame(&self, kind: WindowKind) -> Option<Placement> {
         self.slots.get(&kind).and_then(|s| s.frame)
+    }
+
+    /// Maximized and minimized input bounds must not replace its restored frame.
+    pub(crate) fn record_geometry(
+        &mut self,
+        kind: WindowKind,
+        geometry: nana_ui_platform::WindowGeometry,
+    ) {
+        if kind == WindowKind::Input
+            && (geometry.maximized
+                || geometry.logical_size.0 <= 0.0
+                || geometry.logical_size.1 <= 0.0)
+        {
+            return;
+        }
+        self.moved(kind, geometry.logical_position, geometry.logical_size);
     }
 
     /// The window moved or resized (logical coordinates).
@@ -463,8 +490,16 @@ impl WindowManager {
             if !slot.placed && monitors_known {
                 let (pos, size) = match (*kind, placement) {
                     // Overlays whose size follows the skin keep that size.
-                    (WindowKind::History | WindowKind::Chat, Some(p)) => {
-                        ((p.x as f32, p.y as f32), (p.w as f32, p.h as f32))
+                    (WindowKind::Input | WindowKind::History | WindowKind::Chat, Some(p)) => {
+                        let size = if *kind == WindowKind::Input {
+                            (
+                                (p.w as f32).max(INPUT_MIN.0 as f32),
+                                (p.h as f32).max(INPUT_MIN.1 as f32),
+                            )
+                        } else {
+                            (p.w as f32, p.h as f32)
+                        };
+                        ((p.x as f32, p.y as f32), size)
                     }
                     (_, Some(p)) => ((p.x as f32, p.y as f32), d.size),
                     (_, None) => (default.unwrap_or((100.0, 100.0)), d.size),
@@ -542,14 +577,65 @@ mod tests {
     }
 
     #[test]
-    fn display_and_input_share_the_dialogue_width() {
+    fn input_is_an_ordinary_window_independent_of_the_broadcast_canvas() {
         let skin = skin();
         let s = Settings::default();
-        let (dw, dh) = size_of(WindowKind::Display, &skin, &s);
-        let (iw, ih) = size_of(WindowKind::Input, &skin, &s);
-        assert_eq!(dw, iw);
+        let (dw, _) = size_of(WindowKind::Display, &skin, &s);
         assert_eq!(dw, skin.dialogue.region[0] + skin.dialogue.overscan * 2.0);
-        assert!(ih > dh, "the input adds a toolbar and an editor");
+        assert_eq!(size_of(WindowKind::Input, &skin, &s), INPUT_SIZE);
+        let descriptor = descriptor(WindowKind::Input, "input", &skin, &s);
+        assert!(descriptor.system_caption && descriptor.resizable && !descriptor.transparent);
+        assert!(!descriptor.skip_taskbar);
+        assert_eq!(descriptor.role, WindowRole::Main);
+        assert_eq!(descriptor.minimum_size, INPUT_MIN);
+        assert_eq!(WindowKind::Input.material(), MaterialEffect::Solid);
+        let mut resized = s;
+        resized.skin.overrides.region = Some([1400.0, 600.0]);
+        assert_eq!(size_of(WindowKind::Input, &skin, &resized), INPUT_SIZE);
+        assert!(desired(WindowKind::Input, &skin, &resized, false).resizable);
+    }
+
+    #[test]
+    fn input_geometry_keeps_the_restored_frame_through_maximize_and_minimize() {
+        use nana_ui_platform::WindowGeometry;
+        use nanatype_settings::MonitorKey;
+        let mut manager = WindowManager::default();
+        manager.monitors.push(MonitorInfo {
+            key: MonitorKey("test".into()),
+            work_area: [0.0, 0.0, 1920.0, 1080.0],
+            primary: true,
+        });
+        manager.slots.entry(WindowKind::Input).or_default().placed = true;
+        let normal = WindowGeometry {
+            logical_position: Some((100.0, 200.0)),
+            logical_size: (1000.0, 500.0),
+            ..Default::default()
+        };
+        manager.record_geometry(WindowKind::Input, normal);
+        let saved = manager
+            .geometry
+            .restore(&manager.monitors, "input")
+            .unwrap();
+        manager.geometry_dirty = false;
+        for transient in [
+            WindowGeometry {
+                maximized: true,
+                logical_size: (1920.0, 1080.0),
+                ..normal
+            },
+            WindowGeometry {
+                logical_size: (0.0, 0.0),
+                ..normal
+            },
+        ] {
+            manager.record_geometry(WindowKind::Input, transient);
+            assert_eq!(manager.frame(WindowKind::Input), Some(saved));
+            assert_eq!(
+                manager.geometry.restore(&manager.monitors, "input"),
+                Some(saved)
+            );
+            assert!(!manager.geometry_dirty);
+        }
     }
 
     #[test]
@@ -647,7 +733,8 @@ mod tests {
         assert!(pins_size(WindowKind::Display, false));
         assert!(pins_size(WindowKind::History, false));
         assert!(!pins_size(WindowKind::Chat, true));
-        assert!(pins_size(WindowKind::Input, false));
+        assert!(!pins_size(WindowKind::Input, false));
+        assert!(!pins_size(WindowKind::Input, true));
     }
 
     #[test]

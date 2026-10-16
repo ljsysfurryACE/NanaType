@@ -8,6 +8,80 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub const INPUT_SIDEBAR_DEFAULT: f32 = 300.0;
+pub const INPUT_SIDEBAR_MIN: f32 = 160.0;
+pub const INPUT_SIDEBAR_MAX: f32 = 560.0;
+
+pub fn input_sidebar_width(value: Option<f32>) -> f32 {
+    value
+        .filter(|v| v.is_finite())
+        .unwrap_or(INPUT_SIDEBAR_DEFAULT)
+        .clamp(INPUT_SIDEBAR_MIN, INPUT_SIDEBAR_MAX)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputDockRegionKind {
+    Commands,
+    Stickers,
+    Phrases,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputDockRegion {
+    pub id: u64,
+    pub kind: InputDockRegionKind,
+    pub number: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InputDockLayout {
+    pub regions: Vec<InputDockRegion>,
+    pub selected: u64,
+}
+
+impl Default for InputDockLayout {
+    fn default() -> Self {
+        Self {
+            regions: vec![
+                InputDockRegion {
+                    id: 0,
+                    kind: InputDockRegionKind::Commands,
+                    number: 1,
+                },
+                InputDockRegion {
+                    id: 1,
+                    kind: InputDockRegionKind::Stickers,
+                    number: 1,
+                },
+            ],
+            selected: 0,
+        }
+    }
+}
+
+impl InputDockLayout {
+    /// Keep saved order and identities; repair stale or unsupported entries.
+    pub fn normalized(mut self) -> Self {
+        let mut ids = std::collections::HashSet::new();
+        self.regions
+            .retain(|r| r.kind != InputDockRegionKind::Unknown && ids.insert(r.id));
+        if self.regions.is_empty() {
+            return Self::default();
+        }
+        for region in &mut self.regions {
+            region.number = region.number.max(1);
+        }
+        if !self.regions.iter().any(|r| r.id == self.selected) {
+            self.selected = self.regions[0].id;
+        }
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct MonitorKey(pub String);
 
@@ -33,6 +107,12 @@ pub struct SavedFrame {
 pub struct GeometryStore {
     /// Layout signature → window key → frame.
     pub profiles: BTreeMap<String, BTreeMap<String, SavedFrame>>,
+    /// Preferred logical width, independent of temporary small-window limits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_sidebar_width: Option<f32>,
+    /// Input workspace regions and active tab, shared across monitor layouts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_dock: Option<InputDockLayout>,
 }
 
 /// Placement result in logical desktop coordinates.

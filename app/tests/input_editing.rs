@@ -23,11 +23,8 @@ fn both_editors_keep_a_bounded_scrollable_viewport_across_skin_scale_and_mode_ch
             let skin = registry.load(skin_id).unwrap().skin;
             let mut settings = Settings::default();
             settings.skin.overrides.region = Some([width as f32, 200.0]);
-            let height =
-                (nanatype::windows::size_of(nanatype::windows::WindowKind::Input, &skin, &settings)
-                    .1
-                    + 36.0)
-                    .ceil() as u32;
+            let client_width = (width + 32).max(720);
+            let height = nanatype::windows::INPUT_SIZE.1 as u32;
             let ui = Ui::new(Arc::new(settings), skin, Locale::ZhCn);
             ui.chrome_dark.set(dark);
             let value = "输入框滚动测试 hello 👨‍👩‍👧‍👦\n".repeat(60);
@@ -48,7 +45,7 @@ fn both_editors_keep_a_bounded_scrollable_viewport_across_skin_scale_and_mode_ch
                 .mount_view_root(id, move || input::input_window(ui))
                 .unwrap();
             let mut session =
-                RuntimeAgentSession::new_scaled(document, width, height, scale).unwrap();
+                RuntimeAgentSession::new_scaled(document, client_width, height, scale).unwrap();
             for source_mode in [false, true, false] {
                 ui.source_mode.set(source_mode);
                 session.flush().unwrap();
@@ -67,17 +64,25 @@ fn both_editors_keep_a_bounded_scrollable_viewport_across_skin_scale_and_mode_ch
                     bounds.height > 0.0 && bounds.height <= 200.0,
                     "{skin_id} {scale} source={source_mode}: {bounds:?}"
                 );
+                let world = session.document().context().world();
+                let (left, top) = world
+                    .layout_pointer_position(node, bounds.x, bounds.y)
+                    .unwrap();
+                let (right, bottom) = world
+                    .layout_pointer_position(
+                        node,
+                        bounds.x + bounds.width,
+                        bounds.y + bounds.height,
+                    )
+                    .unwrap();
                 assert!(
-                    bounds.x >= 0.0
-                        && bounds.y >= 0.0
-                        && bounds.x + bounds.width <= width as f32 + 0.5
-                        && bounds.y + bounds.height <= height as f32 + 0.5,
+                    left >= 16.0 - 0.5
+                        && top >= 0.0
+                        && right <= client_width as f32 - 300.0 - 8.0 - 16.0 + 0.5
+                        && bottom <= height as f32 + 0.5,
                     "editor outside window: {skin_id} width={width} dark={dark} scale={scale}: {bounds:?}"
                 );
-                let (x, y) = (
-                    bounds.x + bounds.width / 2.0,
-                    bounds.y + bounds.height / 2.0,
-                );
+                let (x, y) = ((left + right) / 2.0, (top + bottom) / 2.0);
                 session.click_xy(x, y).unwrap();
                 assert_eq!(session.document().context().world().focused(id), Some(node));
                 session
