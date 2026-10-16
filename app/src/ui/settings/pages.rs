@@ -2226,20 +2226,18 @@ fn windows(ui: Ui) -> AnyView {
                 ui,
                 kind,
                 &[
-                    ("locked", "windows-lock-locked-short"),
                     ("interactive", "windows-lock-interactive"),
-                    ("edit", "windows-lock-edit"),
+                    ("locked", "windows-lock-locked-short"),
                 ],
                 |o| match o.lock {
                     Lock::Locked => "locked",
                     Lock::Interactive => "interactive",
-                    Lock::EditLayout => "edit",
                 },
                 |o, v| {
-                    o.lock = match v {
-                        "interactive" => Lock::Interactive,
-                        "edit" => Lock::EditLayout,
-                        _ => Lock::Locked,
+                    o.lock = if v == "locked" {
+                        Lock::Locked
+                    } else {
+                        Lock::Interactive
                     }
                 },
             )
@@ -2323,8 +2321,10 @@ fn windows(ui: Ui) -> AnyView {
     widget(Stack::column(SECTION_GAP))
         .children((
             section(ui, "", vec![header, show, lock, background, on_top, size]),
-            widget(Stack::column(0.0).padding_xy(INSET, space::MD))
-                .children(hint(ui.now_t("windows-input-na"))),
+            widget(Stack::column(0.0).padding_xy(INSET, space::MD)).children((
+                hint(ui.now_t("windows-layout-hint")),
+                hint(ui.now_t("windows-input-na")),
+            )),
         ))
         .into_any()
 }

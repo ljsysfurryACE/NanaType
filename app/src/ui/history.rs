@@ -840,24 +840,15 @@ pub fn history_window(ui: Ui) -> impl IntoView {
             l.padding_bottom = Some(LengthSpec::Px(mb));
             l.padding_left = Some(LengthSpec::Px(ml));
         }))
-        .bind(move |s: &mut Stack| {
-            let editing = ui
-                .settings
-                .with(|x| x.overlays.history.lock == nanatype_settings::Lock::EditLayout);
-            let accent = c(ui.skin.with(|k| k.chrome.accent));
-            let mut taken = std::mem::replace(s, Stack::row(0.0));
-            taken = taken.with_layout(|l| super::dialogue::edit_outline(l, editing, accent));
-            *s = taken;
-        })
         .children(
             widget(
                 Surface::optional_stack(panel_surface.as_ref(), Stack::fill_column(0.0))
                     .with_layout(move |l| {
                         l.position = PositionSpec::Relative;
-                        // The list would scroll under the press. Layout mode moves
-                        // the window; this view is rebuilt when the lock changes.
+                        // Window move/scale gestures take priority over scrolling
+                        // the list, including in the default interactive mode.
                         if ui.settings.with_untracked(|x| {
-                            x.overlays.history.lock == nanatype_settings::Lock::EditLayout
+                            x.overlays.history.lock != nanatype_settings::Lock::Locked
                         }) {
                             l.pointer_events = Some(PointerEventsSpec::None);
                         }

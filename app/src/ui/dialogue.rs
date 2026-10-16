@@ -493,23 +493,12 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     if source == Source::Draft {
         outer = outer.bind(move |s: &mut Stack| restyle(s, outer_layout));
     }
-    if source == Source::Display {
-        outer = outer.bind(move |s: &mut Stack| {
-            let editing = ui.settings.with(|x| {
-                ui.display_kind().overlay(x).expect("display overlay").lock
-                    == nanatype_settings::Lock::EditLayout
-            });
-            let accent = c(ui.skin.with(|k| k.chrome.accent));
-            restyle(s, |l| edit_outline(l, editing, accent));
-        });
-    }
-
-    // Layout mode drags the window, so the box must not take the press.
-    // Rebuilt when the lock changes; the outline behind it stays hittable.
+    // Moving and scaling the native window are the default gestures, so
+    // dialogue content must leave pointer and wheel events for the host.
     let drag_window = source == Source::Display
         && ui.settings.with_untracked(|s| {
             ui.display_kind().overlay(s).expect("display overlay").lock
-                == nanatype_settings::Lock::EditLayout
+                != nanatype_settings::Lock::Locked
         });
     let frame_layout = move |l: &mut LayoutStyle| {
         let fraction = if plain() {
@@ -710,21 +699,6 @@ fn text_port(ui: Ui, source: Source, content: AnyView) -> AnyView {
     })
     .children(content);
     port.node_ref(ui.text_port).children(scroller).into_any()
-}
-
-/// A dashed frame and a faint fill while a window is in layout mode, so it
-/// can be found and dragged even when empty.
-pub fn edit_outline(l: &mut LayoutStyle, editing: bool, accent: [f32; 4]) {
-    if editing {
-        l.border_width = Some(2.0);
-        l.border_color = Some(accent);
-        l.border_style = Some(nana_ui_core::BorderStyle::Dashed);
-        l.background = Some([accent[0], accent[1], accent[2], 0.08]);
-    } else {
-        l.border_width = None;
-        l.border_style = None;
-        l.background = None;
-    }
 }
 
 /// The typewriter's text, rebuilt when the display view changes.

@@ -127,7 +127,7 @@ fn v0_to_v1(old: &mut Map<String, Value>) -> Map<String, Value> {
             hotkeys.insert("continue".into(), hotkey(v));
         }
     }
-    let layout_adjust = matches!(take(old, "layout_adjust"), Some(Value::Bool(true)));
+    take(old, "layout_adjust");
     for (from, to) in [
         ("show_input", "input"),
         ("show_typewriter", "display"),
@@ -135,9 +135,6 @@ fn v0_to_v1(old: &mut Map<String, Value>) -> Map<String, Value> {
     ] {
         if let Some(v) = take(old, from) {
             overlays[to]["visible"] = v;
-        }
-        if layout_adjust {
-            overlays[to]["lock"] = "edit_layout".into();
         }
     }
     for (from, to, key) in [

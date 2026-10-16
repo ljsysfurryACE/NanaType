@@ -5,6 +5,75 @@ use nanatype_model::AfterLine;
 use crate::*;
 
 #[test]
+fn overlays_default_to_interactive_and_preserve_explicit_locks() {
+    for s in [
+        Settings::default(),
+        serde_json::from_str::<Settings>(r#"{"schema":2,"overlays":{"display":{}}}"#).unwrap(),
+    ] {
+        assert_eq!(s.overlays.display.lock, Lock::Interactive);
+        assert_eq!(s.overlays.peer_display.lock, Lock::Interactive);
+        assert_eq!(s.overlays.history.lock, Lock::Interactive);
+    }
+    let s: Settings =
+        serde_json::from_str(r#"{"schema":2,"overlays":{"display":{"lock":"locked"}}}"#).unwrap();
+    assert_eq!(s.overlays.display.lock, Lock::Locked);
+}
+
+#[test]
+fn retired_layout_mode_loads_as_interactive_and_saves_without_the_old_mode() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("settings.json");
+    for schema in [1, SETTINGS_SCHEMA] {
+        let mut overlays = serde_json::Map::new();
+        for key in ["input", "display", "peer_display", "history"] {
+            overlays.insert(
+                key.into(),
+                serde_json::json!({
+                    "lock": "edit_layout", "size": [900.0, 300.0], "visible": false
+                }),
+            );
+        }
+        fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "schema": schema, "overlays": overlays, "general": {"speaker_name": "Nana"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let s = load_settings(&path, None).value;
+        assert_eq!(s.general.speaker_name, "Nana");
+        for o in [
+            &s.overlays.input,
+            &s.overlays.display,
+            &s.overlays.peer_display,
+            &s.overlays.history,
+        ] {
+            assert_eq!(o.lock, Lock::Interactive);
+            assert_eq!(o.size, Some([900.0, 300.0]));
+            assert!(!o.visible);
+        }
+        save_json(&path, &s).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        for key in ["input", "display", "peer_display", "history"] {
+            assert_eq!(saved["overlays"][key]["lock"], "interactive");
+        }
+    }
+}
+
+#[test]
+fn legacy_layout_adjust_migrates_to_interactive() {
+    let mut value = serde_json::json!({"layout_adjust": true});
+    migrate(&mut value).unwrap();
+    assert!(value.get("layout_adjust").is_none());
+    let s: Settings = serde_json::from_value(value).unwrap();
+    for o in [&s.overlays.input, &s.overlays.display, &s.overlays.history] {
+        assert_eq!(o.lock, Lock::Interactive);
+    }
+}
+
+#[test]
 fn douyin_defaults_off_and_never_serializes_session_credentials() {
     let mut settings: Settings =
         serde_json::from_str(r#"{"schema":2,"integrations":{"bilibili":{"room":"42"}}}"#).unwrap();
@@ -501,7 +570,7 @@ fn partner_settings_round_trip_and_sanitize() {
     s.output.peer_display.name = "  Partner  ".into();
     s.output.peer_display.size = Some([0, 99999]);
     s.overlays.peer_display.size = Some([0.0, 99999.0]);
-    s.overlays.peer_display.lock = Lock::EditLayout;
+    s.overlays.peer_display.lock = Lock::Interactive;
     assert!(s.sanitize());
     assert_eq!(s.output.peer_display.name, "Partner");
     assert_eq!(s.output.peer_display.size, Some([16, 8192]));

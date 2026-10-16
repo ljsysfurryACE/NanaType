@@ -28,6 +28,8 @@ use crate::ui::overflow::{self, LineSpan, Measure, PageKey};
 use crate::ui::{danmaku, dialogue, history, input, settings};
 use crate::windows::WindowKind;
 
+mod overlay;
+
 pub struct Host {
     app: App,
     perf: Option<crate::perf::Recorder>,
@@ -836,16 +838,16 @@ impl RuntimeProgram for Host {
             WindowEvent::Moved { id, geometry } | WindowEvent::Resized { id, geometry } => {
                 if let Some(kind) = WindowKind::from_id(id) {
                     self.app.windows.record_geometry(kind, geometry);
-                    // A drag-resize in layout mode becomes the window's size.
+                    // An unlocked window keeps the size chosen by the user.
                     let (w, h) = geometry.logical_size;
                     if kind == WindowKind::Chat {
                         self.app.chat_resized(w);
                     }
-                    let editing = kind
+                    let unlocked = kind
                         .overlay(&self.app.settings)
-                        .is_some_and(|o| o.lock == nanatype_settings::Lock::EditLayout);
+                        .is_some_and(|o| o.lock != nanatype_settings::Lock::Locked);
                     let current = self.app.window_size(kind);
-                    if editing
+                    if unlocked
                         && matches!(
                             kind,
                             WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History
@@ -934,30 +936,27 @@ impl RuntimeProgram for Host {
             self.app.windows.geometry_dirty = true;
             self.app.save_geometry();
         }
-        if let InputPayload::Pointer(p) = &input.event.payload
-            && p.phase == nana_ui_platform::PointerPhase::Down
-            && p.button == 0
-            && !input.disposition.handled
+        if let Some(kind) = WindowKind::from_id(id)
+            && let Some(settings) = kind.overlay(&self.app.settings)
+            && let Some(command) = overlay::command(
+                kind,
+                settings.lock,
+                &input.event.payload,
+                input.disposition.handled,
+                self.app.windows.frame(kind),
+            )
         {
-            // Overlays have no title bar: in layout mode the interior is a
-            // drag handle. A press on the resize band never arrives here.
-            let kind = WindowKind::from_id(id);
-            let editing = kind
-                .and_then(|k| k.overlay(&self.app.settings))
-                .is_some_and(|o| o.lock == nanatype_settings::Lock::EditLayout);
-            let drag = match kind {
-                Some(WindowKind::Display | WindowKind::PeerDisplay | WindowKind::History) => {
-                    editing
-                }
-                Some(WindowKind::Input) => false,
-                _ => false,
-            };
-            if drag {
-                return Ok(RuntimeProgramUpdate {
-                    window_commands: vec![WindowCommand::Drag(id)],
-                    ..RuntimeProgramUpdate::default()
+            if let WindowCommand::SetBounds { position, size, .. } = &command {
+                let (position, size) = (*position, *size);
+                // Record immediately so consecutive wheel events accumulate
+                // before the native resize notification arrives.
+                self.app.windows.moved(kind, Some(position), size);
+                self.app.edit(|s| {
+                    kind.overlay_mut(s).expect("overlay").size = Some([size.0, size.1]);
                 });
             }
+            self.app.commands.push(command);
+            return Ok(self.finish());
         }
         let InputPayload::Key(key) = &input.event.payload else {
             return Ok(RuntimeProgramUpdate::default());

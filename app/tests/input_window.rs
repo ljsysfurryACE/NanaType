@@ -513,17 +513,16 @@ fn dock_tabs_allocate_sidebar_space_retain_content_and_keep_the_canvas_size() {
                             .unwrap();
                         let footer = keyed(&session, "input-actions").bounds;
                         let capture = |s: &mut RuntimeAgentSession, state: &str| {
-                            if locale == Locale::ZhCn {
-                                if let Some(out) =
+                            if locale == Locale::ZhCn
+                                && let Some(out) =
                                     std::env::var_os("NANATYPE_INPUT_WINDOW_CAPTURE_DIR")
-                                {
-                                    std::fs::create_dir_all(&out).unwrap();
-                                    settle(s);
-                                    s.screenshot_png(PathBuf::from(out).join(format!(
-                                        "sidebar-{skin_id}-{state}-dark{dark}-{w}x{h}-{scale}x.png"
-                                    )))
-                                    .unwrap();
-                                }
+                            {
+                                std::fs::create_dir_all(&out).unwrap();
+                                settle(s);
+                                s.screenshot_png(PathBuf::from(out).join(format!(
+                                    "sidebar-{skin_id}-{state}-dark{dark}-{w}x{h}-{scale}x.png"
+                                )))
+                                .unwrap();
                             }
                         };
                         click_keyed(&mut session, "input-dock-commands");

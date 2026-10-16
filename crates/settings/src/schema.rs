@@ -274,12 +274,11 @@ impl Default for SkinSettings {
 #[serde(rename_all = "snake_case")]
 pub enum Lock {
     /// Clicks pass through the whole window.
-    #[default]
     Locked,
-    /// Clicks pass through empty areas; content can be scrolled and dragged.
+    /// Drag anywhere to move; use the wheel to scale the window.
+    #[default]
+    #[serde(alias = "edit_layout")]
     Interactive,
-    /// Move and resize freely; handles are shown.
-    EditLayout,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
@@ -306,7 +305,7 @@ impl Default for OverlaySettings {
     fn default() -> Self {
         Self {
             visible: true,
-            lock: Lock::Locked,
+            lock: Lock::Interactive,
             always_on_top: true,
             background: CaptureBackground::Transparent,
             size: None,
@@ -314,27 +313,13 @@ impl Default for OverlaySettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Overlays {
     pub input: OverlaySettings,
     pub display: OverlaySettings,
     pub peer_display: OverlaySettings,
     pub history: OverlaySettings,
-}
-
-impl Default for Overlays {
-    fn default() -> Self {
-        Self {
-            input: OverlaySettings {
-                lock: Lock::Interactive,
-                ..OverlaySettings::default()
-            },
-            display: OverlaySettings::default(),
-            peer_display: OverlaySettings::default(),
-            history: OverlaySettings::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

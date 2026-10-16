@@ -279,7 +279,7 @@ pub fn descriptor(kind: WindowKind, title: &str, skin: &Skin, s: &Settings) -> W
             d.role = WindowRole::Tool;
             d.focus_on_show = kind == WindowKind::Input;
             d.constrain_to_work_area = true;
-            d.resizable = kind == WindowKind::History;
+            d.resizable = kind.overlay(s).is_some_and(|o| o.lock != Lock::Locked);
             d.system_caption = false;
             // The descriptor default (760×520) is clamped down to whatever
             // size the window opens at, which freezes a broadcast window
@@ -297,17 +297,10 @@ pub fn descriptor(kind: WindowKind, title: &str, skin: &Skin, s: &Settings) -> W
     d
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Pass {
-    Off,
-    Full,
-    Forward,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Desired {
     pub visible: bool,
-    pub pass: Pass,
+    pub passthrough: bool,
     pub on_top: bool,
     pub resizable: bool,
     pub size: (f32, f32),
@@ -332,21 +325,15 @@ pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool
         _ => o.is_some_and(|o| o.visible),
     };
     let lock = o.map(|o| o.lock).unwrap_or(Lock::Interactive);
-    let pass = match (kind, lock) {
-        (WindowKind::Input | WindowKind::Settings | WindowKind::Chat, _) => Pass::Off,
-        (_, Lock::Locked) => Pass::Full,
-        (_, Lock::Interactive) => Pass::Forward,
-        (_, Lock::EditLayout) => Pass::Off,
-    };
     Desired {
         visible,
-        pass,
+        passthrough: kind != WindowKind::Input && lock == Lock::Locked,
         on_top: o.is_some_and(|o| o.always_on_top),
         resizable: matches!(kind, WindowKind::Input | WindowKind::Chat)
             || matches!(
                 kind,
                 WindowKind::History | WindowKind::Display | WindowKind::PeerDisplay
-            ) && lock == Lock::EditLayout,
+            ) && lock != Lock::Locked,
         size: size_of(kind, skin, s),
     }
 }
@@ -529,14 +516,12 @@ impl WindowManager {
                     size: d.size,
                 });
             }
-            if prev.as_ref().map(|p| p.pass) != Some(d.pass) && *kind != WindowKind::Settings {
+            if prev.as_ref().map(|p| p.passthrough) != Some(d.passthrough)
+                && *kind != WindowKind::Settings
+            {
                 out.push(WindowCommand::SetMousePassthrough {
                     id,
-                    enabled: d.pass == Pass::Full,
-                });
-                out.push(WindowCommand::SetMousePassthroughForward {
-                    id,
-                    enabled: d.pass == Pass::Forward,
+                    enabled: d.passthrough,
                 });
             }
             if prev.as_ref().map(|p| p.on_top) != Some(d.on_top) && *kind != WindowKind::Settings {
@@ -657,24 +642,34 @@ mod tests {
     }
 
     #[test]
+    fn default_overlays_receive_gestures_and_keep_user_sizes() {
+        let skin = skin();
+        let s = Settings::default();
+        for kind in [
+            WindowKind::Display,
+            WindowKind::PeerDisplay,
+            WindowKind::History,
+        ] {
+            assert_eq!(kind.overlay(&s).unwrap().lock, Lock::Interactive);
+            let d = desired(kind, &skin, &s, false);
+            assert!(!d.passthrough);
+            assert!(d.resizable);
+            assert!(!pins_size(kind, d.resizable));
+            assert!(descriptor(kind, kind.key(), &skin, &s).resizable);
+        }
+    }
+
+    #[test]
     fn lock_modes_map_to_passthrough() {
         let skin = skin();
         let mut s = Settings::default();
         s.overlays.display.lock = Lock::Locked;
-        assert_eq!(
-            desired(WindowKind::Display, &skin, &s, false).pass,
-            Pass::Full
-        );
+        assert!(desired(WindowKind::Display, &skin, &s, false).passthrough);
         s.overlays.display.lock = Lock::Interactive;
-        assert_eq!(
-            desired(WindowKind::Display, &skin, &s, false).pass,
-            Pass::Forward
-        );
-        s.overlays.display.lock = Lock::EditLayout;
         let d = desired(WindowKind::Display, &skin, &s, false);
-        assert_eq!(d.pass, Pass::Off);
+        assert!(!d.passthrough);
         assert!(d.resizable);
-        assert_eq!(desired(WindowKind::Input, &skin, &s, false).pass, Pass::Off);
+        assert!(!desired(WindowKind::Input, &skin, &s, false).passthrough);
     }
 
     #[test]
@@ -690,7 +685,7 @@ mod tests {
     fn the_chat_panel_is_an_ordinary_window() {
         let skin = skin();
         let d = desired(WindowKind::Chat, &skin, &Settings::default(), false);
-        assert_eq!(d.pass, Pass::Off);
+        assert!(!d.passthrough);
         assert!(d.resizable && d.visible && !d.on_top);
         assert_eq!(WindowKind::from_id(WindowId(5)), Some(WindowKind::Chat));
     }
@@ -710,15 +705,15 @@ mod tests {
         s.overlays.display.size = Some([760.0, 200.0]);
         s.overlays.display.lock = Lock::Locked;
         s.overlays.peer_display.size = Some([500.0, 300.0]);
-        s.overlays.peer_display.lock = Lock::EditLayout;
+        s.overlays.peer_display.lock = Lock::Interactive;
         s.overlays.peer_display.visible = false;
         let own = desired(WindowKind::Display, &skin, &s, false);
         let peer = desired(WindowKind::PeerDisplay, &skin, &s, false);
         assert_eq!(own.size, (760.0, 200.0));
         assert_eq!(peer.size, (500.0, 300.0));
         assert!(own.visible && !peer.visible);
-        assert_eq!(own.pass, Pass::Full);
-        assert_eq!(peer.pass, Pass::Off);
+        assert!(own.passthrough);
+        assert!(!peer.passthrough);
         assert!(!own.resizable && peer.resizable);
         assert_ne!(WindowKind::Display.id(), WindowKind::PeerDisplay.id());
         assert_ne!(WindowKind::Display.key(), WindowKind::PeerDisplay.key());
