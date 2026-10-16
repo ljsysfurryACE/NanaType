@@ -1,4 +1,4 @@
-//! The chat panel: live chat from blivechat for the streamer to read and
+//! The chat panel: live chat from Bilibili for the streamer to read and
 //! answer. The operator can choose compact rows or neutral history cards.
 //! Both presentations share hover/focus actions and the same retained feed.
 //!
@@ -184,7 +184,7 @@ fn row_view(ui: Ui, source: RowSource, width: f32) -> AnyView {
         _ => None,
     };
     let content = dynamic(
-        move || ui.settings.with(|s| s.integrations.blivechat.panel_style),
+        move || ui.settings.with(|s| s.integrations.bilibili.panel_style),
         move |style| {
             let actions = if let RowSource::Chat(seq) = source {
                 Some(row_actions(ui, seq, *style, hovered, focused))
@@ -416,7 +416,7 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
                 } else if m.admin {
                     labels.push(ui.now_t("chat-moderator"));
                 }
-                if m.guard != nanatype_blive::Guard::None {
+                if m.guard != nanatype_bilibili::Guard::None {
                     labels.push(ui.now_t(crate::chat::guard_key(m.guard)));
                 }
                 if m.medal_level > 0 && !m.medal_name.is_empty() {
@@ -579,14 +579,14 @@ fn filter_toggle(
             .with_tooltip(ui.now_t(key)),
     )
     .bind(move |b: &mut IconButton| {
-        let on = ui.settings.with(|s| get(&s.integrations.blivechat.panel));
+        let on = ui.settings.with(|s| get(&s.integrations.bilibili.panel));
         if b.selected != on {
             b.selected = on;
         }
     })
     .on_cx(move |_, _: &Activate, cx| {
         cx.dispatch_program_all(Msg::Edit(Box::new(move |s: &mut Settings| {
-            let f = &mut s.integrations.blivechat.panel;
+            let f = &mut s.integrations.bilibili.panel;
             let on = get(f);
             set(f, !on);
         })))
@@ -608,7 +608,7 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
             .height(LengthSpec::Px(8.0)),
     )
     .bind(move |s: &mut Stack| {
-        let color = match ui.status.with(|x| x.blive_link) {
+        let color = match ui.status.with(|x| x.bilibili_link) {
             Link::Connected => [0.20, 0.72, 0.42, 1.0],
             Link::Connecting => [0.95, 0.70, 0.20, 1.0],
             Link::Error => [0.90, 0.30, 0.30, 1.0],
@@ -629,7 +629,7 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
             .truncating(),
     )
     .bind(move |t: &mut Text| {
-        let v = ui.status.with(|s| s.blive.clone());
+        let v = ui.status.with(|s| s.bilibili.clone());
         if t.value != v {
             t.value = v;
         }
@@ -748,7 +748,7 @@ fn empty(ui: Ui) -> AnyView {
         )
         .bind(move |t: &mut Text| {
             let configured = ui.settings.with(|s| {
-                let b = &s.integrations.blivechat;
+                let b = &s.integrations.bilibili;
                 b.enabled && !b.room.is_empty()
             });
             let key = if configured {
@@ -776,7 +776,7 @@ pub fn shown(rows: &[Arc<ChatMessage>], filter: &ChatFilter) -> Vec<u64> {
 pub fn chat_window(ui: Ui) -> impl IntoView {
     let feed = Arc::new(Mutex::new(Feed::default()));
     let items = computed(move || {
-        let filter = ui.settings.with(|s| s.integrations.blivechat.panel.clone());
+        let filter = ui.settings.with(|s| s.integrations.bilibili.panel.clone());
         let chat = ui.chat.get();
         let history = ui.history.get();
         feed.lock().unwrap().update(&chat, &history, &filter)
@@ -856,11 +856,13 @@ pub fn chat_window(ui: Ui) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nanatype_blive::Guard;
+    use nanatype_bilibili::Guard;
     use nanatype_model::{ChatUser, Document};
 
     fn message(seq: u64, kind: ChatKind) -> Arc<ChatMessage> {
         Arc::new(ChatMessage {
+            epoch: 0,
+            room: 0,
             seq,
             id: seq.to_string(),
             kind,

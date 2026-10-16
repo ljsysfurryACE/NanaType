@@ -2,7 +2,7 @@
 //! Every control reads the settings signal and writes back through
 //! [`Msg::Edit`], so the program stays the only owner of state.
 
-mod controls;
+pub(super) mod controls;
 mod pages;
 mod skin_grid;
 
@@ -33,12 +33,12 @@ pub(super) fn chat_panel_style(ui: Ui) -> AnyView {
                 ("history", "chat-style-history"),
             ],
         ),
-        |s| match s.integrations.blivechat.panel_style {
+        |s| match s.integrations.bilibili.panel_style {
             ChatPanelStyle::Compact => "compact".into(),
             ChatPanelStyle::History => "history".into(),
         },
         |s, v| {
-            s.integrations.blivechat.panel_style = match v {
+            s.integrations.bilibili.panel_style = match v {
                 "history" => ChatPanelStyle::History,
                 _ => ChatPanelStyle::Compact,
             }
@@ -56,12 +56,13 @@ pub enum Page {
     Hotkeys,
     Output,
     Integrations,
+    Bilibili,
     Assets,
     About,
 }
 
 impl Page {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::General,
         Self::Playback,
         Self::Skins,
@@ -70,12 +71,14 @@ impl Page {
         Self::Hotkeys,
         Self::Output,
         Self::Integrations,
+        Self::Bilibili,
         Self::Assets,
         Self::About,
     ];
 
     pub fn label_key(self) -> &'static str {
         match self {
+            Self::Bilibili => "settings-bilibili",
             Self::General => "settings-general",
             Self::Playback => "settings-playback",
             Self::Skins => "settings-skins",
@@ -92,6 +95,7 @@ impl Page {
     /// The one-line description under the page title.
     pub fn subtitle_key(self) -> &'static str {
         match self {
+            Self::Bilibili => "settings-bilibili-sub",
             Self::General => "settings-general-sub",
             Self::Playback => "settings-playback-sub",
             Self::Skins => "settings-skins-sub",
@@ -107,6 +111,7 @@ impl Page {
 
     fn icon(self) -> nana_ui::runtime::Icon {
         match self {
+            Self::Bilibili => ti::BRAND_BILIBILI,
             Self::General => ti::ADJUSTMENTS,
             Self::Playback => ti::PLAYER_PLAY,
             Self::Skins => ti::PALETTE,
@@ -193,6 +198,9 @@ fn sidebar(ui: Ui) -> AnyView {
     for (i, (caption, pages)) in GROUPS.into_iter().enumerate() {
         items.push(nav_caption(ui, caption, i == 0));
         items.extend(pages.into_iter().map(|page| nav_row(ui, page)));
+        if i == 2 {
+            items.push(nav_row(ui, Page::Bilibili));
+        }
     }
     let mut title = NodeStyle::default();
     {
@@ -237,7 +245,7 @@ fn sidebar(ui: Ui) -> AnyView {
 }
 
 pub fn settings_window(ui: Ui) -> impl IntoView {
-    widget(
+    let body = widget(
         Stack::row(0.0)
             .width(LengthSpec::Fill)
             .height(LengthSpec::Fill)
@@ -260,5 +268,17 @@ pub fn settings_window(ui: Ui) -> impl IntoView {
                 )),
             ),
         ),
+    ));
+    widget(
+        Stack::column(0.0)
+            .width(LengthSpec::Fill)
+            .height(LengthSpec::Fill)
+            .with_layout(|l| l.position = nana_ui_core::PositionSpec::Relative),
+    )
+    .children((
+        body,
+        widget(nana_ui::runtime::OverlayHost::new())
+            .css(nana_ui::runtime::view::css! {position: absolute; inset: 0;})
+            .children(super::bilibili::confirm_dialog(ui)),
     ))
 }

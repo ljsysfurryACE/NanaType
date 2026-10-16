@@ -468,7 +468,7 @@ impl Host {
             }
         }
         // The chat panel comes back if it was open at quit.
-        if self.app.settings.integrations.blivechat.panel_open {
+        if self.app.settings.integrations.bilibili.panel_open {
             self.app.open_chat();
         }
     }
@@ -638,10 +638,7 @@ fn input_shortcut(key: &nana_ui::KeyInput, source: bool, ctrl_enter: bool) -> Op
         "b" | "B" if plain => Msg::Tool(Tool::Bold),
         "i" | "I" if plain => Msg::Tool(Tool::Italic),
         "u" | "U" if plain => Msg::Tool(Tool::Underline),
-        "v" | "V" if plain && source => match clipboard_image() {
-            Some(msg) => msg,
-            None => return None,
-        },
+        "v" | "V" if plain && source => clipboard_image()?,
         _ => return None,
     };
     Some(msg)
@@ -827,6 +824,16 @@ impl RuntimeProgram for Host {
                     self.app.close_chat();
                 }
                 Some(WindowKind::Settings) | None => {
+                    if matches!(
+                        self.app.ui.bilibili.get_untracked().account,
+                        nanatype_bilibili::AccountState::Qr { .. }
+                    ) {
+                        self.app.bilibili.cancel_login();
+                    }
+                    self.app
+                        .ui
+                        .bilibili
+                        .update(|s| std::sync::Arc::make_mut(s).confirm = false);
                     return RuntimeProgramUpdate {
                         window_commands: vec![WindowCommand::Close(id)],
                         ..RuntimeProgramUpdate::default()

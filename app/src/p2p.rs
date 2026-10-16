@@ -183,14 +183,13 @@ impl App {
             return;
         }
         self.peer.sequence += 1;
-        let resources = self.peer_resources(
-            &serde_json::json!({"line": line, "avatar": self.settings.general.avatar}),
-        );
+        let resources =
+            self.peer_resources(&serde_json::json!({"line": line, "avatar": line.speaker.avatar}));
         if let Some(handle) = &self.peer.handle {
             handle.submit(
                 self.peer.sequence,
                 line.clone(),
-                self.settings.general.avatar.clone(),
+                line.speaker.avatar.clone(),
                 resources,
             );
         }
@@ -242,7 +241,7 @@ impl App {
             revision: self.peer.revision,
             captured_ms: clock::now_ms(),
             age_ms: 0,
-            name: self.settings.general.speaker_name.clone(),
+            name: self.ui.speaker.get_untracked().name,
             display,
             rows,
             portraits,

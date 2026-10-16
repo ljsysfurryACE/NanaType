@@ -50,7 +50,7 @@ impl Rig {
     ) -> Self {
         let mut settings = Settings::default();
         settings.general.speaker_name = "奈奈".into();
-        settings.integrations.blivechat.panel_style = panel_style;
+        settings.integrations.bilibili.panel_style = panel_style;
         settings.general.input_mode = if matches!(profile, "compose" | "queue") {
             InputMode::Compose
         } else {
@@ -58,8 +58,8 @@ impl Rig {
         };
         settings.history.chat.enabled = true;
         settings.history.hide_latest = HideLatest::Never;
-        settings.integrations.blivechat.enabled = true;
-        settings.integrations.blivechat.room = "21452505".into();
+        settings.integrations.bilibili.enabled = true;
+        settings.integrations.bilibili.room = "21452505".into();
         if profile == "queue" {
             settings.playback.queue = nanatype_playback::QueuePolicy::Queue;
             settings.playback.speed_scale = 4.0;
@@ -70,8 +70,8 @@ impl Rig {
         ui.source_mode.set(profile == "source");
         ui.reduced_motion.set(profile == "reduced");
         let mut status = (*ui.status.get_untracked()).clone();
-        status.blive = "blivechat · 21452505".into();
-        status.blive_link = danmaku::Link::Connected;
+        status.bilibili = "Bilibili · 21452505".into();
+        status.bilibili_link = danmaku::Link::Connected;
         ui.status.set(Arc::new(status));
         let theme = nanatype::skin_theme::compile(nanatype::skin_theme::dark_mode(
             settings.skin.chrome,
@@ -391,7 +391,7 @@ impl Rig {
                 assert!(
                     self.ui
                         .settings
-                        .with(|s| s.integrations.blivechat.panel_style)
+                        .with(|s| s.integrations.bilibili.panel_style)
                         != ChatPanelStyle::Compact
                         || button.bounds.y - buttons[0].bounds.y <= 72.0,
                     "short messages stay compact in the operator panel"
@@ -594,7 +594,7 @@ impl Rig {
         message.doc = Document::plain(
             "长弹幕第一行：检查昵称截断、文字换行与回复引用。\n第二行包含 English words，正文应在窗口内完整换行，不与操作按钮重叠。",
         );
-        message.guard = nanatype_blive::Guard::Captain;
+        message.guard = nanatype_bilibili::Guard::Captain;
         message.medal_name = "粉丝牌".into();
         message.medal_level = 12;
         let mut rows = (*self.ui.chat.get_untracked()).clone();
@@ -804,6 +804,8 @@ fn sample(n: usize) -> ChatMessage {
         ("路过的猫", "求个自我介绍～"),
     ][n];
     ChatMessage {
+        epoch: 0,
+        room: 0,
         seq: n as u64 + 1,
         id: format!("demo-{n}"),
         kind: ChatKind::Text,

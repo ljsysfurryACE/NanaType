@@ -27,6 +27,27 @@ pub fn migrate(value: &mut Value) -> Result<u32, MigrateError> {
     if from == 0 {
         *obj = v0_to_v1(obj);
     }
+    if from < 2 {
+        if let Some(integrations) = obj.get_mut("integrations").and_then(Value::as_object_mut)
+            && let Some(Value::Object(mut legacy)) = integrations.remove("blivechat")
+        {
+            if legacy
+                .remove("room_kind")
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .as_deref()
+                != Some("room_id")
+            {
+                legacy.insert("room".into(), Value::String(String::new()));
+            }
+            legacy.remove("host");
+            legacy.remove("port");
+            legacy.insert("sync_profile".into(), Value::Bool(false));
+            integrations
+                .entry("bilibili")
+                .or_insert(Value::Object(legacy));
+        }
+        obj.insert("schema".into(), json!(2));
+    }
     Ok(from)
 }
 

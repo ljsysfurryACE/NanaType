@@ -9,7 +9,7 @@ members = [
     "crates/settings",
     "crates/audio",
     "crates/bridge",
-    "crates/blive",
+    "crates/bilibili",
     "crates/core",
     "crates/p2p",
     "app",
@@ -32,7 +32,7 @@ nanatype-i18n = { path = "crates/i18n" }
 nanatype-settings = { path = "crates/settings" }
 nanatype-audio = { path = "crates/audio" }
 nanatype-bridge = { path = "crates/bridge" }
-nanatype-blive = { path = "crates/blive" }
+nanatype-bilibili = { path = "crates/bilibili" }
 nanatype-core = { path = "crates/core" }
 nanatype-p2p = { path = "crates/p2p" }
 nana-ui-platform = { git = "https://github.com/sena-nana/NanaUI", rev = "8fca5bb6850e959608d371f7b0c01e285773f543", default-features = false }

@@ -54,6 +54,8 @@ pub enum Cmd {
     CueFired(CueKind),
     SetSettings(Box<Settings>),
     SetSkin(Arc<Skin>),
+    SetSpeaker(Option<Speaker>),
+    RemoveHistoryRows(Vec<u64>),
     /// A row from another message source (live chat).
     External(HistoryItem),
     ClearHistory,
@@ -159,6 +161,7 @@ pub struct Core {
     draft_meta: LineMeta,
     /// The chat message the next sent line answers.
     reply: Option<ChatRef>,
+    speaker_override: Option<Speaker>,
 }
 
 fn global(generation: u64, epoch: u64) -> u64 {
@@ -190,6 +193,7 @@ impl Core {
             speaking: false,
             draft_meta: LineMeta::default(),
             reply: None,
+            speaker_override: None,
         };
         core.refresh_params();
         core.display.entrance = core.entrance();
@@ -260,8 +264,14 @@ impl Core {
     }
 
     fn speaker(&self) -> Speaker {
+        if let Some(speaker) = &self.speaker_override {
+            let mut speaker = speaker.clone();
+            speaker.portrait = self.display.portrait.clone();
+            return speaker;
+        }
         Speaker {
             name: self.settings.general.speaker_name.clone(),
+            avatar: self.settings.general.avatar.clone(),
             portrait: self.display.portrait.clone(),
         }
     }
@@ -310,6 +320,21 @@ impl Core {
             }
             Cmd::CueFired(kind) => self.cue_fired(kind, now, &mut fx),
             Cmd::SetSettings(settings) => self.set_settings(*settings, now, &mut fx),
+            Cmd::SetSpeaker(speaker) => {
+                self.speaker_override = speaker;
+                if self.mode() == InputMode::Mirror
+                    && !self.mirror_committed
+                    && self.display.line.is_none()
+                {
+                    self.display.speaker = self.speaker();
+                    self.touch_display(&mut fx);
+                }
+            }
+            Cmd::RemoveHistoryRows(keys) => {
+                self.history
+                    .retain(|row| row.item.source.is_local() || !keys.contains(&row.key));
+                fx.history_changed = true;
+            }
             Cmd::SetSkin(skin) => {
                 self.skin = skin;
                 self.refresh_params();
@@ -576,7 +601,7 @@ impl Core {
             kind: SourceKind::Typewriter,
             line: Some(line.id),
             author: line.speaker.name.clone(),
-            avatar: self.settings.general.avatar.clone(),
+            avatar: line.speaker.avatar.clone(),
             doc: line.doc.clone(),
             at: unix_millis(),
             uid: None,

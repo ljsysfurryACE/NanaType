@@ -138,7 +138,7 @@ struct SweepRenderer {
 
 fn bytes(values: &[f32; 12]) -> [u8; 48] {
     let mut bytes = [0; 48];
-    for (dest, value) in bytes.chunks_exact_mut(4).zip(values) {
+    for (dest, value) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(values) {
         dest.copy_from_slice(&value.to_ne_bytes());
     }
     bytes
@@ -480,8 +480,10 @@ fn coverage(surface: &Surface, size: [u32; 2], scale: f32) -> Vec<u8> {
             pixmap.fill_path(path, &paint, fill_rule(even_odd), transform, None);
         }
         for (i, (target, mask)) in out
-            .chunks_exact_mut(4)
-            .zip(pixmap.data().chunks_exact(4))
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(pixmap.data().as_chunks::<4>().0.iter())
             .enumerate()
         {
             let ink = if stroke.is_some() {
@@ -723,7 +725,7 @@ mod tests {
             ..Default::default()
         };
         let masked = coverage(&surface, [100, 60], 1.0);
-        assert!(masked.chunks_exact(4).any(|p| p[3] > 0));
+        assert!(masked.as_chunks::<4>().0.iter().any(|p| p[3] > 0));
         assert_eq!(masked[3], 0);
         surface.contour = None;
         surface.polygon = None;
@@ -790,7 +792,9 @@ mod tests {
         surface.frame = None;
         assert!(
             coverage(&surface, [80, 40], 1.0)
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .any(|p| p[3] > 0)
         );
     }

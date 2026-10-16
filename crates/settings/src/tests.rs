@@ -34,12 +34,37 @@ const V0: &str = r#"{
 }"#;
 
 #[test]
+fn legacy_chat_preferences_migrate_without_service_or_auth_code() {
+    for (kind, room, expected) in [("room_id", "123", "123"), ("auth_code", "secret-code", "")] {
+        let mut value = serde_json::json!({"schema":1,"integrations":{"blivechat":{"enabled":true,"room_kind":kind,"room":room,"host":"127.0.0.1","port":12450,"panel_style":"history","panel_open":true,"panel":{"gift":false}}}});
+        assert_eq!(migrate(&mut value).unwrap(), 1);
+        let settings: Settings = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(settings.schema, 2);
+        assert_eq!(settings.integrations.bilibili.room, expected);
+        assert_eq!(
+            settings.integrations.bilibili.panel_style,
+            ChatPanelStyle::History
+        );
+        assert!(settings.integrations.bilibili.panel_open);
+        assert!(!settings.integrations.bilibili.panel.gift);
+        assert!(!settings.integrations.bilibili.sync_profile);
+        assert!(value["integrations"].get("blivechat").is_none());
+        assert!(value["integrations"]["bilibili"].get("host").is_none());
+        assert!(
+            !serde_json::to_string(&value)
+                .unwrap()
+                .contains("secret-code")
+        );
+    }
+}
+
+#[test]
 fn chat_panel_style_defaults_and_round_trips_without_a_schema_change() {
     let old: Settings =
-        serde_json::from_str(r#"{"schema":1,"integrations":{"blivechat":{"panel_open":true}}}"#)
+        serde_json::from_str(r#"{"schema":1,"integrations":{"bilibili":{"panel_open":true}}}"#)
             .unwrap();
     assert_eq!(
-        old.integrations.blivechat.panel_style,
+        old.integrations.bilibili.panel_style,
         ChatPanelStyle::Compact
     );
     let tmp = tempfile::tempdir().unwrap();
@@ -49,13 +74,13 @@ fn chat_panel_style_defaults_and_round_trips_without_a_schema_change() {
         (ChatPanelStyle::History, "history"),
     ] {
         let mut settings = old.clone();
-        settings.integrations.blivechat.panel_style = style;
+        settings.integrations.bilibili.panel_style = style;
         save_json(&path, &settings).unwrap();
         let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(json["integrations"]["blivechat"]["panel_style"], wire);
+        assert_eq!(json["integrations"]["bilibili"]["panel_style"], wire);
         let loaded = load_settings(&path, None).value;
-        assert_eq!(loaded.integrations.blivechat.panel_style, style);
-        assert!(loaded.integrations.blivechat.panel_open);
+        assert_eq!(loaded.integrations.bilibili.panel_style, style);
+        assert!(loaded.integrations.bilibili.panel_open);
         assert_eq!(loaded.schema, SETTINGS_SCHEMA);
     }
 }
@@ -111,7 +136,7 @@ fn unknown_fields_survive_a_round_trip() {
     )
     .unwrap();
     let loaded = load_settings(&path, None);
-    assert!(matches!(loaded.note, LoadNote::Loaded));
+    assert!(matches!(loaded.note, LoadNote::Migrated { .. }));
     assert_eq!(loaded.value.general.speaker_name, "a");
     assert!(loaded.value.unknown.contains_key("future_feature"));
     save_json(&path, &loaded.value).unwrap();
@@ -134,13 +159,13 @@ fn missing_fields_take_defaults_instead_of_resetting_everything() {
 }
 
 #[test]
-fn files_from_before_blivechat_get_its_defaults() {
+fn files_from_before_bilibili_get_its_defaults() {
     let json = r#"{"schema": 1, "integrations": {"osc": {"enabled": true}}}"#;
     let s: Settings = serde_json::from_str(json).unwrap();
-    let b = &s.integrations.blivechat;
-    assert!(!b.enabled);
-    assert_eq!((b.host.as_str(), b.port), ("127.0.0.1", 12450));
-    assert_eq!(b.room_kind, BliveRoomKind::AuthCode);
+    let b = &s.integrations.bilibili;
+    assert!(b.enabled);
+    assert!(!b.sync_profile);
+    assert!(b.room.is_empty());
     assert!(b.quote_on_display && b.panel.text && b.panel.gift);
     assert!(
         !s.history.chat.enabled,
@@ -154,15 +179,14 @@ fn files_from_before_blivechat_get_its_defaults() {
 }
 
 #[test]
-fn blivechat_values_are_clamped() {
+fn bilibili_values_are_clamped() {
     let mut s = Settings::default();
-    let b = &mut s.integrations.blivechat;
-    b.host = "  ".into();
-    b.port = 0;
+    let b = &mut s.integrations.bilibili;
+
     b.room = " 123 ".into();
     assert!(s.sanitize());
-    let b = &s.integrations.blivechat;
-    assert_eq!((b.host.as_str(), b.port), ("127.0.0.1", 12450));
+    let b = &s.integrations.bilibili;
+    assert!(!b.sync_profile);
     assert_eq!(b.room, "123");
 }
 

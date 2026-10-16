@@ -21,6 +21,9 @@ impl LineId {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Speaker {
     pub name: String,
+    /// Avatar captured at submission; independent from later account changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<String>,
     /// Portrait variant active when the line started.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub portrait: Option<String>,

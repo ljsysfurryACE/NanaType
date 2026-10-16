@@ -891,7 +891,9 @@ fn inline_images_and_markers_survive_clipboard_undo_scroll_and_resource_refresh(
     let (_, pixels) = f.session.screenshot_rgba().unwrap();
     assert!(
         pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[0] > 245 && p[1] < 35 && p[2] > 75 && p[2] < 95)
             .count()
             > 1000,

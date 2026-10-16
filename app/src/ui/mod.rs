@@ -1,6 +1,7 @@
 //! Views. Every window reads the same [`Ui`] signals, so the input preview,
 //! the typewriter and the history list always agree on how a line looks.
 
+pub mod bilibili;
 pub mod danmaku;
 pub mod dialogue;
 pub mod feedback;
@@ -77,9 +78,9 @@ pub struct Status {
     pub vts_hotkeys: Vec<(String, String)>,
     pub osc: LinkState,
     pub ws: LinkState,
-    /// blivechat: what the panel and the settings say, and the dot's state.
-    pub blive: String,
-    pub blive_link: danmaku::Link,
+    /// Bilibili: what the panel and the settings say, and the dot's state.
+    pub bilibili: String,
+    pub bilibili_link: danmaku::Link,
     pub spout_display: LinkState,
     pub spout_peer_display: LinkState,
     pub spout_history: LinkState,
@@ -134,6 +135,8 @@ pub struct Source {
 /// Shared reactive state. `Copy`: views capture it freely.
 #[derive(Clone, Copy)]
 pub struct Ui {
+    pub bilibili: Signal<Arc<crate::app::bilibili::State>>,
+    pub speaker: Signal<nanatype_model::Speaker>,
     pub locale: Signal<Locale>,
     pub settings: Signal<Arc<Settings>>,
     pub skin: Signal<Arc<Skin>>,
@@ -219,7 +222,14 @@ impl Ui {
                 history.with(|rows| rows.iter().enumerate().map(|(i, r)| (r.key, i)).collect()),
             )
         });
+        let speaker = nanatype_model::Speaker {
+            name: settings.general.speaker_name.clone(),
+            avatar: settings.general.avatar.clone(),
+            portrait: None,
+        };
         Self {
+            bilibili: signal(Arc::new(crate::app::bilibili::State::default())),
+            speaker: signal(speaker),
             chrome_dark: signal(crate::skin_theme::dark_mode(settings.skin.chrome, false)),
             locale: signal(locale),
             settings: signal(settings),

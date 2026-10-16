@@ -1,0 +1,27 @@
+[package]
+name = "nanatype-bilibili"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Authenticated Bilibili live chat and typewriter delivery"
+
+[dependencies]
+nanatype-model.workspace = true
+serde.workspace = true
+unicode-segmentation.workspace = true
+ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
+md-5 = "0.10"
+brotli = "8"
+flate2 = "1"
+serde_json.workspace = true
+tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+crossbeam-channel = "0.5"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[dev-dependencies]
+tempfile = "3"

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::chat::ChatMessage;
 use crossbeam_channel::{Sender, bounded, unbounded};
-use nanatype_blive::ChatEvent;
+use nanatype_bilibili::ChatEvent;
 use nanatype_model::AssetRef;
 
 const AVATAR_TTL: Duration = Duration::from_secs(3 * 24 * 3600);
@@ -19,8 +19,31 @@ const AVATAR_PX: u32 = 128;
 const EMOTE_PX: u32 = 160;
 const WORKERS: usize = 4;
 
+/// Account artwork uses the same bounded image format/cache as viewer artwork.
+pub fn cache_profile_avatar(
+    dir: PathBuf,
+    uid: &str,
+    url: &str,
+    ready: impl Fn(AssetRef) + Send + 'static,
+) -> Option<AssetRef> {
+    if url.is_empty() {
+        return None;
+    }
+    let name = format!("bili-profile-{uid}-{:016x}", fnv(url));
+    let asset = AssetRef::Blob(name.clone());
+    let result = asset.clone();
+    let url = url.to_owned();
+    thread::spawn(move || {
+        let path = dir.join(format!("{name}.png"));
+        if path.exists() || Saver::new().download(&url, &path, AVATAR_PX).is_ok() {
+            ready(asset);
+        }
+    });
+    Some(result)
+}
+
 pub struct ChatAssets {
-    tx: Sender<ChatEvent>,
+    tx: Sender<(u64, u64, ChatEvent)>,
 }
 
 #[derive(Clone)]
@@ -88,7 +111,7 @@ impl ChatAssets {
         deliver: impl Fn(ChatMessage) + Send + 'static,
         ready: impl Fn(AssetRef) + Send + Sync + 'static,
     ) -> Self {
-        let (tx, rx) = unbounded::<ChatEvent>();
+        let (tx, rx) = unbounded::<(u64, u64, ChatEvent)>();
         let (jobs, work) = bounded::<Job>(512);
         let requests = Arc::new(Mutex::new(Requests::default()));
         let ready = Arc::new(ready);
@@ -123,7 +146,7 @@ impl ChatAssets {
             .name("nanatype-chat-ingest".into())
             .spawn(move || {
                 let mut next = 1u64;
-                for event in rx {
+                for (epoch, room, event) in rx {
                     let (avatar, emote) = match &event {
                         ChatEvent::Text {
                             author, emoticon, ..
@@ -138,12 +161,14 @@ impl ChatAssets {
                         }
                         _ => continue,
                     };
-                    if let Some(message) = ChatMessage::from_event(
+                    if let Some(mut message) = ChatMessage::from_event(
                         event,
                         avatar.as_ref().map(Job::asset),
                         emote.as_ref().map(Job::asset),
                         next,
                     ) {
+                        message.epoch = epoch;
+                        message.room = room;
                         next += 1;
                         // Deliver before scheduling any network work, preserving arrival order.
                         deliver(message);
@@ -159,7 +184,7 @@ impl ChatAssets {
             .expect("spawn chat ingest");
         Self { tx }
     }
-    pub fn sender(&self) -> Sender<ChatEvent> {
+    pub fn sender(&self) -> Sender<(u64, u64, ChatEvent)> {
         self.tx.clone()
     }
 }
@@ -224,7 +249,7 @@ fn fnv(text: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nanatype_blive::Author;
+    use nanatype_bilibili::Author;
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
@@ -283,10 +308,16 @@ mod tests {
                 let _ = ready.send(a);
             },
         );
-        service.sender().send(event(url.clone(), 1)).unwrap();
+        service
+            .sender()
+            .send((0, 0, event(url.clone(), 1)))
+            .unwrap();
         accepted.recv_timeout(Duration::from_secs(2)).unwrap();
         for n in 2..=20 {
-            service.sender().send(event(url.clone(), n)).unwrap();
+            service
+                .sender()
+                .send((0, 0, event(url.clone(), n)))
+                .unwrap();
         }
         for n in 1..=20 {
             let m = got
@@ -333,7 +364,7 @@ mod tests {
                 let _ = ready.send(a);
             },
         );
-        service.sender().send(event(url, 1)).unwrap();
+        service.sender().send((0, 0, event(url, 1))).unwrap();
         let message = got.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(
             Some(assets.recv_timeout(Duration::from_secs(2)).unwrap()),

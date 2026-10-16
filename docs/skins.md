@@ -192,7 +192,7 @@ space_ms = 50                     # 每个空格
 punct = { comma_ms = 120, stop_ms = 260, ellipsis_ms = 300 }
 entrance = { kind = "fade", ms = 140 }   # none | fade | pop | slide_up
 
-[history]                         # 历史记录（blivechat 风格）
+[history]                         # 历史记录（直播弹幕风格）
 width = 420
 height = 560
 avatar = { shape = "circle", size = 40, ring_color = "#ffffff", ring_width = 2 }   # circle | square | none
@@ -237,7 +237,7 @@ color = "#00000026"
 color = "#3a2230"
 size = 18
 
-[history.chat]                    # blivechat 弹幕行（设置 › 历史记录 › 弹幕 打开后出现）
+[history.chat]                    # B 站弹幕行（设置 › 历史记录 › 弹幕 打开后出现）
 text_scale = 0.88                 # 弹幕文字相对 history.text 的大小
 bubble_opacity = 0.7              # 弹幕气泡相对 bubble_color 的不透明度
 
@@ -252,7 +252,7 @@ opacity = 0.8
 # 透明历史中未设描边的浮空昵称、时间和无底板正文也采用细对比描边，保留原配色。
 
 [dialogue.reply]                  # 对话框上的回复引用，字段同 [history.reply]
-visible = true                    # 用户也可在 设置 › 联动 › blivechat 里关闭
+visible = true                    # 用户也可在 设置 › B 站直播 › 弹幕面板 里关闭
 
 [mention]                         # 台词里的 [at=…]：带头像和昵称的标签，输入框、对话框和历史记录一致
 fill = "accent"                   # 标签底色，可写颜色角色；与 text_color 对比不足 4.5:1 时自动加深

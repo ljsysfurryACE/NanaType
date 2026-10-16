@@ -6,7 +6,7 @@ use nana_ui::runtime::view::{AnyView, IntoView, Signal, dynamic, signal, widget}
 use nana_ui::runtime::{
     ActionMenu, ActionMenuItem, Activate, Button, Chip, IconButton, IconGlyph, ListItem,
     PopoverClosed, PopoverToggled, ScrollAxes, ScrollView, Select, SelectChanged, SelectOption,
-    Stack, StatusBadge, Switch, Text, TextChanged, TextInput, TextSubmitted, ToggleChanged,
+    Stack, StatusBadge, Switch, Text, TextChanged, TextInput, ToggleChanged,
 };
 use nana_ui::theme::{space, type_scale};
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
@@ -18,8 +18,8 @@ use nanatype_i18n::Locale;
 use nanatype_model::{AfterLine, EntranceKind, Overflow, VtsReset};
 use nanatype_playback::QueuePolicy;
 use nanatype_settings::{
-    BliveRoomKind, CaptureBackground, ChromeMode, HideLatest, HistorySync, InputMode,
-    InputPresence, Lock, QuickPhrase, SendKey, Settings,
+    CaptureBackground, ChromeMode, HideLatest, HistorySync, InputMode, InputPresence, Lock,
+    QuickPhrase, SendKey, Settings,
 };
 
 use super::Page;
@@ -32,6 +32,7 @@ use crate::windows::WindowKind;
 
 pub fn page(ui: Ui, page: Page) -> AnyView {
     let body = match page {
+        Page::Bilibili => super::super::bilibili::settings_page(ui),
         Page::General => general(ui),
         Page::Playback => playback(ui),
         Page::Skins => skins(ui),
@@ -97,19 +98,52 @@ fn language_select(ui: Ui) -> AnyView {
 
 /// The speaker-name field, bound to the setting.
 fn speaker_field(ui: Ui) -> AnyView {
-    text(
-        ui,
-        String::new(),
-        220.0,
-        |s| s.general.speaker_name.clone(),
-        |s, v| s.general.speaker_name = v,
+    dynamic(
+        move || {
+            ui.settings.with(|s| s.integrations.bilibili.sync_profile)
+                && matches!(
+                    ui.bilibili.get().account,
+                    nanatype_bilibili::AccountState::Ready(_)
+                )
+        },
+        move |bound| {
+            if *bound {
+                dynamic(
+                    move || ui.speaker.get().name,
+                    move |name| {
+                        widget(
+                            Text::new(name.clone())
+                                .style(text_style(type_scale::BODY, type_scale::REGULAR)),
+                        )
+                        .into_any()
+                    },
+                )
+                .into_any()
+            } else {
+                text(
+                    ui,
+                    String::new(),
+                    220.0,
+                    |s| s.general.speaker_name.clone(),
+                    |s, v| s.general.speaker_name = v,
+                )
+            }
+        },
     )
+    .into_any()
 }
 
 fn general(ui: Ui) -> AnyView {
     let avatar_row = {
         let has = ui.settings.get_untracked().general.avatar.is_some();
         widget(Stack::row(8.0))
+            .visible(move || {
+                !(ui.settings.with(|s| s.integrations.bilibili.sync_profile)
+                    && matches!(
+                        ui.bilibili.get().account,
+                        nanatype_bilibili::AccountState::Ready(_)
+                    ))
+            })
             .children((
                 button(ui, "general-avatar-pick", || {
                     Msg::PickFile(FileTarget::Avatar)
@@ -166,6 +200,7 @@ fn general(ui: Ui) -> AnyView {
                         speaker_field(ui),
                     ),
                     row(ui, "general-avatar", None, avatar_row),
+                    super::super::bilibili::identity_hint(ui),
                 ],
             ),
             section_with(
@@ -2510,144 +2545,6 @@ fn page_link(ui: Ui, page: Page) -> AnyView {
     .into_any()
 }
 
-/// The blivechat room: typed freely, applied on Enter or with the button so
-/// a half-typed code does not connect.
-fn room_field(ui: Ui) -> AnyView {
-    let draft = signal(
-        ui.settings
-            .with_untracked(|s| s.integrations.blivechat.room.clone()),
-    );
-    let apply = move || {
-        let room = draft.get_untracked().trim().to_owned();
-        Msg::Edit(Box::new(move |s: &mut Settings| {
-            s.integrations.blivechat.room = room;
-            if !s.integrations.blivechat.room.is_empty() {
-                s.integrations.blivechat.enabled = true;
-            }
-        }))
-    };
-    widget(Stack::row(6.0).align(AlignSpec::Center))
-        .children((
-            widget(Stack::row(0.0).width(LengthSpec::Px(200.0))).children(
-                widget(
-                    TextInput::new(draft.get_untracked())
-                        .placeholder(ui.now_t("int-blive-room-placeholder"))
-                        .size(ControlSize::Small),
-                )
-                .on(move |e: &TextChanged| draft.set(e.value.to_string()))
-                .on_cx(move |_, _: &TextSubmitted, cx| cx.dispatch_program_all(apply())),
-            ),
-            widget(
-                Button::new(ui.now_t("int-blive-connect"))
-                    .kind(ButtonKind::Primary)
-                    .size(ControlSize::Small),
-            )
-            .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(apply())),
-        ))
-        .into_any()
-}
-
-fn blivechat(ui: Ui) -> AnyView {
-    let children = vec![
-        row(
-            ui,
-            "int-blive-room-kind",
-            Some("int-blive-room-kind-hint"),
-            segmented(
-                ui,
-                select_keys(
-                    ui,
-                    &[
-                        ("auth_code", "int-blive-auth-code"),
-                        ("room_id", "int-blive-room-id"),
-                    ],
-                ),
-                |s| match s.integrations.blivechat.room_kind {
-                    BliveRoomKind::AuthCode => "auth_code".into(),
-                    BliveRoomKind::RoomId => "room_id".into(),
-                },
-                |s, v| {
-                    s.integrations.blivechat.room_kind = match v {
-                        "room_id" => BliveRoomKind::RoomId,
-                        _ => BliveRoomKind::AuthCode,
-                    }
-                },
-            ),
-        ),
-        row(ui, "int-blive-room", None, room_field(ui)),
-        row(
-            ui,
-            "int-blive-host",
-            Some("int-blive-host-hint"),
-            code_text(
-                ui,
-                "127.0.0.1".into(),
-                180.0,
-                |s| s.integrations.blivechat.host.clone(),
-                |s, v| s.integrations.blivechat.host = v,
-            ),
-        ),
-        row(
-            ui,
-            "int-blive-port",
-            None,
-            port(
-                ui,
-                |s| s.integrations.blivechat.port,
-                |s, v| s.integrations.blivechat.port = v,
-            ),
-        ),
-        row(
-            ui,
-            "int-blive-panel",
-            Some("int-blive-panel-hint"),
-            button(ui, "int-blive-open-panel", || {
-                Msg::ShowWindow(WindowKind::Chat)
-            }),
-        ),
-        row(
-            ui,
-            "chat-panel-style",
-            Some("chat-panel-style-hint"),
-            super::chat_panel_style(ui),
-        ),
-        row(
-            ui,
-            "int-blive-quote-display",
-            Some("int-blive-quote-display-hint"),
-            switch(
-                ui,
-                |s| s.integrations.blivechat.quote_on_display,
-                |s, v| s.integrations.blivechat.quote_on_display = v,
-            ),
-        ),
-    ];
-    let rows = vec![
-        row(
-            ui,
-            "int-blive",
-            Some("int-blive-hint"),
-            widget(Stack::row(10.0).align(AlignSpec::Center))
-                .children((
-                    blive_badge(ui),
-                    switch(
-                        ui,
-                        |s| s.integrations.blivechat.enabled,
-                        |s, v| s.integrations.blivechat.enabled = v,
-                    ),
-                ))
-                .into_any(),
-        ),
-        when_on(
-            ui,
-            |s| s.integrations.blivechat.enabled,
-            children,
-            "int-off-hint",
-        ),
-    ];
-    section(ui, "int-blive-section", rows)
-}
-
 /// What is wrong with an action's binding, worst first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyIssue {
@@ -3388,7 +3285,6 @@ fn vts_mapping(ui: Ui) -> AnyView {
 fn integrations(ui: Ui) -> AnyView {
     widget(Stack::column(SECTION_GAP))
         .children((
-            blivechat(ui),
             section(
                 ui,
                 "int-vts",

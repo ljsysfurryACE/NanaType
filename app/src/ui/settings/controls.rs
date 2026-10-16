@@ -216,7 +216,7 @@ pub fn links_pulsing(ui: Ui) -> bool {
             ]
             .into_iter()
             .any(|l| *l == LinkState::Connecting)
-                || s.blive_link == crate::ui::danmaku::Link::Connecting
+                || s.bilibili_link == crate::ui::danmaku::Link::Connecting
         })
 }
 
@@ -245,19 +245,19 @@ pub fn link_badge(ui: Ui, get: fn(&Status) -> &LinkState) -> AnyView {
     })
 }
 
-/// blivechat's badge: its own status line and the chat panel's dot state,
+/// Bilibili's badge: its own status line and the chat panel's dot state,
 /// drawn like the other links.
-pub fn blive_badge(ui: Ui) -> AnyView {
+pub fn bilibili_badge(ui: Ui) -> AnyView {
     use crate::ui::danmaku::Link;
     let describe = move || {
         let locale = ui.locale.get();
         ui.status.with(|s| {
-            let text = if s.blive.is_empty() {
+            let text = if s.bilibili.is_empty() {
                 I18N.t_in(locale, "int-status-off")
             } else {
-                s.blive.clone()
+                s.bilibili.clone()
             };
-            let tone = match s.blive_link {
+            let tone = match s.bilibili_link {
                 Link::Off => StatusTone::Neutral,
                 Link::Connecting => StatusTone::Warning,
                 Link::Connected => StatusTone::Success,
@@ -267,7 +267,7 @@ pub fn blive_badge(ui: Ui) -> AnyView {
         })
     };
     breathing_badge(ui, describe, move || {
-        ui.status.with(|st| st.blive_link == Link::Connecting)
+        ui.status.with(|st| st.bilibili_link == Link::Connecting)
     })
 }
 

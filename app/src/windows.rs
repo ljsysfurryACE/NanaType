@@ -29,7 +29,7 @@ pub enum WindowKind {
 /// Height of the input window's toolbar.
 pub const TOOLBAR_H: f32 = 48.0;
 /// Status line at the bottom of the input window.
-pub const STATUS_H: f32 = 26.0;
+pub const STATUS_H: f32 = 32.0;
 /// Smallest a broadcast window may be dragged to.
 pub const OVERLAY_MIN: (f64, f64) = (160.0, 96.0);
 

@@ -230,11 +230,11 @@ fn main() {
                                         Some(&renderers),
                                     )
                                     .unwrap();
-                                if frame >= 60 {
-                                    if let Some(work) = painter.last_gpu_work() {
-                                        draws += work.draw_calls;
-                                        uploaded += work.gpu_upload_bytes;
-                                    }
+                                if frame >= 60
+                                    && let Some(work) = painter.last_gpu_work()
+                                {
+                                    draws += work.draw_calls;
+                                    uploaded += work.gpu_upload_bytes;
                                 }
                                 count += 1;
                             }

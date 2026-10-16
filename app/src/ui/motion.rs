@@ -151,31 +151,6 @@ pub fn press<V: View>(cx: &mut ViewContext<'_, V>, reduced: bool) {
     cx.node().timeline(MotionGraph::track(track)).start();
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Checked at compile time: the tokens are constants.
-    const _: () = assert!(PRESS_MS < HOVER_MS && HOVER_MS < STATE_MS && STATE_MS < ENTER_MS);
-
-    #[test]
-    fn the_settle_overshoots_and_lands() {
-        let peak = (1..100)
-            .map(|i| SETTLE.sample(i as f32 / 100.0))
-            .fold(0.0_f32, f32::max);
-        assert!(peak > 1.0, "a settle passes its place: {peak}");
-        assert!((SETTLE.sample(1.0) - 1.0).abs() < 1e-4);
-    }
-
-    #[test]
-    fn rest_is_in_place_when_shown() {
-        let (o, t) = rest(true);
-        assert_eq!((o, t.f), (1.0, 0.0));
-        let (o, t) = rest(false);
-        assert_eq!((o, t.f), (0.0, ENTER_RISE));
-    }
-}
-
 /// Retained samples of a periodic curve. Only the compositor clock advances
 /// after mounting; samples never write back into a widget's logical style.
 /// 64 linear segments keep sine error below 0.13% of its amplitude.
@@ -241,4 +216,29 @@ pub fn periodic(
             .start();
         let _ = cx.commit_mutations(queue);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Checked at compile time: the tokens are constants.
+    const _: () = assert!(PRESS_MS < HOVER_MS && HOVER_MS < STATE_MS && STATE_MS < ENTER_MS);
+
+    #[test]
+    fn the_settle_overshoots_and_lands() {
+        let peak = (1..100)
+            .map(|i| SETTLE.sample(i as f32 / 100.0))
+            .fold(0.0_f32, f32::max);
+        assert!(peak > 1.0, "a settle passes its place: {peak}");
+        assert!((SETTLE.sample(1.0) - 1.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn rest_is_in_place_when_shown() {
+        let (o, t) = rest(true);
+        assert_eq!((o, t.f), (1.0, 0.0));
+        let (o, t) = rest(false);
+        assert_eq!((o, t.f), (0.0, ENTER_RISE));
+    }
 }

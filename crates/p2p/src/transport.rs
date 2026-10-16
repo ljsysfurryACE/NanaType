@@ -824,6 +824,7 @@ mod tests {
         let line = Line::new(
             Document::new(),
             Speaker {
+                avatar: None,
                 name: "Host".into(),
                 portrait: None,
             },

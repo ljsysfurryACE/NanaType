@@ -1,4 +1,5 @@
 //! Application state and the single update function.
+pub mod bilibili;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -10,7 +11,7 @@ use nana_ui::{CompiledTheme, RuntimeProgramContext, RuntimeProgramUpdate};
 use nana_ui_core::{FileDialogKind, FileDialogRequest, FileFilter};
 use nana_ui_platform::host::WindowCommand;
 use nanatype_audio::{AudioEngine, AudioHandle, AudioStatus, Bus, Scheduled};
-use nanatype_blive::{BliveConfig, BliveHandle, BliveStatus, RoomKey};
+use nanatype_bilibili::{BilibiliConfig, BilibiliHandle};
 use nanatype_bridge::{
     BridgeEvent, BridgeHandle, BridgeStatus, LipSync, OscConfig, Sink, VtsConfig, WsConfig,
 };
@@ -60,11 +61,12 @@ pub struct App {
     pub audio: AudioHandle,
     pub bank: Bank,
     pub bridge: BridgeHandle,
-    /// The blivechat connection and the thread saving its pictures.
-    pub blive: BliveHandle,
+    /// The Bilibili connection and the thread saving its pictures.
+    pub bilibili: BilibiliHandle,
     _chat_assets: ChatAssets,
     /// Live chat, oldest first, capped at the panel's size.
     chat: VecDeque<Arc<ChatMessage>>,
+    bili_echoes: bilibili::Echoes,
     pub hotkeys: Hotkeys,
     pub tray: Option<Tray>,
     pub persist: Persist,
@@ -177,16 +179,10 @@ impl App {
                 move |asset| post(Msg::ChatAssetReady(asset))
             },
         );
-        let blive = {
-            let to_assets = chat_assets.sender();
+        let bilibili = BilibiliHandle::new(paths.config.clone(), {
             let post = post.clone();
-            BliveHandle::new(
-                move |s| post(Msg::ChatStatus(s)),
-                move |e| {
-                    let _ = to_assets.send(e);
-                },
-            )
-        };
+            move |event| post(Msg::Bilibili(event))
+        });
         let hotkeys = Hotkeys::start(
             {
                 let post = post.clone();
@@ -217,9 +213,10 @@ impl App {
             audio,
             bank: Vec::new(),
             bridge,
-            blive,
+            bilibili,
             _chat_assets: chat_assets,
             chat: VecDeque::new(),
+            bili_echoes: Default::default(),
             hotkeys,
             tray: None,
             persist,
@@ -412,7 +409,7 @@ impl App {
                 input: windows::desired(WindowKind::Input, &self.skin, s, self.summoned).visible,
                 display: s.overlays.display.visible,
                 history: s.overlays.history.visible,
-                chat: s.integrations.blivechat.panel_open,
+                chat: s.integrations.bilibili.panel_open,
                 locked,
                 continue_key: GlobalAction::Continue.get(s).map(|h| h.label(meta)),
                 tooltip,
@@ -689,7 +686,7 @@ impl App {
             self.hotkey_bindings(),
             self.ui.recording.get_untracked().is_some(),
         );
-        let i = &self.settings.integrations;
+        let i = self.settings.integrations.clone();
         self.bridge.set_vts(i.vts.enabled.then(|| VtsConfig {
             port: i.vts.port,
             token: i.vts.token.clone(),
@@ -708,23 +705,18 @@ impl App {
         self.bridge.set_ws(i.websocket.enabled.then_some(WsConfig {
             port: i.websocket.port,
         }));
-        let b = &i.blivechat;
-        let room = RoomKey::parse(
-            b.room_kind == nanatype_settings::BliveRoomKind::AuthCode,
-            &b.room,
-        );
-        let blive = room.filter(|_| b.enabled).map(|room| BliveConfig {
-            host: b.host.clone(),
-            port: b.port,
-            room,
-        });
-        let blive_off = blive.is_none();
-        let blive_hint = self.ui.now_t(if b.enabled {
-            "chat-status-no-room"
-        } else {
-            "int-status-off"
-        });
-        self.blive.set(blive);
+        let b = &i.bilibili;
+        let config = BilibiliConfig {
+            enabled: b.enabled
+                && (b.room.is_empty() || b.room.parse::<u64>().is_ok_and(|id| id > 0)),
+            room: b.room.trim().parse().ok().filter(|id| *id > 0),
+        };
+        let previous_epoch = self.bilibili.epoch();
+        self.bilibili.set(config);
+        if self.bilibili.epoch() != previous_epoch {
+            self.bilibili_reconnecting();
+        }
+        self.sync_bilibili_speaker();
         self.edit_status(|s| {
             if !i.vts.enabled {
                 s.vts = LinkState::Off;
@@ -734,10 +726,6 @@ impl App {
             }
             if !i.websocket.enabled {
                 s.ws = LinkState::Off;
-            }
-            if blive_off {
-                s.blive = blive_hint;
-                s.blive_link = crate::ui::danmaku::Link::Off;
             }
         });
         self.refresh_spout_status();
@@ -921,6 +909,9 @@ impl App {
         if self.peer_blocked(&cmd) {
             return;
         }
+        if !self.bilibili_preflight(&cmd) {
+            return;
+        }
         let fx = self.core.handle(cmd, clock::now_ms());
         self.apply_effects(fx);
     }
@@ -971,6 +962,7 @@ impl App {
             });
         }
         for event in &fx.events {
+            self.bilibili_submitted(event);
             self.peer_submitted(event);
             self.bridge_event(event);
         }
@@ -1073,6 +1065,15 @@ impl App {
 
     /// Replace the editor text. `program` marks it as not typed by the user.
     fn set_source(&mut self, text: String, program: bool) {
+        if !program
+            && self.ui.bilibili.get_untracked().sending
+            && nanatype_bilibili::sending::image_count(&parse(&text).doc)
+                > nanatype_bilibili::sending::image_count(self.core.draft())
+        {
+            self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            return;
+        }
+
         let mut src = self.ui.source.get_untracked();
         if src.text == text && !program {
             return;
@@ -1141,13 +1142,28 @@ impl App {
 
     /// The user edited the rich text.
     fn editor_changed(&mut self, rich: nana_ui_core::RichText) {
+        let previous = self.core.draft().clone();
         let doc = sync_rich_draft(self.ui, rich);
+        if self.ui.bilibili.get_untracked().sending
+            && nanatype_bilibili::sending::image_count(&doc)
+                > nanatype_bilibili::sending::image_count(&previous)
+        {
+            self.set_source(serialize(&previous), true);
+            self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            return;
+        }
         self.run(Cmd::DraftChanged(doc));
         self.refresh_atom_urls();
     }
 
     /// A toolbar action: an editor command, or a markup edit in source mode.
     fn tool(&mut self, tool: crate::msg::Tool) {
+        if self.ui.bilibili.get_untracked().sending
+            && matches!(tool, crate::msg::Tool::Insert(Inline::Atom(_)))
+        {
+            self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            return;
+        }
         self.focus_editor = true;
         use crate::msg::Tool;
         use nana_ui::runtime::{RichAttrMask, RichEditCommand};
@@ -1257,7 +1273,11 @@ impl App {
         self.source_edit_undoable |= !matches!(&edit, MarkupEdit::Typed { .. });
         let mut src = self.ui.source.get_untracked();
         let before = src.text.clone();
-        apply_source_markup(&mut src, edit);
+        if !apply_source_markup_guarded(&mut src, edit, self.ui.bilibili.get_untracked().sending) {
+            self.ui.source.set(src);
+            self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            return;
+        }
         self.ui.source.set(src.clone());
         if src.text != before {
             self.reparse(&src.text);
@@ -1265,6 +1285,10 @@ impl App {
     }
 
     fn insert_asset(&mut self, asset: AssetRef) {
+        if self.ui.bilibili.get_untracked().sending {
+            self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            return;
+        }
         self.tool(crate::msg::Tool::Insert(nanatype_model::Inline::Atom(
             nanatype_model::Atom {
                 kind: nanatype_model::AtomKind::Image,
@@ -1279,6 +1303,10 @@ impl App {
     // ---- files ----------------------------------------------------------------
 
     fn pick(&mut self, target: FileTarget) {
+        if target == FileTarget::InsertImage && self.ui.bilibili.get_untracked().sending {
+            self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            return;
+        }
         let id = self.next_dialog;
         self.next_dialog += 1;
         self.dialogs.insert(id, target);
@@ -1510,6 +1538,14 @@ impl App {
             }
             Msg::OpenSettings => self.open_settings(),
             Msg::SettingsPage(page) => {
+                if page != crate::ui::settings::Page::Bilibili
+                    && matches!(
+                        self.ui.bilibili.get_untracked().account,
+                        nanatype_bilibili::AccountState::Qr { .. }
+                    )
+                {
+                    self.bilibili.cancel_login();
+                }
                 self.ui.page.set(page);
                 self.open_settings();
             }
@@ -1561,13 +1597,17 @@ impl App {
             Msg::VtsRefresh => self.bridge.vts_refresh_hotkeys(),
             Msg::InsertPhrase(i) => {
                 if let Some(p) = self.settings.assets.phrases.get(i).cloned() {
-                    let speaker = self.settings.general.speaker_name.clone();
+                    let speaker = self.ui.speaker.get_untracked().name.clone();
                     let expanded = nanatype_markup::expand_template(&p.markup, |k| match k {
                         "speaker" | "name" => Some(speaker.clone()),
                         "time" => Some(crate::ui::history::local_hm(nanatype_model::unix_millis())),
                         _ => None,
                     });
-                    if p.send {
+                    if self.ui.bilibili.get_untracked().sending
+                        && nanatype_bilibili::sending::image_count(&parse(&expanded).doc) > 0
+                    {
+                        self.notice(self.ui.now_t("bili-images-unavailable"), true);
+                    } else if p.send {
                         self.run(Cmd::SendMarkup(expanded));
                     } else if self.ui.source_mode.get_untracked() {
                         self.markup(MarkupEdit::Insert(expanded));
@@ -1609,7 +1649,28 @@ impl App {
             }
             Msg::Bridge(status) => self.bridge_status(status),
             Msg::Chat(message) => self.chat_message(message),
-            Msg::ChatStatus(status) => self.chat_status(status),
+            Msg::Bilibili(event) => self.bilibili_event(event),
+            Msg::BilibiliLogin => self.bilibili_login(),
+            Msg::BilibiliCancelLogin => {
+                self.bilibili.cancel_login();
+                self.bilibili_disable_send();
+            }
+            Msg::BilibiliRefresh => {
+                self.bilibili.refresh();
+                self.bilibili_reconnecting();
+            }
+            Msg::BilibiliLogout => {
+                self.bilibili.logout();
+                self.bilibili_reset();
+            }
+            Msg::BilibiliOwnRoom => self.edit(|s| {
+                s.integrations.bilibili.room.clear();
+                s.integrations.bilibili.enabled = true;
+            }),
+            Msg::BilibiliSendToggle => self.bilibili_toggle(),
+            Msg::BilibiliSendConfirm(accept) => self.bilibili_confirm(accept),
+            Msg::BilibiliRetry(line) => self.bilibili.retry(line),
+            Msg::BilibiliSkipFailed(line) => self.bilibili.skip_failed(line),
             Msg::ChatAssetReady(asset) => {
                 let mut urls = (*self.ui.asset_urls.get_untracked()).clone();
                 urls.remove(&asset.to_string());
@@ -1650,6 +1711,14 @@ impl App {
             }
             Msg::Notice { text, error } => self.notice(text, error),
             Msg::InputHwnd(hwnd) => self.hotkeys.set_input_window(hwnd),
+            Msg::PasteImage {
+                width,
+                height,
+                rgba,
+            } if self.ui.bilibili.get_untracked().sending => {
+                let _ = (width, height, rgba);
+                self.notice(self.ui.now_t("bili-images-unavailable"), true);
+            }
             Msg::PasteImage {
                 width,
                 height,
@@ -1771,11 +1840,19 @@ impl App {
     // ---- live chat ----------------------------------------------------------
 
     fn chat_message(&mut self, message: Arc<ChatMessage>) {
+        if message.epoch != 0 && message.epoch != self.bilibili.epoch() {
+            return;
+        }
+        if self.bilibili_message_deleted(&message) {
+            return;
+        }
+        let include = self.bilibili_history(&message);
         self.ensure_urls(message_assets(&message));
         let history = &self.settings.history.chat;
-        if history.enabled && message.passes(&history.filter) {
+        if include && history.enabled && message.passes(&history.filter) {
             let locale = self.ui.locale.get_untracked();
             self.run(Cmd::External(message.history_item(locale)));
+            self.bilibili_record_row(&message);
         }
         self.chat.push_back(message);
         while self.chat.len() > CHAT_CAP {
@@ -1790,25 +1867,6 @@ impl App {
             .set(Arc::new(self.chat.iter().cloned().collect()));
     }
 
-    fn chat_status(&mut self, status: BliveStatus) {
-        let room = self.settings.integrations.blivechat.room.clone();
-        let locale = self.ui.locale.get_untracked();
-        let (text, link) = crate::ui::link_text::blive(locale, &status, &room);
-        match &status {
-            BliveStatus::Error(fault) => crate::debug_log(&format!("blivechat: {fault}")),
-            BliveStatus::Fatal(kind, message) => {
-                crate::debug_log(&format!("blivechat fatal {kind:?}: {message}"));
-                self.notice(text.clone(), true);
-            }
-            _ => {}
-        }
-        self.edit_status(|s| {
-            s.blive = text;
-            s.blive_link = link;
-        });
-    }
-
-    /// Quote chat message `seq` for a reply, or insert its author at the caret.
     fn mention(&mut self, seq: u64, reply: bool) {
         let Some(message) = self.chat.iter().rev().find(|m| m.seq == seq).cloned() else {
             return;
@@ -1847,8 +1905,8 @@ impl App {
     }
 
     pub fn open_chat(&mut self) {
-        if !self.settings.integrations.blivechat.panel_open {
-            self.edit(|s| s.integrations.blivechat.panel_open = true);
+        if !self.settings.integrations.bilibili.panel_open {
+            self.edit(|s| s.integrations.bilibili.panel_open = true);
         }
         if self.windows.is_open(WindowKind::Chat) {
             if let Some(h) = self.windows.handle(WindowKind::Chat) {
@@ -1873,8 +1931,8 @@ impl App {
     }
 
     pub fn close_chat(&mut self) {
-        if self.settings.integrations.blivechat.panel_open {
-            self.edit(|s| s.integrations.blivechat.panel_open = false);
+        if self.settings.integrations.bilibili.panel_open {
+            self.edit(|s| s.integrations.bilibili.panel_open = false);
         }
         self.commands
             .push(WindowCommand::Close(WindowKind::Chat.id()));
@@ -2009,6 +2067,7 @@ fn doc_assets(doc: &Document) -> Vec<AssetRef> {
 
 fn display_assets(view: &nanatype_core::DisplayView) -> Vec<AssetRef> {
     let mut out = doc_assets(&view.doc);
+    out.extend(view.speaker.avatar.as_ref().and_then(|a| a.parse().ok()));
     out.extend(view.reply.as_ref().and_then(|r| r.user.avatar.clone()));
     out
 }
@@ -2049,6 +2108,25 @@ pub(crate) fn sync_rich_draft(ui: Ui, rich: nana_ui_core::RichText) -> Document 
     ui.diagnostics.set(Arc::new(Vec::new()));
     ui.draft.set(Arc::new(doc.clone()));
     doc
+}
+
+pub(crate) fn apply_source_markup_guarded(
+    src: &mut crate::ui::Source,
+    edit: MarkupEdit,
+    synchronizing: bool,
+) -> bool {
+    let mut candidate = src.clone();
+    apply_source_markup(&mut candidate, edit);
+    if synchronizing
+        && nanatype_bilibili::sending::image_count(&parse(&candidate.text).doc)
+            > nanatype_bilibili::sending::image_count(&parse(&src.text).doc)
+    {
+        // Trigger the retained editor binding to restore its pre-edit value.
+        src.revision += 1;
+        return false;
+    }
+    *src = candidate;
+    true
 }
 
 pub(crate) fn apply_source_markup(src: &mut crate::ui::Source, edit: MarkupEdit) {
@@ -2215,5 +2293,44 @@ mod tests {
     fn quoting_only_when_needed() {
         assert_eq!(quote("cats/hi"), "cats/hi");
         assert_eq!(quote("file:C:/My Pics/a.png"), "\"file:C:/My Pics/a.png\"");
+    }
+
+    #[test]
+    fn synchronized_source_edits_reject_images_without_changing_the_draft() {
+        for tag in ["[img=blob:fixture]", "[sticker=cats/hello]", "[emote=wave]"] {
+            for edit in [
+                MarkupEdit::Insert(tag.into()),
+                MarkupEdit::Typed {
+                    text: tag.into(),
+                    selection: (tag.len(), tag.len()),
+                },
+            ] {
+                let mut source = crate::ui::Source {
+                    text: "original".into(),
+                    selection: (8, 8),
+                    revision: 0,
+                };
+                assert!(
+                    !apply_source_markup_guarded(&mut source, edit, true),
+                    "{tag}"
+                );
+                assert_eq!(source.text, "original");
+                assert_eq!(source.selection, (8, 8));
+                assert_eq!(source.revision, 1);
+            }
+        }
+        let mut source = crate::ui::Source {
+            text: "[emote=wave]".into(),
+            ..Default::default()
+        };
+        assert!(apply_source_markup_guarded(
+            &mut source,
+            MarkupEdit::Typed {
+                text: "text only".into(),
+                selection: (9, 9)
+            },
+            true
+        ));
+        assert_eq!(source.text, "text only");
     }
 }

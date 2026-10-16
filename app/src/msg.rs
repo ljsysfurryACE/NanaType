@@ -3,7 +3,6 @@
 //! changes state.
 
 use nanatype_audio::AudioStatus;
-use nanatype_blive::BliveStatus;
 use nanatype_bridge::BridgeStatus;
 use nanatype_core::Cmd;
 use nanatype_playback::CueKind;
@@ -202,8 +201,17 @@ pub enum Msg {
     Chat(std::sync::Arc<crate::chat::ChatMessage>),
     /// A referenced picture is now in the local cache. Never adds messages.
     ChatAssetReady(nanatype_model::AssetRef),
-    /// The blivechat connection changed.
-    ChatStatus(BliveStatus),
+    /// The Bilibili connection changed.
+    Bilibili(nanatype_bilibili::SessionEvent),
+    BilibiliLogin,
+    BilibiliCancelLogin,
+    BilibiliRefresh,
+    BilibiliLogout,
+    BilibiliOwnRoom,
+    BilibiliSendToggle,
+    BilibiliSendConfirm(bool),
+    BilibiliRetry(nanatype_model::LineId),
+    BilibiliSkipFailed(nanatype_model::LineId),
     /// Quote the message when `reply` is true; otherwise insert its author
     /// label at the caret.
     ChatMention {

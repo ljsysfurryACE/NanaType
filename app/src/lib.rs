@@ -2,8 +2,8 @@
 //!
 //! Three windows share one session: the input window (toolbar, a live
 //! preview identical to the typewriter, and the editor), the transparent
-//! dialogue box, and the blivechat-style history. Both overlays can be
-//! captured by OBS through window capture or Spout2. With blivechat linked, a
+//! dialogue box, and the Bilibili-style history. Both overlays can be
+//! captured by OBS through window capture or Spout2. With Bilibili linked, a
 //! chat panel lists the live chat for the streamer to answer.
 
 #![recursion_limit = "512"]

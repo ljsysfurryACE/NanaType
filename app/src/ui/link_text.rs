@@ -1,13 +1,13 @@
 //! What a link's state says, in the viewer's language.
 //!
-//! The VTube Studio, OSC and WebSocket clients, blivechat and the Spout2
+//! The VTube Studio, OSC and WebSocket clients, Bilibili and the Spout2
 //! output report typed states ([`LinkFault`], [`BridgeStatus`],
-//! [`BliveStatus`], [`WindowOutputStatus`]); these turn them into the text
+//! [`ConnectionState`], [`WindowOutputStatus`]); these turn them into the text
 //! the settings pages and the chat panel show. The app and the snapshots
 //! both go through here, so what a screenshot shows is what users read.
 
 use nana_ui::WindowOutputStatus;
-use nanatype_blive::{BliveStatus, FatalKind};
+use nanatype_bilibili::ConnectionState;
 use nanatype_bridge::{BridgeStatus, Sink};
 use nanatype_i18n::Locale;
 use nanatype_model::LinkFault;
@@ -74,38 +74,30 @@ pub fn bridge(locale: Locale, status: &BridgeStatus) -> Option<(Sink, LinkState)
     })
 }
 
-/// blivechat's status line and the chat panel's dot for `status` in `room`.
-pub fn blive(locale: Locale, status: &BliveStatus, room: &str) -> (String, Link) {
+/// Bilibili's status line and the chat panel's dot for `status` in `room`.
+pub fn bilibili(locale: Locale, status: &ConnectionState, _room: &str) -> (String, Link) {
     match status {
-        BliveStatus::Off => (I18N.t_in(locale, "int-status-off"), Link::Off),
-        BliveStatus::Connecting => (I18N.t_in(locale, "int-status-connecting"), Link::Connecting),
-        BliveStatus::Connected => (
-            I18N.tr_in(locale, "chat-status-joined", &[("room", room.into())]),
-            Link::Connected,
-        ),
-        BliveStatus::Error(f) => (
+        ConnectionState::Off => (I18N.t_in(locale, "int-status-off"), Link::Off),
+        ConnectionState::NeedsLogin => (I18N.t_in(locale, "bili-login-needed"), Link::Off),
+        ConnectionState::Connecting => {
+            (I18N.t_in(locale, "int-status-connecting"), Link::Connecting)
+        }
+        ConnectionState::Connected(room) => (format!("Bilibili · {}", room.id), Link::Connected),
+        ConnectionState::Error(message) => (
             I18N.tr_in(
                 locale,
                 "chat-status-retrying",
-                &[("message", fault(locale, f).into())],
+                &[(
+                    "message",
+                    if message.is_empty() {
+                        fault(locale, &LinkFault::Closed).into()
+                    } else {
+                        message.clone().into()
+                    },
+                )],
             ),
             Link::Error,
         ),
-        BliveStatus::Fatal(kind, message) => {
-            let why = match kind {
-                FatalKind::AuthCode => I18N.t_in(locale, "chat-fatal-auth-code"),
-                FatalKind::TooManyRetries => I18N.t_in(locale, "chat-fatal-too-many-retries"),
-                FatalKind::TooManyConnections => {
-                    I18N.t_in(locale, "chat-fatal-too-many-connections")
-                }
-                // blivechat's own words.
-                FatalKind::Other => message.clone(),
-            };
-            (
-                I18N.tr_in(locale, "chat-fatal", &[("message", why.into())]),
-                Link::Error,
-            )
-        }
     }
 }
 
@@ -178,14 +170,21 @@ mod tests {
                     panic!("an error state")
                 };
                 texts.push(t);
-                texts.push(blive(locale, &BliveStatus::Error(f.clone()), "1").0);
             }
-            for kind in [
-                FatalKind::AuthCode,
-                FatalKind::TooManyRetries,
-                FatalKind::TooManyConnections,
+
+            for state in [
+                ConnectionState::Off,
+                ConnectionState::NeedsLogin,
+                ConnectionState::Connecting,
+                ConnectionState::Connected(nanatype_bilibili::Room {
+                    id: 1,
+                    owner: 1,
+                    title: String::new(),
+                    max_chars: 20,
+                }),
+                ConnectionState::Error(String::new()),
             ] {
-                texts.push(blive(locale, &BliveStatus::Fatal(kind, "x".into()), "1").0);
+                texts.push(bilibili(locale, &state, "").0);
             }
             for status in [
                 WindowOutputStatus::Active {

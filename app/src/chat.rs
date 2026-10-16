@@ -1,7 +1,7 @@
-//! Live chat as the app keeps it: blivechat events with their pictures saved
+//! Live chat as the app keeps it: Bilibili events with their pictures saved
 //! locally, ready for the chat panel, the history list and replies.
 
-use nanatype_blive::{Author, ChatEvent, Guard};
+use nanatype_bilibili::{Author, ChatEvent, Guard};
 use nanatype_i18n::Locale;
 use nanatype_model::{
     AssetRef, Atom, AtomKind, ChatRef, ChatUser, Document, HistoryItem, Inline, SourceId,
@@ -11,8 +11,8 @@ use nanatype_settings::ChatFilter;
 
 use crate::ui::I18N;
 
-/// History rows from blivechat carry this source id.
-pub const SOURCE: &str = "blivechat";
+/// History rows from Bilibili carry this source id.
+pub const SOURCE: &str = "bilibili";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatKind {
@@ -38,9 +38,11 @@ pub enum ChatKind {
 /// One chat message, its pictures already on disk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChatMessage {
+    pub epoch: u64,
+    pub room: u64,
     /// Arrival order; the app's handle for the message.
     pub seq: u64,
-    /// blivechat's id (Super Chats are taken down by it).
+    /// Bilibili's id (Super Chats are taken down by it).
     pub id: String,
     pub kind: ChatKind,
     pub user: ChatUser,
@@ -57,7 +59,7 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
-    /// Build from a blivechat event; `avatar` and `emoticon` are the saved
+    /// Build from a Bilibili event; `avatar` and `emoticon` are the saved
     /// pictures. `None` for events that are not messages.
     pub fn from_event(
         event: ChatEvent,
@@ -136,7 +138,7 @@ impl ChatMessage {
                 Document::new(),
                 at_ms,
             ),
-            ChatEvent::DeleteSuperChats { .. } | ChatEvent::Fatal { .. } => return None,
+            ChatEvent::DeleteSuperChats { .. } => return None,
         };
         let Author {
             uid,
@@ -149,6 +151,8 @@ impl ChatMessage {
             ..
         } = author;
         Some(Self {
+            epoch: 0,
+            room: 0,
             seq,
             id: if id.is_empty() {
                 format!("local-{seq}")
@@ -263,7 +267,7 @@ pub fn guard_key(guard: Guard) -> &'static str {
     }
 }
 
-/// The colour band of a Super Chat by price, as blivechat draws it.
+/// The colour band of a Super Chat by price, as Bilibili draws it.
 pub fn super_chat_color(price: u64) -> [f32; 4] {
     let rgb = match price {
         2000.. => 0xe62117,
@@ -337,6 +341,8 @@ mod tests {
     #[test]
     fn filters_keep_kinds_and_cheap_gifts_out() {
         let gift = |coin| ChatMessage {
+            epoch: 0,
+            room: 0,
             seq: 1,
             id: "g".into(),
             kind: ChatKind::Gift {

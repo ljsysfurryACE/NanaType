@@ -602,7 +602,7 @@ fn reply_quote(ui: Ui) -> AnyView {
                 && skin.dialogue.reply.visible
                 && ui
                     .settings
-                    .with_untracked(|s| s.integrations.blivechat.quote_on_display);
+                    .with_untracked(|s| s.integrations.bilibili.quote_on_display);
             match view.reply.as_ref().filter(|_| shown) {
                 Some(reply) => super::quote::quote_view(
                     ui,
@@ -697,7 +697,7 @@ fn speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> String + Send + 'static {
     let preview = ctx.preview_name.clone();
     move || match source {
         Source::Display => drawn(ui).speaker.name.clone(),
-        Source::Draft => ui.settings.with(|s| s.general.speaker_name.clone()),
+        Source::Draft => ui.speaker.with(|s| s.name.clone()),
         Source::Preview => preview.clone(),
     }
 }
@@ -711,9 +711,7 @@ fn has_speaker(ui: Ui, ctx: &BoxCtx) -> impl Fn() -> bool + Send + 'static {
             let v = drawn(ui);
             !v.empty && !v.speaker.name.trim().is_empty()
         }
-        Source::Draft => ui
-            .settings
-            .with(|s| !s.general.speaker_name.trim().is_empty()),
+        Source::Draft => ui.speaker.with(|s| !s.name.trim().is_empty()),
         Source::Preview => preview,
     }
 }
@@ -815,6 +813,13 @@ fn portrait(ui: Ui, ctx: &BoxCtx) -> impl IntoView + use<> {
                 .or_else(|| map.get("default"))
                 .cloned()
         });
+        let avatar = match source {
+            Source::Draft => ui.speaker.get().avatar,
+            Source::Display => drawn(ui).speaker.avatar.clone(),
+            Source::Preview => None,
+        };
+        let url =
+            url.or_else(|| avatar.and_then(|a| ui.asset_urls.with(|urls| urls.get(&a).cloned())));
         restyle(s, |l| {
             l.paint.background_image =
                 url.map(|u| BackgroundImage::url_with_fit(u, BackgroundImageFit::Contain));

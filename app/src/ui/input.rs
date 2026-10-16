@@ -505,6 +505,7 @@ pub fn sticker_panel(ui: Ui, open: Signal<bool>) -> AnyView {
                             let url = s.url.clone();
                             let asset: Option<AssetRef> = s.asset.parse().ok();
                             widget(image_button(s.name.clone(), url))
+                                .bind(move |b: &mut Button| b.disabled = ui.bilibili.get().sending)
                                 .on_cx(move |_, _: &Activate, cx| {
                                     open.set(false);
                                     if let Some(asset) = asset.clone() {
@@ -894,9 +895,13 @@ fn toolbar(ui: Ui) -> AnyView {
             .collect();
         let shake = skin.effects.screen_shake_px;
         let mut inserts: Vec<AnyView> = vec![
-            item(t("tb-image"), insert_open, || {
-                Msg::PickFile(FileTarget::InsertImage)
-            }),
+            widget(ActionMenuItem::new(t("tb-image")))
+                .bind(move |item: &mut ActionMenuItem| item.disabled = ui.bilibili.get().sending)
+                .on_cx(move |_, _: &Activate, cx| {
+                    insert_open.set(false);
+                    cx.dispatch_program_all(Msg::PickFile(FileTarget::InsertImage));
+                })
+                .into_any(),
             item(t("tb-screenshake"), insert_open, move || {
                 marker(Marker::ScreenShake {
                     amp: shake,
@@ -958,8 +963,9 @@ fn toolbar(ui: Ui) -> AnyView {
         ));
         // Below this width the low-frequency tools fold into a "…" menu so
         // Send and the mode switch always stay on screen.
-        let compact =
-            crate::windows::size_of(WindowKind::Input, &skin, &settings).0 < COMPACT_BELOW;
+        let input_width = crate::windows::size_of(WindowKind::Input, &skin, &settings).0;
+        let compact = input_width < COMPACT_BELOW;
+        let narrow = input_width < 640.0;
         let [more_open] = std::array::from_fn(|_| signal(false));
         let open_item = |label: String, target: Signal<bool>| -> AnyView {
             widget(ActionMenuItem::new(label))
@@ -1062,10 +1068,17 @@ fn toolbar(ui: Ui) -> AnyView {
         // The popovers of folded tools stay mounted, invisible and out of the
         // flow, so the "…" menu can open them in place.
         let mut hidden: Vec<AnyView> = Vec::new();
+        if narrow {
+            hidden.extend(bar.drain(1..));
+        }
         if compact {
             // Clearing formats folds too, so the labelled menus fit beside
             // Send in every language.
-            bar.extend([divider(), effects_menu, pacing_menu]);
+            if narrow {
+                hidden.extend([effects_menu, pacing_menu]);
+            } else {
+                bar.extend([divider(), effects_menu, pacing_menu]);
+            }
             let mut items: Vec<AnyView> = vec![
                 widget(ActionMenuItem::new(t("tb-clear-format")))
                     .on_cx(move |_, _: &Activate, cx| {
@@ -1085,9 +1098,30 @@ fn toolbar(ui: Ui) -> AnyView {
                     .into_any(),
                 widget(Divider::horizontal()).into_any(),
             ];
+            if narrow {
+                for (key, tool) in [
+                    ("tb-bold", Tool::Bold),
+                    ("tb-italic", Tool::Italic),
+                    ("tb-underline", Tool::Underline),
+                    ("tb-strike", Tool::Strike),
+                ] {
+                    items.push(item(t(key), more_open, move || act(tool.clone())));
+                }
+                items.extend([
+                    open_item(t("tb-color"), color_open),
+                    open_item(t("tb-size"), size_open),
+                    open_item(t("tb-effects"), fx_open),
+                    open_item(t("tb-pacing"), pace_open),
+                    open_item(t("tb-cheatsheet"), help_open),
+                ]);
+            }
             items.extend(inserts);
             bar.push(menu(ti::DOTS, t("tb-more"), false, more_open, items));
-            bar.push(help);
+            if narrow {
+                hidden.push(help);
+            } else {
+                bar.push(help);
+            }
             hidden.extend([stroke, ruby, sticker, expression]);
         } else {
             bar.extend([stroke, ruby, divider()]);
@@ -1125,7 +1159,7 @@ fn toolbar(ui: Ui) -> AnyView {
             menu(ti::MESSAGE, t("tb-phrases"), false, phrase_open, phrases),
             tool(ui, ti::SETTINGS, "window-settings", || Msg::OpenSettings),
         ];
-        if mode == InputMode::Compose {
+        if mode == InputMode::Compose && !narrow {
             let key = match settings.general.send_key {
                 SendKey::Enter => "Enter",
                 SendKey::CtrlEnter => "Ctrl+Enter",
@@ -1154,6 +1188,7 @@ fn toolbar(ui: Ui) -> AnyView {
             })
             .into_any(),
         );
+        pinned.push(super::bilibili::account_button(ui));
         bar.push(
             widget(Stack::row(2.0).with_layout(|l| {
                 l.flex_shrink = Some(0.0);
@@ -1292,12 +1327,16 @@ fn status_line(ui: Ui) -> AnyView {
     )
     .children((
         widget(Stack::row(0.0).with_layout(|l| {
+            l.width = Some(LengthSpec::Px(0.0));
             l.flex_grow = Some(1.0);
             l.min_width = Some(LengthSpec::Px(0.0));
         }))
         .visible(move || ui.reply.with(Option::is_none))
         .children(line),
-        reply_bar(ui),
+        widget(Stack::spacer())
+            .visible(move || ui.reply.with(Option::is_some))
+            .children(reply_bar(ui)),
+        super::bilibili::send_status(ui),
     ))
     .into_any()
 }
@@ -1762,7 +1801,7 @@ mod tests {
                             let out = std::path::PathBuf::from(out);
                             std::fs::create_dir_all(&out).unwrap();
                             session
-                                .screenshot_png(&out.join(format!("toolbar-{width}-{scale}x.png")))
+                                .screenshot_png(out.join(format!("toolbar-{width}-{scale}x.png")))
                                 .unwrap();
                         }
                     }

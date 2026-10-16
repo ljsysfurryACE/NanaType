@@ -14,6 +14,8 @@ use nanatype_settings::{ChatPanelStyle, Settings};
 
 fn message(seq: u64) -> Arc<ChatMessage> {
     Arc::new(ChatMessage {
+        epoch: 0,
+        room: 0,
         seq,
         id: seq.to_string(),
         kind: ChatKind::Text,
@@ -22,7 +24,7 @@ fn message(seq: u64) -> Arc<ChatMessage> {
             name: format!("观众 {seq} very long viewer name"),
             avatar: None,
         },
-        guard: nanatype_blive::Guard::None,
+        guard: nanatype_bilibili::Guard::None,
         owner: false,
         admin: false,
         medal_level: 0,
@@ -44,7 +46,7 @@ fn panel(
         .unwrap()
         .skin;
     let mut settings = Settings::default();
-    settings.integrations.blivechat.panel_style = style;
+    settings.integrations.bilibili.panel_style = style;
     // History output policies must not hide the operator's feed.
     settings.history.visible_items = 1;
     settings.history.fade_after_s = Some(0);
@@ -52,7 +54,7 @@ fn panel(
     let ui = Ui::new(Arc::new(settings), skin.clone(), locale);
     ui.chat_width.set(width as f32);
     let mut status = (*ui.status.get_untracked()).clone();
-    status.blive = "blivechat · 21452505".into();
+    status.bilibili = "Bilibili · 21452505".into();
     ui.status.set(Arc::new(status));
     ui.chat.set(Arc::new((1..=count).map(message).collect()));
     let id = DocumentId::new(1).unwrap();
@@ -121,7 +123,7 @@ fn take_mentions(session: &mut RuntimeAgentSession) -> Vec<(u64, bool)> {
 }
 
 fn edit_style(ui: Ui, session: &mut RuntimeAgentSession, style: ChatPanelStyle) {
-    if ui.settings.with(|s| s.integrations.blivechat.panel_style) == style {
+    if ui.settings.with(|s| s.integrations.bilibili.panel_style) == style {
         return;
     }
     let label = ui.now_t(match style {
@@ -144,7 +146,7 @@ fn edit_style(ui: Ui, session: &mut RuntimeAgentSession, style: ChatPanelStyle) 
         }
     }
     assert_eq!(
-        ui.settings.with(|s| s.integrations.blivechat.panel_style),
+        ui.settings.with(|s| s.integrations.bilibili.panel_style),
         style
     );
     session.flush().unwrap();

@@ -9,7 +9,7 @@ use nanatype_playback::QueuePolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const SETTINGS_SCHEMA: u32 = 1;
+pub const SETTINGS_SCHEMA: u32 = 2;
 pub const DEFAULT_SKIN: &str = "nanatype.halo";
 
 /// A key chord. `key` is a W3C `KeyboardEvent.code` name (`F8`, `KeyN`, `Digit1`).
@@ -382,7 +382,7 @@ pub struct HistorySettings {
     pub show_time: bool,
     pub sync: HistorySync,
     pub hide_latest: HideLatest,
-    /// Live chat (blivechat) rows mixed into the list.
+    /// Live chat (Bilibili) rows mixed into the list.
     pub chat: HistoryChat,
     /// Show the chat message a line answers above it.
     pub show_quote: bool,
@@ -588,17 +588,6 @@ impl Default for WsSettings {
     }
 }
 
-/// What the blivechat room value is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BliveRoomKind {
-    /// The streamer's 身份码 from the Bilibili live open platform.
-    #[default]
-    AuthCode,
-    /// A live room number.
-    RoomId,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChatPanelStyle {
@@ -609,12 +598,10 @@ pub enum ChatPanelStyle {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct BlivechatSettings {
+pub struct BilibiliSettings {
     pub enabled: bool,
-    /// Where the blivechat server runs.
-    pub host: String,
-    pub port: u16,
-    pub room_kind: BliveRoomKind,
+    /// Empty room selects the authenticated account's own room.
+    pub sync_profile: bool,
     pub room: String,
     /// What the chat panel lists.
     pub panel: ChatFilter,
@@ -626,13 +613,11 @@ pub struct BlivechatSettings {
     pub panel_open: bool,
 }
 
-impl Default for BlivechatSettings {
+impl Default for BilibiliSettings {
     fn default() -> Self {
         Self {
-            enabled: false,
-            host: "127.0.0.1".into(),
-            port: 12450,
-            room_kind: BliveRoomKind::AuthCode,
+            enabled: true,
+            sync_profile: false,
             room: String::new(),
             panel: ChatFilter::default(),
             panel_style: ChatPanelStyle::default(),
@@ -648,7 +633,7 @@ pub struct Integrations {
     pub vts: VtsSettings,
     pub osc: OscSettings,
     pub websocket: WsSettings,
-    pub blivechat: BlivechatSettings,
+    pub bilibili: BilibiliSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -756,14 +741,7 @@ impl Settings {
             self.skin.id = DEFAULT_SKIN.into();
         }
         self.general.speaker_name = self.general.speaker_name.chars().take(64).collect();
-        let b = &mut self.integrations.blivechat;
-        b.host = b.host.trim().to_owned();
-        if b.host.is_empty() {
-            b.host = "127.0.0.1".into();
-        }
-        if b.port == 0 {
-            b.port = 12450;
-        }
+        let b = &mut self.integrations.bilibili;
         b.room = b.room.trim().to_owned();
         *self != before
     }

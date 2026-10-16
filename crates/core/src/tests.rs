@@ -28,6 +28,80 @@ fn type_and_send(core: &mut Core, markup: &str, now: Millis) -> Effects {
     core.handle(Cmd::Send, now)
 }
 
+#[test]
+fn account_identity_is_snapshotted_for_queued_lines_and_history() {
+    let mut core = core_with(|s| {
+        s.history.sync = HistorySync::OnSubmit;
+        s.playback.queue = QueuePolicy::Queue;
+    });
+    let speaker = nanatype_model::Speaker {
+        name: "account one".into(),
+        avatar: Some("blob:one".into()),
+        portrait: None,
+    };
+    core.handle(Cmd::SetSpeaker(Some(speaker.clone())), 0);
+    let first = type_and_send(&mut core, "first", 0);
+    let second = type_and_send(&mut core, "second", 1);
+    let submitted: Vec<_> = first
+        .events
+        .iter()
+        .chain(&second.events)
+        .filter_map(|e| {
+            if let Event::LineSubmitted(line) = e {
+                Some(line)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(submitted.len(), 2);
+    assert!(submitted.iter().all(|line| line.speaker == speaker));
+    core.handle(
+        Cmd::SetSpeaker(Some(nanatype_model::Speaker {
+            name: "account two".into(),
+            avatar: None,
+            portrait: None,
+        })),
+        2,
+    );
+    for row in core.history() {
+        assert_eq!(row.item.author, "account one");
+        assert_eq!(row.item.avatar.as_deref(), Some("blob:one"));
+    }
+    core.handle(Cmd::SetSpeaker(None), 3);
+    let fx = type_and_send(&mut core, "custom", 4);
+    assert!(
+        fx.events
+            .iter()
+            .any(|e| matches!(e,Event::LineSubmitted(line) if line.speaker.name=="奈奈"))
+    );
+}
+
+#[test]
+fn echo_removal_cannot_delete_local_typewriter_rows() {
+    let mut core = core_with(|s| s.history.sync = HistorySync::OnSubmit);
+    type_and_send(&mut core, "local", 0);
+    let local = core.history().back().unwrap().key;
+    core.handle(
+        Cmd::External(nanatype_model::HistoryItem {
+            source: nanatype_model::SourceId("bilibili".into()),
+            kind: nanatype_model::SourceKind::Chat,
+            line: None,
+            author: "viewer".into(),
+            avatar: None,
+            doc: Document::plain("echo"),
+            at: 0,
+            uid: Some("7".into()),
+            reply: None,
+        }),
+        1,
+    );
+    let external = core.history().back().unwrap().key;
+    core.handle(Cmd::RemoveHistoryRows(vec![local, external]), 2);
+    assert_eq!(core.history().len(), 1);
+    assert_eq!(core.history()[0].key, local);
+}
+
 /// Deliver every wake due by `until`, in order.
 fn run_until(core: &mut Core, mut pending: Vec<Wake>, until: Millis) -> Vec<Effects> {
     let mut out = Vec::new();
@@ -283,7 +357,7 @@ fn chat_rows_join_the_history_with_their_uid() {
     let mut core = core_with(|_| {});
     let fx = core.handle(
         Cmd::External(nanatype_model::HistoryItem {
-            source: nanatype_model::SourceId("blivechat".into()),
+            source: nanatype_model::SourceId("Bilibili".into()),
             kind: nanatype_model::SourceKind::Chat,
             line: None,
             author: "观众".into(),

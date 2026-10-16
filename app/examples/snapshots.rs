@@ -22,12 +22,12 @@ use nanatype::chat::{ChatKind, ChatMessage};
 use nanatype::ui::{
     LinkState, Status, StickerRow, Ui, danmaku, dialogue, history, input, link_text, settings,
 };
-use nanatype_blive::{BliveStatus, Guard};
+use nanatype_bilibili::{ConnectionState, Guard};
 use nanatype_bridge::{BridgeStatus, Sink};
 use nanatype_core::{Cmd, Core};
 use nanatype_i18n::Locale;
 use nanatype_markup::parse;
-use nanatype_model::{AssetRef, ChatUser, Document, LinkFault};
+use nanatype_model::{AssetRef, ChatUser, Document};
 use nanatype_settings::Settings;
 use nanatype_theme::SkinRegistry;
 
@@ -300,6 +300,8 @@ fn sample_chat(
     let message = |seq: u64, who: usize, kind: ChatKind, text: &str| {
         let (uid, name, _, guard) = viewers[who];
         ChatMessage {
+            epoch: 0,
+            room: 0,
             seq,
             id: seq.to_string(),
             kind,
@@ -408,7 +410,7 @@ fn reported(
     locale: Locale,
     bridge: &[BridgeStatus],
     [display, history]: [WindowOutputStatus; 2],
-    blive: &BliveStatus,
+    bilibili: &ConnectionState,
     room: &str,
 ) -> Status {
     let mut s = Status::default();
@@ -423,7 +425,7 @@ fn reported(
     }
     s.spout_display = link_text::spout(locale, &display).unwrap_or_default();
     s.spout_history = link_text::spout(locale, &history).unwrap_or_default();
-    (s.blive, s.blive_link) = link_text::blive(locale, blive, room);
+    (s.bilibili, s.bilibili_link) = link_text::bilibili(locale, bilibili, room);
     s
 }
 
@@ -440,9 +442,9 @@ fn assert_consistent(settings: &Settings, status: &Status) {
             status.ws != LinkState::Off,
         ),
         (
-            "blivechat",
-            i.blivechat.enabled,
-            status.blive_link != danmaku::Link::Off,
+            "Bilibili",
+            i.bilibili.enabled,
+            status.bilibili_link != danmaku::Link::Off,
         ),
         (
             "Spout display",
@@ -517,8 +519,8 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
     settings.skin.id = skin_id.to_owned();
     settings.history.show_time = true;
     settings.history.chat.enabled = true;
-    settings.integrations.blivechat.enabled = true;
-    settings.integrations.blivechat.room = "21452505".into();
+    settings.integrations.bilibili.enabled = true;
+    settings.integrations.bilibili.room = "21452505".into();
     let dark = std::env::var("NANATYPE_SNAPSHOT_APPEARANCE").is_ok_and(|v| v == "dark");
     settings.skin.chrome = if dark {
         nanatype_settings::ChromeMode::Dark
@@ -574,8 +576,16 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
         .set(Arc::new(chat.iter().cloned().map(Arc::new).collect()));
     ui.reply.set(Some(chat[1].quote(locale)));
     let mut status = (*ui.status.get_untracked()).clone();
-    (status.blive, status.blive_link) =
-        link_text::blive(locale, &BliveStatus::Connected, "21452505");
+    (status.bilibili, status.bilibili_link) = link_text::bilibili(
+        locale,
+        &ConnectionState::Connected(nanatype_bilibili::Room {
+            id: 21452505,
+            owner: 1,
+            title: String::new(),
+            max_chars: 20,
+        }),
+        "21452505",
+    );
     assert_consistent(&settings, &status);
     ui.status.set(Arc::new(status));
 
@@ -875,7 +885,7 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
             .unwrap();
     });
     let mut card_settings = (*ui.settings.get_untracked()).clone();
-    card_settings.integrations.blivechat.panel_style = nanatype_settings::ChatPanelStyle::History;
+    card_settings.integrations.bilibili.panel_style = nanatype_settings::ChatPanelStyle::History;
     ui.settings.set(Arc::new(card_settings));
     shot("chat-cards", out, 400, 640, theme.clone(), |doc, id| {
         doc.context_mut()
@@ -1009,8 +1019,8 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
                 reason: "no GPU".into(),
             },
         ],
-        &BliveStatus::Error(LinkFault::Refused),
-        &on.integrations.blivechat.room,
+        &ConnectionState::Error("connection refused".into()),
+        &on.integrations.bilibili.room,
     );
     assert_consistent(&on, &status);
     ui.settings.set(Arc::new(on));
@@ -1034,7 +1044,7 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
     // VTube Studio authorised with a model's hotkeys listed (one mapped by
     // hand), and quick phrases with a hotkey.
     let mut on = (*ui.settings.get_untracked()).clone();
-    on.integrations.blivechat.enabled = false;
+    on.integrations.bilibili.enabled = false;
     on.integrations.vts.token = Some("token".into());
     on.integrations
         .vts
@@ -1076,8 +1086,8 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
                 native: true,
             },
         ],
-        &BliveStatus::Off,
-        &on.integrations.blivechat.room,
+        &ConnectionState::Off,
+        &on.integrations.bilibili.room,
     );
     status.vts_hotkeys = vec![
         ("hk-1".into(), "Smile".into()),

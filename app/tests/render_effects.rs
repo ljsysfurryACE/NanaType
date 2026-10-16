@@ -255,10 +255,12 @@ fn chat_materializes_the_viewport_and_keeps_scrolling_available() {
 fn sweep_is_clipped_premultiplied_and_retained_across_dpi_and_opacity() {
     for scale in [1.0, 1.5, 2.0] {
         let opacity = signal(1.0);
-        let mut surface = Surface::default();
-        surface.contour = Some(ContourPreset::Cloud);
-        surface.fill = Some([0.0, 0.0, 0.0, 0.5]);
-        surface.radii = [12.0; 4];
+        let surface = Surface {
+            contour: Some(ContourPreset::Cloud),
+            fill: Some([0.0, 0.0, 0.0, 0.5]),
+            radii: [12.0; 4],
+            ..Surface::default()
+        };
         let id = DocumentId::new(1).unwrap();
         let mut doc = RuntimeDocument::new(id);
         doc.context_mut()
@@ -402,7 +404,7 @@ fn sweep_nine_slice_alpha_and_failed_reload_keep_the_surface_route() {
         current.set(Arc::new(missing));
         let (_, missing) = session.screenshot_rgba().unwrap();
         assert!(
-            missing.chunks_exact(4).all(|p| p[3] == 0),
+            missing.as_chunks::<4>().0.iter().all(|p| p[3] == 0),
             "missing frame emitted light at {scale}"
         );
         let mut contour = surface.clone();
