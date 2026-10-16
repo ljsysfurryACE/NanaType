@@ -95,6 +95,8 @@ tb-more = 更多
 
 ## 编辑器
 editor-placeholder = 在这里输入台词…
+input-plain-text = 纯文本
+input-skin-preview = 皮肤预览
 editor-source-placeholder = 使用 [b]标记[/b] 编辑，例如 [shake]哇！[/shake][wait=500]
 editor-diagnostic = 第 { $pos } 个字符：{ $message }
 marker-wait = 停 { $ms }ms

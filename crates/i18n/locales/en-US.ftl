@@ -98,6 +98,8 @@ tb-more = More
 
 ## Editor
 editor-placeholder = Type your line here…
+input-plain-text = Plain text
+input-skin-preview = Skin preview
 editor-source-placeholder = Edit with [b]markup[/b], e.g. [shake]Whoa![/shake][wait=500]
 editor-diagnostic = Character { $pos }: { $message }
 marker-wait = wait { $ms }ms

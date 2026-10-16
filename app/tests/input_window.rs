@@ -8,6 +8,71 @@ use nanatype_i18n::Locale;
 use nanatype_model::Document;
 use nanatype_settings::Settings;
 
+fn preview_settings() -> Settings {
+    let mut settings = Settings::default();
+    settings.general.input_skin_preview = true;
+    settings
+}
+
+#[test]
+fn plain_text_fills_the_editor_column_across_skin_sidebar_size_and_source_changes() {
+    let registry = nanatype_theme::SkinRegistry::new(None, env!("CARGO_PKG_VERSION"));
+    for (skin_id, dark, scale) in [("nanatype.halo", false, 1.0), ("nanatype.night", true, 2.0)] {
+        let mut skin = (*registry.load(skin_id).unwrap().skin).clone();
+        skin.dialogue.box_.margin = [100.0; 4];
+        skin.dialogue.padding = [150.0; 4];
+        skin.dialogue.box_.width_fraction = 0.4;
+        let ui = Ui::new(Arc::new(Settings::default()), Arc::new(skin), Locale::ZhCn);
+        let text = "不受皮肤限制 👩‍💻\n".repeat(50);
+        ui.draft.set(Arc::new(Document::plain(&text)));
+        ui.source.update(|s| s.text = text.clone());
+        let id = DocumentId::new(1).unwrap();
+        let mut document = RuntimeDocument::new(id);
+        document
+            .context_mut()
+            .set_theme_tokens(nanatype::skin_theme::compile(dark))
+            .unwrap();
+        let (_, (editor, source, _)) = document
+            .context_mut()
+            .mount_view_root(id, move || input::input_window(ui))
+            .unwrap();
+        let mut session = RuntimeAgentSession::new_scaled(document, 1200, 640, scale).unwrap();
+        for (w, h, sidebar) in [(720, 360, 300.0), (1200, 640, 480.0)] {
+            session.set_viewport(w, h, scale).unwrap();
+            settle(&mut session);
+            let width = keyed(&session, "input-insertion-dock").bounds.width;
+            drag_sidebar(&mut session, width - sidebar);
+            for source_mode in [false, true] {
+                ui.source_mode.set(source_mode);
+                settle(&mut session);
+                let node = if source_mode {
+                    source.stable_id()
+                } else {
+                    editor.stable_id()
+                };
+                let world = session.document().context().world();
+                let bounds = world.layout_box(node).unwrap();
+                let port = keyed(&session, "input-preview-scroll");
+                assert!((bounds.x - port.bounds.x - 16.0).abs() < 1.0);
+                assert!((bounds.y - port.bounds.y - 16.0).abs() < 1.0);
+                assert!((bounds.width - port.bounds.width + 32.0).abs() < 1.0);
+                assert!((bounds.height - port.bounds.height + 32.0).abs() < 1.0);
+                assert_eq!(
+                    world
+                        .layout_pointer_position(node, bounds.x, bounds.y)
+                        .unwrap(),
+                    (bounds.x, bounds.y)
+                );
+                let offset = world
+                    .scroll_offset(StableNodeId::new(port.id).unwrap())
+                    .unwrap();
+                assert_eq!((offset.x, offset.y), (0.0, 0.0));
+            }
+        }
+        assert_eq!(ui.draft.get_untracked().plain_text(), text);
+    }
+}
+
 fn keyed(session: &RuntimeAgentSession, key: &str) -> AccessibilityDumpNode {
     session
         .accessibility_dump()
@@ -172,7 +237,7 @@ fn sidebar_keeps_the_editor_and_peer_form_across_resizes() {
             .load("nanatype.halo")
             .unwrap()
             .skin;
-        let ui = Ui::new(Arc::new(Settings::default()), skin, locale);
+        let ui = Ui::new(Arc::new(preview_settings()), skin, locale);
         let id = DocumentId::new(1).unwrap();
         let mut document = RuntimeDocument::new(id);
         document
@@ -205,6 +270,17 @@ fn sidebar_keeps_the_editor_and_peer_form_across_resizes() {
             "dock follows live locale changes"
         );
         ui.locale.set(locale);
+        session.flush().unwrap();
+        let switch = keyed(&session, "input-skin-preview-switch");
+        assert_eq!(
+            switch.label.as_deref(),
+            Some(ui.now_t("input-skin-preview").as_str())
+        );
+        assert!(switch.bounds.width >= 32.0);
+        assert!(
+            switch.bounds.y >= 0.0
+                && switch.bounds.y + switch.bounds.height <= nanatype::windows::INPUT_MODE_H
+        );
         click_label(&mut session, &ui.now_t("input-management"), "menu");
         let invitation = keyed(&session, "peer-invitation-input");
         assert!(invitation.bounds.width > 190.0);
@@ -311,7 +387,7 @@ fn dock_inserts_real_stickers_and_disables_them_during_sync_sending() {
             .load("nanatype.halo")
             .unwrap()
             .skin;
-        let ui = Ui::new(Arc::new(Settings::default()), skin, Locale::ZhCn);
+        let ui = Ui::new(Arc::new(preview_settings()), skin, Locale::ZhCn);
         ui.stickers.set(Arc::new(vec![nanatype::ui::StickerRow {
             asset: "lib:test/hello".into(),
             name: "Hello sticker".into(),
@@ -397,7 +473,7 @@ fn dock_tabs_allocate_sidebar_space_retain_content_and_keep_the_canvas_size() {
             for dark in [false, true] {
                 for scale in [1.0, 1.5, 2.0] {
                     let ui = Ui::new(
-                        Arc::new(Settings::default()),
+                        Arc::new(preview_settings()),
                         registry.load(skin_id).unwrap().skin,
                         locale,
                     );
@@ -549,7 +625,7 @@ fn fitted_preview_keeps_tall_canvases_scrollable_and_restores_full_size_when_spa
         .load("nanatype.halo")
         .unwrap()
         .skin;
-    let mut settings = Settings::default();
+    let mut settings = preview_settings();
     settings.skin.overrides.region = Some([1200.0, 1800.0]);
     let ui = Ui::new(Arc::new(settings), skin, Locale::ZhCn);
     let id = DocumentId::new(1).unwrap();
@@ -594,6 +670,28 @@ fn fitted_preview_keeps_tall_canvases_scrollable_and_restores_full_size_when_spa
         )
         .unwrap();
     assert!(bottom <= port.bounds.y + port.bounds.height - 15.0);
+    ui.settings
+        .update(|s| Arc::make_mut(s).general.input_skin_preview = false);
+    for _ in 0..4 {
+        session.flush().unwrap();
+    }
+    let offset = session
+        .document()
+        .context()
+        .world()
+        .scroll_offset(StableNodeId::new(port.id).unwrap())
+        .unwrap();
+    assert_eq!(
+        (offset.x, offset.y),
+        (0.0, 0.0),
+        "plain mode clears the old canvas scroll range"
+    );
+    ui.settings
+        .update(|s| Arc::make_mut(s).general.input_skin_preview = true);
+    for _ in 0..4 {
+        session.flush().unwrap();
+    }
+    assert_preview_fits(&session);
     session
         .scroll_by(2.0, port.bounds.y + 4.0, 10000.0, 10000.0)
         .unwrap();
@@ -625,7 +723,7 @@ fn toolbar_popovers_remain_clickable_over_the_scrolling_preview() {
         .load("nanatype.halo")
         .unwrap()
         .skin;
-    let ui = Ui::new(Arc::new(Settings::default()), skin, Locale::ZhCn);
+    let ui = Ui::new(Arc::new(preview_settings()), skin, Locale::ZhCn);
     let id = DocumentId::new(1).unwrap();
     let mut document = RuntimeDocument::new(id);
     document
@@ -700,7 +798,7 @@ fn fixed_canvas_and_controls_survive_resize_theme_scale_and_peer_panel_changes()
                     skin.dialogue.region[0] + 2.0 * skin.dialogue.overscan,
                     skin.dialogue.region[1] + 2.0 * skin.dialogue.overscan,
                 );
-                let ui = Ui::new(Arc::new(Settings::default()), skin, Locale::ZhCn);
+                let ui = Ui::new(Arc::new(preview_settings()), skin, Locale::ZhCn);
                 ui.chrome_dark.set(dark);
                 let id = DocumentId::new(1).unwrap();
                 let mut document = RuntimeDocument::new(id);
@@ -761,7 +859,7 @@ fn fixed_canvas_and_controls_survive_resize_theme_scale_and_peer_panel_changes()
                         assert!((toolbar.height - 48.0).abs() <= 1.0 / scale);
                         assert!((footer.height - 56.0).abs() <= 1.0 / scale);
                         assert!((footer.y + footer.height - h as f32).abs() <= 1.0 / scale);
-                        assert!(toolbar.y.abs() <= 1.0 / scale, "no redundant header");
+                        assert!((toolbar.y - nanatype::windows::INPUT_MODE_H).abs() <= 1.0 / scale);
                         assert!(
                             (port.bounds.y + port.bounds.height - footer.y).abs() <= 1.0 / scale,
                             "one footer row"
@@ -854,7 +952,7 @@ fn fixed_canvas_and_controls_survive_resize_theme_scale_and_peer_panel_changes()
     if let Some(out) = captures {
         for dark in [false, true] {
             let skin = registry.load("nanatype.halo").unwrap().skin;
-            let mut config = Settings::default();
+            let mut config = preview_settings();
             config.general.onboarding_done = true;
             let ui = Ui::new(Arc::new(config), skin, Locale::ZhCn);
             ui.chrome_dark.set(dark);

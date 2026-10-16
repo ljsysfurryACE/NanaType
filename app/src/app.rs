@@ -875,6 +875,9 @@ impl App {
         let assets_changed = prev.assets.sticker_dirs != s.assets.sticker_dirs;
         let device_changed = prev.sound.device != s.sound.device;
         let autostart_changed = prev.general.launch_at_login != s.general.launch_at_login;
+        if prev.general.input_skin_preview != s.general.input_skin_preview {
+            self.focus_editor = true;
+        }
         SEND_KEY.store(
             matches!(s.general.send_key, SendKey::CtrlEnter) as u8,
             Ordering::Relaxed,

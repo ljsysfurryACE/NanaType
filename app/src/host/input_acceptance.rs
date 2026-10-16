@@ -738,6 +738,8 @@ fn sidebar_drag_and_small_windows_preserve_the_saved_width_and_editor() {
     use nana_ui_devtools::agent::AgentSession;
     for source in [false, true] {
         let mut f = Fixture::new(source, false, "侧栏调整");
+        f.ui.settings
+            .update(|s| Arc::make_mut(s).general.input_skin_preview = true);
         f.session.set_viewport(1200, 640, 1.0).unwrap();
         f.focus();
         f.key("End", CTRL);
@@ -819,6 +821,8 @@ fn fitted_editor_pointer_and_ime_follow_the_preview_at_the_minimum_width() {
     for source in [false, true] {
         for scale in [1.0, 1.5, 2.0] {
             let mut f = Fixture::new(source, false, "hello world");
+            f.ui.settings
+                .update(|s| Arc::make_mut(s).general.input_skin_preview = true);
             f.ui.input_sidebar_width.set(560.0);
             f.session.set_viewport(720, 360, scale).unwrap();
             for _ in 0..4 {
@@ -873,6 +877,8 @@ fn resizing_and_dock_tabs_preserve_both_editors_selection_and_undo_history() {
     use nana_ui_devtools::agent::AgentSession;
     for source in [false, true] {
         let mut f = Fixture::new(source, false, "窗口调整前");
+        f.ui.settings
+            .update(|s| Arc::make_mut(s).general.input_skin_preview = true);
         f.focus();
         f.key("End", CTRL);
         f.event(InputPayload::Text(nana_ui_platform::CommittedText::new(
@@ -1392,6 +1398,71 @@ fn clicking_source_toolbar_preserves_selection_records_undo_and_restores_typing_
     assert_eq!(f.text(), formatted);
     f.key("z", CTRL);
     assert_eq!(f.text(), "中文 👩‍💻");
+}
+
+#[test]
+fn layout_switch_preserves_both_editors_selection_rich_content_and_undo() {
+    for source_mode in [false, true] {
+        let mut f = Fixture::new(source_mode, false, "甲乙丙");
+        f.focus();
+        f.key("End", CTRL);
+        if source_mode {
+            f.event(InputPayload::Text(nana_ui_platform::CommittedText::new(
+                "[b]中文[/b][pause]",
+            )));
+        } else {
+            f.insert_phrase("[b]中文[/b][size=1.5]大字[/size][pause][sticker=cats/hello]");
+        }
+        f.key("a", CTRL);
+        let (text, draft, selection) = (f.text(), f.ui.draft.get_untracked(), f.selection());
+        for preview in [true, false] {
+            let switch = f
+                .session
+                .accessibility_dump()
+                .into_iter()
+                .find(|n| {
+                    n.role == "switch"
+                        && n.label.as_deref() == Some(f.ui.now_t("input-skin-preview").as_str())
+                })
+                .unwrap();
+            assert!(switch.bounds.width >= 32.0);
+            if preview {
+                f.click(
+                    switch.bounds.x + switch.bounds.width / 2.0,
+                    switch.bounds.y + switch.bounds.height / 2.0,
+                );
+            } else {
+                let id = f.id();
+                f.session
+                    .document_mut()
+                    .context_mut()
+                    .focus_node(id, nana_ui::runtime::StableNodeId::new(switch.id).unwrap())
+                    .unwrap();
+                f.key(" ", Default::default());
+            }
+            let edit = f
+                .pending
+                .drain(..)
+                .find_map(|msg| match msg {
+                    Msg::Edit(edit) => Some(edit),
+                    _ => None,
+                })
+                .expect("switch dispatches a settings edit");
+            let mut settings = (*f.ui.settings.get_untracked()).clone();
+            edit(&mut settings);
+            assert_eq!(settings.general.input_skin_preview, preview);
+            f.ui.settings.set(Arc::new(settings));
+            f.sync(true, false, Vec::new());
+            assert_eq!(f.text(), text);
+            assert_eq!(f.ui.draft.get_untracked(), draft);
+            assert_eq!(f.selection(), selection);
+        }
+        f.action(TextEditAction::Undo);
+        assert_eq!(f.text(), "甲乙丙");
+        f.action(TextEditAction::Redo);
+        assert_eq!(f.text(), text);
+        assert_eq!(f.ui.draft.get_untracked(), draft);
+    }
 }
 
 fn base64(bytes: &[u8]) -> String {

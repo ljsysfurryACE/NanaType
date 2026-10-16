@@ -95,6 +95,8 @@ tb-more = その他
 
 ## エディター
 editor-placeholder = ここにセリフを入力…
+input-plain-text = プレーンテキスト
+input-skin-preview = スキンプレビュー
 editor-source-placeholder = [b]マークアップ[/b]で編集できます。例：[shake]わっ！[/shake][wait=500]
 editor-diagnostic = { $pos } 文字目：{ $message }
 marker-wait = 間 { $ms }ms

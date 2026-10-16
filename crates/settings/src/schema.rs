@@ -131,6 +131,8 @@ pub struct General {
     pub avatar: Option<String>,
     pub input_presence: InputPresence,
     pub input_mode: InputMode,
+    /// Show the draft inside the skin's stream canvas instead of a full editor.
+    pub input_skin_preview: bool,
     pub send_key: SendKey,
     pub launch_at_login: bool,
     pub onboarding_done: bool,
@@ -145,6 +147,7 @@ impl Default for General {
             avatar: None,
             input_presence: InputPresence::Resident,
             input_mode: InputMode::Compose,
+            input_skin_preview: false,
             send_key: SendKey::Enter,
             launch_at_login: false,
             onboarding_done: false,

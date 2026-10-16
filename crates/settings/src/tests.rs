@@ -65,6 +65,22 @@ const V0: &str = r#"{
 }"#;
 
 #[test]
+fn input_skin_preview_defaults_to_plain_text_and_survives_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("settings.json");
+    let old: Settings =
+        serde_json::from_str(r#"{"schema":2,"general":{"speaker_name":"奈奈"}}"#).unwrap();
+    assert!(!old.general.input_skin_preview);
+    let mut settings = old;
+    for preview in [true, false] {
+        settings.general.input_skin_preview = preview;
+        save_json(&path, &settings).unwrap();
+        let restored = load_settings(&path, None);
+        assert_eq!(restored.value, settings);
+    }
+}
+
+#[test]
 fn legacy_chat_preferences_migrate_without_service_or_auth_code() {
     for (kind, room, expected) in [("room_id", "123", "123"), ("auth_code", "secret-code", "")] {
         let mut value = serde_json::json!({"schema":1,"integrations":{"blivechat":{"enabled":true,"room_kind":kind,"room":room,"host":"127.0.0.1","port":12450,"panel_style":"history","panel_open":true,"panel":{"gift":false}}}});

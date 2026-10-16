@@ -1,8 +1,6 @@
-//! The input window: a toolbar over the dialogue box, and the streamer types
-//! straight into that box. The editor is NanaUI's `RichTextEditor` styled
-//! with the skin's dialogue text, so it lays out exactly as the typewriter
-//! will show it. Toolbar buttons send semantic [`Tool`] actions; a source
-//! toggle swaps the editor for the markup text of the same draft.
+//! The input window: a full-area editor or an editable skin preview.
+//! Both layouts retain the same rich/source editors and draft. Toolbar
+//! buttons send semantic [`Tool`] actions; the source toggle edits markup.
 
 use std::sync::Arc;
 
@@ -15,8 +13,8 @@ use nana_ui::runtime::{
     ActionMenu, ActionMenuItem, Activate, Button, ColorChanged, ColorField, Divider,
     FocusWithinChanged, IconButton, IconGlyph, NodeStyle, Popover, PopoverClosed, PopoverToggled,
     RangeField, RangeInput, RichAttrMask, RichSelectionAttrs, RichTextEditor, RichTextEditorEvent,
-    ScrollAxes, ScrollView, ScrollViewportChanged, SegmentedControl, SizeChanged, Stack, Text,
-    TextArea, TextChanged, TextInput, TextSubmitted,
+    ScrollAxes, ScrollView, ScrollViewportChanged, SegmentedControl, SizeChanged, Stack, Switch,
+    Text, TextArea, TextChanged, TextInput, TextSubmitted, ToggleChanged,
 };
 use nana_ui::theme::space;
 use nana_ui::{ButtonKind, ControlSize, PopoverPlacement};
@@ -36,7 +34,7 @@ use super::dialogue::{Base, Source, dialogue_box};
 use super::rich::{ChipKind, MarkerLook};
 use super::{I18N, Ui, c, restyle};
 use crate::msg::{FileTarget, MarkupEdit, Msg, Tool};
-use crate::windows::TOOLBAR_H;
+use crate::windows::{INPUT_MODE_H, TOOLBAR_H};
 
 mod workspace;
 
@@ -168,6 +166,52 @@ fn source_toggle(ui: Ui) -> AnyView {
         }
     })
     .on_cx(|_, _: &Activate, cx| cx.dispatch_program_all(Msg::ToggleSource))
+    .into_any()
+}
+
+fn layout_switch(ui: Ui) -> AnyView {
+    widget(
+        Stack::row(space::SM)
+            .height(LengthSpec::Px(INPUT_MODE_H))
+            .padding_xy(space::MD, 0.0)
+            .align(AlignSpec::Center)
+            .with_layout(|l| l.flex_shrink = Some(0.0)),
+    )
+    .key("input-mode-bar")
+    .children((
+        widget(Text::new(ui.now_t("input-plain-text")).style(text_style(12.0, 400)))
+            .bind(move |t: &mut Text| t.value = ui.t("input-plain-text")()),
+        widget(
+            Switch::new(
+                ui.now_t("input-skin-preview"),
+                ui.settings.with_untracked(|s| s.general.input_skin_preview),
+            )
+            .control_position(nana_ui_core::SwitchControlPosition::Start)
+            .size(ControlSize::Small)
+            .style({
+                let mut st = text_style(12.0, 400);
+                let l = Arc::make_mut(&mut st.layout);
+                // Switch paints its label internally, so auto width has no
+                // text to measure. Reserve room for the longest locale.
+                l.width = Some(LengthSpec::Px(160.0));
+                l.flex_shrink = Some(0.0);
+                l.padding_left = Some(LengthSpec::Px(0.0));
+                l.padding_right = Some(LengthSpec::Px(0.0));
+                st
+            }),
+        )
+        .key("input-skin-preview-switch")
+        .bind(move |s: &mut Switch| {
+            s.checked = ui.settings.with(|s| s.general.input_skin_preview);
+            s.label = ui.t("input-skin-preview")();
+        })
+        .on_cx(move |_, e: &ToggleChanged, cx| {
+            let checked = e.checked;
+            cx.dispatch_program_all(super::settings::controls::edit(move |s| {
+                s.general.input_skin_preview = checked;
+            }));
+        }),
+    ))
     .into_any()
 }
 
@@ -1419,9 +1463,30 @@ fn editor_area(
     source: EntityRef<TextArea>,
     focused: Signal<bool>,
 ) -> AnyView {
+    let text_base = move || {
+        // Keep the rich document's skin-relative sizes and font roles intact;
+        // plain mode changes only inherited presentation, never stored spans.
+        let mut base = Base::editor(&ui.skin.get());
+        if !ui.settings.with(|s| s.general.input_skin_preview) {
+            base.shadow = None;
+            base.stroke = None;
+            base.weight = 400;
+            base.letter_spacing = 0.0;
+            base.align = nanatype_theme::TextAlign::Start;
+            base.family = Some(crate::skin_theme::NANA_UI_FAMILIES[0].into());
+        }
+        base
+    };
     let style = move || {
-        let mut st = Base::editor(&ui.skin.get()).node_style();
+        let mut st = text_base().node_style();
+        let preview = ui.settings.with(|s| s.general.input_skin_preview);
+        if !preview {
+            st.foreground = Some(SemanticColorRole::Text);
+        }
         let l = Arc::make_mut(&mut st.layout);
+        if !preview {
+            l.color = None;
+        }
         l.width = Some(LengthSpec::Fill);
         l.min_width = Some(LengthSpec::Px(0.0));
         l.flex_grow = Some(1.0);
@@ -1437,7 +1502,7 @@ fn editor_area(
     // The placeholder is chrome, not a line: the theme's muted ink with none
     // of the skin's outline or shadow, so it cannot pass for typed text.
     let placeholder_style = move || {
-        let mut base = Base::editor(&ui.skin.get());
+        let mut base = text_base();
         base.shadow = None;
         base.stroke = None;
         let mut st = base.node_style();
@@ -1611,33 +1676,43 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
     let source = entity_ref::<TextArea>();
     let toasts = entity_ref::<nana_ui::runtime::ToastStack>();
     let focused = signal(false);
+    let viewport = signal((0.0_f32, 0.0_f32));
+    let is_preview = move || ui.settings.with(|s| s.general.input_skin_preview);
     let canvas_size = move || {
+        if !is_preview() {
+            return viewport.get();
+        }
         let skin = ui.skin.get();
         let s = ui.settings.get();
         let region = s.skin.overrides.region.unwrap_or(skin.dialogue.region);
         let pad = skin.dialogue.overscan * 2.0;
         (region[0] + pad, region[1] + pad)
     };
-    let viewport = signal((0.0_f32, 0.0_f32));
     // Fit only the preview presentation. The editor still lays out at the
     // stream canvas size, so resizing the sidebar cannot change line breaks.
     let preview_scale = move || {
+        if !is_preview() {
+            return 1.0;
+        }
         let (w, _) = canvas_size();
         ((viewport.get().0 - 32.0).max(1.0) / w.max(1.0)).min(1.0)
     };
-    let preview = widget(
-        ScrollView::new(ScrollAxes::Both)
-            .scrollbars(nana_ui_core::ScrollbarVisibility::Always)
-            .with_layout(|l| {
-                l.width = Some(LengthSpec::Fill);
-                l.height = Some(LengthSpec::Px(0.0));
-                l.min_height = Some(LengthSpec::Px(0.0));
-                l.min_width = Some(LengthSpec::Px(0.0));
-                l.flex_grow = Some(1.0);
-                l.flex_shrink = Some(1.0);
-            }),
-    )
+    let preview = widget(ScrollView::new(ScrollAxes::Both).with_layout(|l| {
+        l.width = Some(LengthSpec::Fill);
+        l.height = Some(LengthSpec::Px(0.0));
+        l.min_height = Some(LengthSpec::Px(0.0));
+        l.min_width = Some(LengthSpec::Px(0.0));
+        l.flex_grow = Some(1.0);
+        l.flex_shrink = Some(1.0);
+    }))
     .key("input-preview-scroll")
+    .bind(move |s: &mut ScrollView| {
+        s.scrollbars = Some(if is_preview() {
+            nana_ui_core::ScrollbarVisibility::Always
+        } else {
+            nana_ui_core::ScrollbarVisibility::Hidden
+        });
+    })
     .on(move |e: &ScrollViewportChanged| {
         let size = (e.width, e.height);
         if viewport.get_untracked() != size {
@@ -1647,7 +1722,6 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
     .children(
         widget(
             Stack::column(0.0)
-                .surface(SemanticColorRole::Subtle)
                 .align(AlignSpec::Center)
                 .justify(JustifySpec::Center),
         )
@@ -1655,9 +1729,15 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
             let (w, h) = canvas_size();
             let (vw, vh) = viewport.get();
             let scale = preview_scale();
+            let pad = if is_preview() { 32.0 } else { 0.0 };
+            *s = s.clone().surface(if is_preview() {
+                SemanticColorRole::Subtle
+            } else {
+                SemanticColorRole::Background
+            });
             restyle(s, |l| {
-                l.width = Some(LengthSpec::Px(vw.max(w * scale + 32.0)));
-                l.height = Some(LengthSpec::Px(vh.max(h * scale + 32.0)));
+                l.width = Some(LengthSpec::Px(vw.max(w * scale + pad)));
+                l.height = Some(LengthSpec::Px(vh.max(h * scale + pad)));
                 l.flex_shrink = Some(0.0);
             });
         })
@@ -1691,7 +1771,8 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
                     restyle(s, |l| {
                         l.width = Some(LengthSpec::Px(w));
                         l.height = Some(LengthSpec::Px(h));
-                        l.transform = Some(super::surface::affine(0.0, 0.0, 0.0, preview_scale()));
+                        l.transform = is_preview()
+                            .then(|| super::surface::affine(0.0, 0.0, 0.0, preview_scale()));
                         l.transform_origin = Some(nana_ui_core::TransformOrigin {
                             x: LengthSpec::Px(0.0),
                             y: LengthSpec::Px(0.0),
@@ -1737,7 +1818,7 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
             widget(Stack::fill_column(0.0).with_layout(|l| {
                 l.min_width = Some(LengthSpec::Px(0.0));
             }))
-            .children((toolbar(ui), preview)),
+            .children((layout_switch(ui), toolbar(ui), preview)),
         ),
         workspace::footer(ui, invitation, relay),
         super::feedback::toast_stack(toasts, crate::windows::INPUT_ACTIONS_H + 4.0, 2),

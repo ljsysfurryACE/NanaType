@@ -469,16 +469,30 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
     let plate = nameplate(ui, &ctx);
     let portrait = portrait(ui, &ctx);
     let cont = continue_indicator(ui, &ctx);
+    let plain =
+        move || source == Source::Draft && !ui.settings.with(|s| s.general.input_skin_preview);
 
-    let mut outer = widget(Stack::fill_column(0.0).with_layout(move |l| {
+    let outer_layout = move |l: &mut LayoutStyle| {
+        let (overscan, margin) = if source == Source::Draft {
+            ui.skin
+                .with(|s| (s.dialogue.overscan, s.dialogue.box_.margin))
+        } else {
+            (overscan, [mt, mr, mb, ml])
+        };
+        let [top, right, bottom, left] =
+            margin.map(|m| LengthSpec::Px(if plain() { 16.0 } else { overscan + m }));
         l.min_width = Some(LengthSpec::Px(0.0));
         l.min_height = Some(LengthSpec::Px(0.0));
-        l.padding_left = Some(LengthSpec::Px(overscan + ml));
-        l.padding_right = Some(LengthSpec::Px(overscan + mr));
-        l.padding_top = Some(LengthSpec::Px(overscan + mt));
-        l.padding_bottom = Some(LengthSpec::Px(overscan + mb));
+        l.padding_left = Some(left);
+        l.padding_right = Some(right);
+        l.padding_top = Some(top);
+        l.padding_bottom = Some(bottom);
         l.align_items = AlignSpec::Center;
-    }));
+    };
+    let mut outer = widget(Stack::fill_column(0.0).with_layout(outer_layout));
+    if source == Source::Draft {
+        outer = outer.bind(move |s: &mut Stack| restyle(s, outer_layout));
+    }
     if source == Source::Display {
         outer = outer.bind(move |s: &mut Stack| {
             let editing = ui.settings.with(|x| {
@@ -497,20 +511,28 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
             ui.display_kind().overlay(s).expect("display overlay").lock
                 == nanatype_settings::Lock::EditLayout
         });
-    let mut frame = widget(
-        Stack::fill_column(0.0)
-            .width(LengthSpec::Percent(width_fraction * 100.0))
-            .with_layout(move |l| {
-                l.min_width = Some(LengthSpec::Px(0.0));
-                l.min_height = Some(LengthSpec::Px(0.0));
-                l.position = PositionSpec::Relative;
-                l.overflow_x = OverflowSpec::Visible;
-                l.overflow_y = OverflowSpec::Visible;
-                if drag_window {
-                    l.pointer_events = Some(PointerEventsSpec::None);
-                }
-            }),
-    );
+    let frame_layout = move |l: &mut LayoutStyle| {
+        let fraction = if plain() {
+            1.0
+        } else if source == Source::Draft {
+            ui.skin.with(|s| s.dialogue.box_.width_fraction)
+        } else {
+            width_fraction
+        };
+        l.width = Some(LengthSpec::Percent(fraction * 100.0));
+        l.min_width = Some(LengthSpec::Px(0.0));
+        l.min_height = Some(LengthSpec::Px(0.0));
+        l.position = PositionSpec::Relative;
+        l.overflow_x = OverflowSpec::Visible;
+        l.overflow_y = OverflowSpec::Visible;
+        if drag_window {
+            l.pointer_events = Some(PointerEventsSpec::None);
+        }
+    };
+    let mut frame = widget(Stack::fill_column(0.0).with_layout(frame_layout));
+    if source == Source::Draft {
+        frame = frame.bind(move |s: &mut Stack| restyle(s, frame_layout));
+    }
     if source == Source::Display {
         frame = frame.bind(move |s: &mut Stack| {
             // Entrance and exit, whole-box fade and screen shake.
@@ -554,8 +576,28 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
         .css(nana_ui::runtime::view::css! { position: absolute; inset: 0; pointer-events: none; })
         .into_any()
     });
-    let the_box = widget(
-        box_surface
+    // Only replace the container's paint/layout; the editor stays mounted.
+    let box_stack = move || {
+        let (surface, padding) = if plain() {
+            (Surface::default(), [0.0; 4])
+        } else if source == Source::Draft {
+            let skin = ui.skin.get();
+            let urls = ui.asset_urls.get();
+            (
+                Surface::dialogue_box(
+                    &skin,
+                    skin.dialogue
+                        .box_
+                        .frame
+                        .as_ref()
+                        .and_then(|f| urls.get(&format!("skin:{}", f.image)).cloned()),
+                ),
+                skin.dialogue.padding,
+            )
+        } else {
+            (box_surface.clone(), padding)
+        };
+        surface
             .stack(Stack::fill_column(0.0))
             .with_layout(move |l| {
                 l.min_width = Some(LengthSpec::Px(0.0));
@@ -577,17 +619,41 @@ fn box_view(ui: Ui, ctx: BoxCtx, content: AnyView) -> impl IntoView {
                 l.padding_top = Some(LengthSpec::Px(padding[1]));
                 l.padding_right = Some(horizontal(padding[2]));
                 l.padding_bottom = Some(LengthSpec::Px(padding[3]));
-            }),
-    )
-    .children((
-        sweep,
+            })
+    };
+    let mut the_box = widget(box_stack());
+    if source == Source::Draft {
+        the_box = the_box.bind(move |s: &mut Stack| *s = box_stack());
+    }
+    let the_box = the_box.children((
+        input_skin_layer(ui, source, sweep),
         (source == Source::Display).then(|| reply_quote(ui)),
         text_port(ui, source, content),
     ));
 
     outer.children(frame.children((
-        below, tail_below, the_box, tail_above, above, portrait, plate, cont,
+        input_skin_layer(ui, source, (below, tail_below)),
+        the_box,
+        input_skin_layer(ui, source, (tail_above, above, portrait, plate, cont)),
     )))
+}
+
+/// Only the input editor can hide its skin, without unmounting the text.
+fn input_skin_layer(ui: Ui, source: Source, content: impl IntoView) -> AnyView {
+    if source != Source::Draft {
+        return content.into_any();
+    }
+    widget(Stack::column(0.0).with_layout(|l| {
+        l.position = PositionSpec::Absolute;
+        l.offset_left = Some(LengthSpec::Px(0.0));
+        l.offset_top = Some(LengthSpec::Px(0.0));
+        l.width = Some(LengthSpec::Percent(100.0));
+        l.height = Some(LengthSpec::Percent(100.0));
+        l.pointer_events = Some(PointerEventsSpec::None);
+    }))
+    .visible(move || ui.settings.with(|s| s.general.input_skin_preview))
+    .children(content)
+    .into_any()
 }
 
 /// The chat message the line on the typewriter answers, above its text

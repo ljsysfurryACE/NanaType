@@ -22,6 +22,7 @@ fn both_editors_keep_a_bounded_scrollable_viewport_across_skin_scale_and_mode_ch
         }) {
             let skin = registry.load(skin_id).unwrap().skin;
             let mut settings = Settings::default();
+            settings.general.input_skin_preview = true;
             settings.skin.overrides.region = Some([width as f32, 200.0]);
             let client_width = (width + 32).max(720);
             let height = nanatype::windows::INPUT_SIZE.1 as u32;
