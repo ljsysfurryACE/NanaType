@@ -18,7 +18,7 @@ use nanatype_bridge::{
 };
 use nanatype_core::{Cmd, Core, Effects, Event, UiSound};
 use nanatype_i18n::Locale;
-use nanatype_markup::{parse, serialize};
+use nanatype_markup::{parse, serialize, serialize_line};
 use nanatype_model::{AssetRef, Document, Inline};
 use nanatype_playback::CueKind;
 use nanatype_settings::{GeometryStore, InputPresence, LoadNote, SendKey, Settings};
@@ -45,6 +45,18 @@ const CHAT_CAP: usize = 500;
 
 /// Send-key mode shared with the editor's key handler.
 pub static SEND_KEY: AtomicU8 = AtomicU8::new(0);
+
+/// Editor operations applied by the host without replacing its editing state.
+pub enum EditorCommand {
+    Edit(nana_ui::runtime::RichEditCommand),
+    Insert(nana_ui_core::RichText),
+}
+
+impl From<nana_ui::runtime::RichEditCommand> for EditorCommand {
+    fn from(command: nana_ui::runtime::RichEditCommand) -> Self {
+        Self::Edit(command)
+    }
+}
 
 pub struct App {
     pub paths: Paths,
@@ -87,7 +99,7 @@ pub struct App {
     export_target: Option<String>,
     pub spout: crate::output::Spout,
     /// Editor commands for the host to apply to the input window's editor.
-    pub rich_commands: Vec<nana_ui::runtime::RichEditCommand>,
+    pub rich_commands: Vec<EditorCommand>,
     pub focus_editor: bool,
     pub source_edit_undoable: bool,
     /// Fonts packaged with the active skin, registered while it is active.
@@ -917,11 +929,36 @@ impl App {
         if self.peer_blocked(&cmd) {
             return;
         }
-        if !self.bilibili_preflight(&cmd) {
-            return;
-        }
-        let fx = self.core.handle(cmd, clock::now_ms());
+        let is_send = matches!(cmd, Cmd::Send);
+        let fx = match bilibili::handle_command(
+            &mut self.core,
+            cmd,
+            self.ui.bilibili.get_untracked().sending,
+            clock::now_ms(),
+        ) {
+            Ok(fx) => fx,
+            Err(()) => {
+                self.notice(self.ui.now_t("bili-images-unavailable"), true);
+                return;
+            }
+        };
+        let sent = is_send && fx.replace_draft.as_ref().is_some_and(Document::is_blank);
         self.apply_effects(fx);
+        if sent {
+            self.ui.chat_target.set(None);
+            let count = self.core.queued();
+            let feedback = if count > 0 {
+                self.ui.tr("chat-queued", &[("count", count.into())])
+            } else {
+                format!("{} ✓", self.ui.now_t("status-sent"))
+            };
+            self.toasts.push(ToastRequest::new(
+                feedback,
+                nana_ui::ToastTone::Success,
+                feedback::SENT_MS,
+                false,
+            ));
+        }
     }
 
     fn play_cue_now(&mut self, cue: &CueKind) {
@@ -975,7 +1012,7 @@ impl App {
             self.bridge_event(event);
         }
         if let Some(doc) = &fx.replace_draft {
-            self.set_source(serialize(doc), true);
+            self.set_source(serialize_line(doc, &self.core.draft_meta()), true);
         }
         if fx.hide_input {
             self.summoned = false;
@@ -1156,7 +1193,7 @@ impl App {
             && nanatype_bilibili::sending::image_count(&doc)
                 > nanatype_bilibili::sending::image_count(&previous)
         {
-            self.set_source(serialize(&previous), true);
+            self.set_source(serialize_line(&previous, &self.core.draft_meta()), true);
             self.notice(self.ui.now_t("bili-images-unavailable"), true);
             return;
         }
@@ -1274,7 +1311,7 @@ impl App {
             }
             Tool::ClearFormat => RichEditCommand::ClearFormatting,
         };
-        self.rich_commands.push(command);
+        self.rich_commands.push(command.into());
     }
 
     fn markup(&mut self, edit: MarkupEdit) {
@@ -1432,35 +1469,11 @@ impl App {
             Msg::PeerLeave => self.peer_leave(),
             Msg::PeerPanel(expanded) => self.ui.peer_panel.set(expanded),
             Msg::PeerEvent(generation, event) => self.peer_event(generation, event),
-            Msg::Core(Cmd::Send) => {
-                if self.peer_blocked(&Cmd::Send) {
-                    return;
-                }
-                let fx = self.core.handle(Cmd::Send, clock::now_ms());
-                // A send that took the draft: say so briefly.
-                let sent = fx.replace_draft.as_ref().is_some_and(Document::is_blank);
-                self.apply_effects(fx);
-                if sent {
-                    self.ui.chat_target.set(None);
-                    let count = self.core.queued();
-                    let feedback = if count > 0 {
-                        self.ui.tr("chat-queued", &[("count", count.into())])
-                    } else {
-                        format!("{} ✓", self.ui.now_t("status-sent"))
-                    };
-                    self.toasts.push(ToastRequest::new(
-                        feedback,
-                        nana_ui::ToastTone::Success,
-                        feedback::SENT_MS,
-                        false,
-                    ));
-                }
-            }
             Msg::Core(cmd) => self.run(cmd),
             Msg::Edit(f) => self.edit(f),
             Msg::Markup(edit) => self.markup(edit),
             Msg::Tool(tool) => self.tool(tool),
-            Msg::EditorCommand(command) => self.rich_commands.push(command),
+            Msg::EditorCommand(command) => self.rich_commands.push(command.into()),
             Msg::EditorChanged(rich) => self.editor_changed(rich),
             Msg::EditorPaste => {
                 if let Ok(mut clipboard) = arboard::Clipboard::new()
@@ -1519,11 +1532,8 @@ impl App {
             },
             Msg::ShowWindow(kind) => match kind {
                 WindowKind::Input => {
-                    self.summoned = true;
                     self.focus_editor = true;
-                    if !self.settings.overlays.input.visible {
-                        self.edit(|s| s.overlays.input.visible = true);
-                    }
+                    self.set_input_visibility(true);
                     self.commands
                         .push(WindowCommand::Focus(WindowKind::Input.id()));
                 }
@@ -1535,7 +1545,7 @@ impl App {
                     }
                 }),
             },
-            Msg::HideInput => self.summoned = false,
+            Msg::HideInput => self.set_input_visibility(false),
             Msg::ResetWindow(kind) => {
                 self.windows.forget(kind);
                 self.edit(|s| {
@@ -1620,8 +1630,15 @@ impl App {
                     } else if self.ui.source_mode.get_untracked() {
                         self.markup(MarkupEdit::Insert(expanded));
                     } else {
-                        let source = self.ui.source.get_untracked().text;
-                        self.set_source(format!("{source}{expanded}"), true);
+                        let parsed = parse(&expanded);
+                        // A phrase starting an empty draft can also set its line
+                        // header, as inserting the markup source did before.
+                        if self.core.draft().is_blank() && parsed.meta != Default::default() {
+                            self.set_source(serialize_line(&Document::new(), &parsed.meta), true);
+                        }
+                        let fragment = self.editor_rich(&parsed.doc);
+                        self.rich_commands.push(EditorCommand::Insert(fragment));
+                        self.focus_editor = true;
                     }
                 }
             }
@@ -1902,7 +1919,7 @@ impl App {
                 self.markup(MarkupEdit::Insert(" ".into()));
             } else {
                 self.rich_commands
-                    .push(nana_ui::runtime::RichEditCommand::InsertText(" ".into()));
+                    .push(nana_ui::runtime::RichEditCommand::InsertText(" ".into()).into());
             }
         }
         self.ui.chat_target.set(Some(seq));
@@ -1956,6 +1973,12 @@ impl App {
         }
         self.commands
             .push(WindowCommand::Close(WindowKind::Chat.id()));
+    }
+
+    fn set_input_visibility(&mut self, visible: bool) {
+        let mut summoned = self.summoned;
+        self.edit(|s| windows::set_input_visibility(s, &mut summoned, visible));
+        self.summoned = summoned;
     }
 
     fn hotkey(&mut self, action: GlobalAction) {
@@ -2116,7 +2139,8 @@ pub(crate) fn sync_rich_draft(ui: Ui, rich: nana_ui_core::RichText) -> Document 
     let look = crate::ui::dialogue::Base::editor(&ui.skin.get_untracked()).look();
     let doc = crate::ui::rich::from_rich(&rich, &look);
     ui.editor_value.set(rich);
-    let text = serialize(&doc);
+    let meta = parse(&ui.source.get_untracked().text).meta;
+    let text = serialize_line(&doc, &meta);
     let mut src = ui.source.get_untracked();
     if src.text != text {
         let len = text.len();

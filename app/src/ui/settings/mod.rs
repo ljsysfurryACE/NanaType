@@ -12,7 +12,7 @@ pub use pages::font_licence_panel;
 use std::sync::Arc;
 
 use nana_ui::icons_tabler as ti;
-use nana_ui::runtime::view::{AnyView, IntoView, dynamic, widget};
+use nana_ui::runtime::view::{AnyView, IntoView, dynamic, entity_ref, on_mount, widget};
 use nana_ui::runtime::{Activate, ListItem, NodeStyle, ScrollAxes, ScrollView, Stack, Text};
 use nana_ui::theme::{space, type_scale};
 use nana_ui_core::{LengthSpec, SemanticColorRole};
@@ -242,15 +242,26 @@ fn sidebar(ui: Ui) -> AnyView {
             ),
             widget(Text::new("NanaType").style(title)),
         )),
-        items,
-        // About stays at the foot, under whatever the groups leave.
-        widget(Stack::column(0.0).grow(1.0)),
-        nav_row(ui, Page::About),
+        widget(scroll_view()).children(widget(Stack::column(space::XXS)).children(items)),
+        // Keep About reachable while the navigation above scrolls on short screens.
+        widget(Stack::column(0.0).with_layout(|l| l.flex_shrink = Some(0.0)))
+            .children(nav_row(ui, Page::About)),
     ))
     .into_any()
 }
 
+fn scroll_view() -> ScrollView {
+    // Size the viewport from the window, rather than its overflowing content.
+    ScrollView::new(ScrollAxes::Vertical).with_layout(|l| {
+        l.flex_grow = Some(1.0);
+        l.flex_shrink = Some(1.0);
+        l.height = Some(LengthSpec::Px(0.0));
+        l.min_height = Some(LengthSpec::Px(0.0));
+    })
+}
+
 pub fn settings_window(ui: Ui) -> impl IntoView {
+    let body_scroll = entity_ref::<ScrollView>();
     let body = widget(
         Stack::row(0.0)
             .width(LengthSpec::Fill)
@@ -261,7 +272,7 @@ pub fn settings_window(ui: Ui) -> impl IntoView {
     .children((
         sidebar(ui),
         widget(Stack::fill_column(0.0)).children(
-            widget(ScrollView::new(ScrollAxes::Vertical)).children(
+            widget(scroll_view()).entity_ref(body_scroll).children(
                 widget(Stack::column(0.0).max_width(860.0).with_layout(|l| {
                     l.padding_top = Some(LengthSpec::Px(space::PAGE_TIGHT));
                     l.padding_right = Some(LengthSpec::Px(space::PAGE));
@@ -270,7 +281,16 @@ pub fn settings_window(ui: Ui) -> impl IntoView {
                 }))
                 .children(dynamic(
                     move || (ui.page.get(), ui.locale.get()),
-                    move |(page, _)| pages::page(ui, *page),
+                    move |(page, _)| {
+                        // A newly opened page starts at its heading, regardless
+                        // of how far the previous page was scrolled.
+                        on_mount(move |cx| {
+                            if let Some(scroll) = body_scroll.get() {
+                                let _ = cx.scroll_to(scroll, Default::default());
+                            }
+                        });
+                        pages::page(ui, *page)
+                    },
                 )),
             ),
         ),

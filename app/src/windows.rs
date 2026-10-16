@@ -299,6 +299,14 @@ pub struct Desired {
     pub size: (f32, f32),
 }
 
+/// Apply an explicit show/hide action while preserving summon-mode preference.
+pub(crate) fn set_input_visibility(s: &mut Settings, summoned: &mut bool, visible: bool) {
+    *summoned = visible;
+    if visible || s.general.input_presence == InputPresence::Resident {
+        s.overlays.input.visible = visible;
+    }
+}
+
 pub fn desired(kind: WindowKind, skin: &Skin, s: &Settings, input_summoned: bool) -> Desired {
     let o = kind.overlay(s);
     let visible = match kind {
@@ -542,6 +550,22 @@ mod tests {
         assert_eq!(dw, iw);
         assert_eq!(dw, skin.dialogue.region[0] + skin.dialogue.overscan * 2.0);
         assert!(ih > dh, "the input adds a toolbar and an editor");
+    }
+
+    #[test]
+    fn explicit_input_hide_and_summon_work_in_both_presence_modes() {
+        let skin = skin();
+        for mode in [InputPresence::Resident, InputPresence::Summon] {
+            let mut s = Settings::default();
+            s.general.input_presence = mode;
+            let mut summoned = true;
+            set_input_visibility(&mut s, &mut summoned, false);
+            assert!(!desired(WindowKind::Input, &skin, &s, summoned).visible);
+            assert_eq!(s.overlays.input.visible, mode == InputPresence::Summon);
+            set_input_visibility(&mut s, &mut summoned, true);
+            assert!(desired(WindowKind::Input, &skin, &s, summoned).visible);
+            assert_eq!(s.general.input_presence, mode);
+        }
     }
 
     #[test]

@@ -529,7 +529,7 @@ fn sync_editor(
     ui: crate::ui::Ui,
     editor: Entity<RichTextEditor>,
     source: Option<Entity<nana_ui::runtime::TextArea>>,
-    commands: Vec<nana_ui::runtime::RichEditCommand>,
+    commands: Vec<crate::app::EditorCommand>,
     focus: bool,
     source_undoable: bool,
 ) {
@@ -560,10 +560,52 @@ fn sync_editor(
         }
     }
     for command in commands {
-        if let Err(error) = cx.rich_edit(editor, command) {
+        let result = match command {
+            crate::app::EditorCommand::Edit(command) => cx.rich_edit(editor, command),
+            crate::app::EditorCommand::Insert(fragment) => {
+                insert_rich_fragment(cx, ui, editor, &fragment)
+            }
+        };
+        if let Err(error) = result {
             crate::debug_log(&format!("rich edit: {error}"));
         }
     }
+}
+
+/// NanaUI exposes text insertion and attributed document replacement separately.
+/// Record a single native undo step, then restore the fragment's spans, ruby and
+/// objects before reporting the final value to the application.
+fn insert_rich_fragment(
+    cx: &mut nana_ui::runtime::AppContext,
+    ui: crate::ui::Ui,
+    editor: Entity<RichTextEditor>,
+    fragment: &nana_ui_core::RichText,
+) -> Result<bool, FrameworkError> {
+    use nana_ui::runtime::{RichEditCommand, RichTextEditorEvent};
+    if fragment.text().is_empty() || cx.read(editor, |e| e.read_only || e.disabled)? {
+        return Ok(false);
+    }
+    let selection = cx.read(editor, |e| e.selection())?;
+    let start = selection.0.min(selection.1);
+    let end = start + fragment.text().len();
+    ui.editor_transaction.set(true);
+    let result = (|| {
+        // Select breaks coalescing with preceding typing without changing it.
+        cx.rich_edit(
+            editor,
+            RichEditCommand::Select(start..selection.0.max(selection.1)),
+        )?;
+        cx.rich_edit(editor, RichEditCommand::InsertText(fragment.text().into()))
+    })();
+    ui.editor_transaction.set(false);
+    result?;
+    cx.update_component(editor, |e, cx| {
+        e.value.replace_with(start..end, fragment);
+        cx.emit(RichTextEditorEvent::Changed(e.value.clone()));
+    })?;
+    // Following typing starts a new undo step and reads the final attributes.
+    cx.rich_edit(editor, RichEditCommand::Select(end..end))?;
+    Ok(true)
 }
 
 #[cfg(test)]

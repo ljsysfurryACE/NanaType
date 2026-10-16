@@ -1534,7 +1534,9 @@ fn editor_area(ui: Ui, editor: EntityRef<RichTextEditor>, source: EntityRef<Text
                     }
                 })
                 .on_cx(move |_, e: &RichTextEditorEvent, cx| match e {
-                    RichTextEditorEvent::Changed(rich) => {
+                    RichTextEditorEvent::Changed(rich)
+                        if !ui.editor_transaction.get_untracked() =>
+                    {
                         cx.dispatch_program_all(Msg::EditorChanged(rich.clone()))
                     }
                     RichTextEditorEvent::SelectionChanged { attrs, .. } => {

@@ -486,6 +486,104 @@ fn switching_modes_clears_the_queue_and_display() {
 }
 
 #[test]
+fn mirror_recall_and_restore_publish_the_editor_contents_without_submitting() {
+    let mut core = core_with(|s| s.general.input_mode = InputMode::Mirror);
+    type_and_send(&mut core, "上一句", 0);
+    core.handle(Cmd::DraftChanged(Document::plain("新草稿")), 1);
+    for (direction, expected) in [(-1, "上一句"), (1, "新草稿")] {
+        let fx = core.handle(Cmd::Recall(direction), 2);
+        assert!(fx.display_changed);
+        assert!(
+            fx.events
+                .iter()
+                .all(|e| !matches!(e, Event::LineSubmitted(_)))
+        );
+        assert_eq!(core.draft().plain_text(), expected);
+        assert_eq!(core.display().doc.plain_text(), expected);
+        assert!(core.display().line.is_none());
+        core.handle(Cmd::DraftChanged(fx.replace_draft.unwrap()), 3);
+        assert_eq!(core.display().doc.plain_text(), expected);
+    }
+    assert_eq!(core.history().len(), 1);
+}
+
+#[test]
+fn recall_restores_line_headers_and_the_stashed_drafts_header() {
+    let mut core = core_with(|_| {});
+    let original = parse("[@auto=200 after=clear delay=100][b]清屏台词[/b]");
+    core.handle(Cmd::DraftMeta(original.meta), 0);
+    core.handle(Cmd::DraftChanged(original.doc.clone()), 0);
+    core.handle(Cmd::Send, 1);
+    let stashed = parse("[@after=fade delay=500 per=20]暂存草稿");
+    core.handle(Cmd::DraftMeta(stashed.meta), 2);
+    core.handle(Cmd::DraftChanged(stashed.doc.clone()), 2);
+    for (direction, expected) in [(-1, &original), (1, &stashed), (-1, &original)] {
+        let fx = core.handle(Cmd::Recall(direction), 3);
+        let source =
+            nanatype_markup::serialize_line(&fx.replace_draft.unwrap(), &core.draft_meta());
+        let restored = parse(&source);
+        assert_eq!(restored.doc, expected.doc);
+        assert_eq!(restored.meta, expected.meta);
+        // Same host handoff as App::apply_effects -> reparse.
+        core.handle(Cmd::DraftMeta(restored.meta), 4);
+        core.handle(Cmd::DraftChanged(restored.doc), 4);
+    }
+    let fx = core.handle(Cmd::Send, 5);
+    assert!(
+        fx.events
+            .iter()
+            .any(|e| matches!(e, Event::LineSubmitted(line) if line.meta == original.meta))
+    );
+    assert_eq!(core.draft_meta(), Default::default());
+}
+
+#[test]
+fn mode_round_trips_and_edited_recall_preserve_sends_and_headers() {
+    let mut core = core_with(|_| {});
+    let original = parse("[@auto=250 after=clear delay=100][b]初稿[/b][pause]尾声");
+    core.handle(Cmd::DraftMeta(original.meta), 0);
+    core.handle(Cmd::DraftChanged(original.doc.clone()), 0);
+    for (at, mode) in [InputMode::Mirror, InputMode::Compose, InputMode::Mirror]
+        .into_iter()
+        .enumerate()
+    {
+        let mut s = core.settings().clone();
+        s.general.input_mode = mode;
+        core.handle(Cmd::SetSettings(Box::new(s)), at as u64 + 1);
+        assert_eq!(core.draft(), &original.doc);
+        assert_eq!(core.draft_meta(), original.meta);
+        if mode == InputMode::Mirror {
+            assert_eq!(core.display().doc.as_ref(), &original.doc);
+        }
+    }
+    let fx = core.handle(Cmd::Send, 4);
+    assert!(fx.events.iter().any(|e| matches!(e, Event::LineSubmitted(line) if line.doc == original.doc && line.meta == original.meta)));
+    assert_eq!(
+        fx.events
+            .iter()
+            .filter(|e| matches!(e, Event::LineSubmitted(_)))
+            .count(),
+        1
+    );
+    assert_eq!(core.history().len(), 1);
+    assert!(core.draft().is_blank());
+    assert!(core.handle(Cmd::Send, 4).events.is_empty());
+    core.handle(Cmd::DraftChanged(Document::plain("暂存草稿")), 5);
+    core.handle(Cmd::Recall(-1), 6);
+    let edited = parse("[i]回调后修改[/i]").doc;
+    core.handle(Cmd::DraftChanged(edited.clone()), 7);
+    assert_eq!(core.display().doc.as_ref(), &edited);
+    assert!(
+        core.handle(Cmd::Recall(1), 8).replace_draft.is_none(),
+        "editing should leave recall navigation"
+    );
+    let fx = core.handle(Cmd::Send, 9);
+    assert!(fx.events.iter().any(|e| matches!(e, Event::LineSubmitted(line) if line.doc == edited && line.meta == original.meta)));
+    assert_eq!(core.history().len(), 2);
+    assert!(core.draft().is_blank());
+}
+
+#[test]
 fn stale_wakes_from_an_older_line_are_ignored() {
     let mut core = core_with(|_| {});
     let fx = type_and_send(&mut core, "aaaa", 0);

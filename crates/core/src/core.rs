@@ -135,6 +135,12 @@ struct Active {
     generation: u64,
 }
 
+#[derive(Clone, Default)]
+struct Draft {
+    doc: Document,
+    meta: LineMeta,
+}
+
 pub struct Core {
     settings: Settings,
     skin: Arc<Skin>,
@@ -149,10 +155,10 @@ pub struct Core {
     display: DisplayView,
     history: VecDeque<HistoryRow>,
     next_row: u64,
-    sent: VecDeque<Document>,
+    sent: VecDeque<Draft>,
     recall: Option<usize>,
     /// Draft stashed when recall started.
-    stash: Option<Document>,
+    stash: Option<Draft>,
     /// Mirror mode: the committed line stays until typing starts again.
     mirror_committed: bool,
     /// The last speaking cue fired was a start (avatars' mouths are moving).
@@ -210,6 +216,10 @@ impl Core {
 
     pub fn draft(&self) -> &Document {
         &self.draft
+    }
+
+    pub fn draft_meta(&self) -> LineMeta {
+        self.draft_meta
     }
 
     pub fn display(&self) -> &DisplayView {
@@ -307,7 +317,7 @@ impl Core {
                 }
             }
             Cmd::ClearDisplay => self.clear_display(&mut fx),
-            Cmd::Recall(dir) => self.recall(dir, &mut fx),
+            Cmd::Recall(dir) => self.recall(dir, now, &mut fx),
             Cmd::Wake { epoch, reason } => {
                 let Some(active) = self.active.as_mut() else {
                     return fx;
@@ -386,7 +396,7 @@ impl Core {
             self.stop_player(fx);
             self.mirror_committed = false;
             if self.mode() == InputMode::Mirror {
-                let draft = std::mem::take(&mut self.draft);
+                let draft = self.draft.clone();
                 self.show_mirror(draft, &Document::new(), now, fx);
             } else {
                 self.blank_display(fx);
@@ -495,10 +505,12 @@ impl Core {
     }
 
     fn recalled_doc(&self) -> Option<&Document> {
-        self.recall.and_then(|i| self.sent.get(i))
+        self.recall
+            .and_then(|i| self.sent.get(i))
+            .map(|draft| &draft.doc)
     }
 
-    fn recall(&mut self, dir: i32, fx: &mut Effects) {
+    fn recall(&mut self, dir: i32, now: Millis, fx: &mut Effects) {
         if self.sent.is_empty() {
             return;
         }
@@ -511,15 +523,24 @@ impl Core {
             (Some(i), _) => Some(i + 1),
         };
         if self.recall.is_none() {
-            self.stash = Some(self.draft.clone());
+            self.stash = Some(Draft {
+                doc: self.draft.clone(),
+                meta: self.draft_meta,
+            });
         }
         self.recall = next;
-        let doc = match next {
+        let draft = match next {
             Some(i) => self.sent[i].clone(),
             None => self.stash.take().unwrap_or_default(),
         };
-        self.draft = doc.clone();
-        fx.replace_draft = Some(doc);
+        let previous = std::mem::replace(&mut self.draft, draft.doc.clone());
+        self.draft_meta = draft.meta;
+        if self.mode() == InputMode::Mirror {
+            self.mirror_committed = false;
+            self.stop_player(fx);
+            self.show_mirror(draft.doc.clone(), &previous, now, fx);
+        }
+        fx.replace_draft = Some(draft.doc);
     }
 
     // ---- sending --------------------------------------------------------
@@ -529,7 +550,10 @@ impl Core {
         if doc.is_blank() {
             return;
         }
-        self.sent.push_back(doc.clone());
+        self.sent.push_back(Draft {
+            doc: doc.clone(),
+            meta: self.draft_meta,
+        });
         while self.sent.len() > RECALL_CAP {
             self.sent.pop_front();
         }

@@ -2,8 +2,8 @@ use crate::{app::App, msg::Msg, ui::settings::Page};
 use nanatype_bilibili::{
     AccountState, ConnectionState, Delivery, DeliveryState, Event, SessionEvent, sending,
 };
-use nanatype_core::{Cmd, Event as CoreEvent};
-use nanatype_model::Speaker;
+use nanatype_core::{Cmd, Core, Effects, Event as CoreEvent};
+use nanatype_model::{Document, Speaker};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
@@ -58,6 +58,106 @@ impl Echoes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ready_to_confirm() -> State {
+        State {
+            account: AccountState::Ready(nanatype_bilibili::Profile {
+                uid: 7,
+                name: "主播".into(),
+                avatar_url: String::new(),
+                room_id: Some(100),
+            }),
+            connection: ConnectionState::Connected(nanatype_bilibili::Room {
+                id: 100,
+                owner: 7,
+                title: "room".into(),
+                max_chars: 20,
+            }),
+            confirm: true,
+            ..State::default()
+        }
+    }
+
+    #[test]
+    fn images_are_preserved_until_sync_is_disabled_or_the_draft_is_corrected() {
+        let skin = nanatype_theme::SkinRegistry::new(None, "0.1.0")
+            .load(nanatype_theme::DEFAULT_SKIN)
+            .unwrap()
+            .skin;
+        for tag in ["[img=blob:fixture]", "[sticker=cats/hello]", "[emote=wave]"] {
+            let draft = nanatype_markup::parse(&format!("保留台词{tag}")).doc;
+            let mut core = Core::new(Default::default(), skin.clone());
+            handle_command(&mut core, Cmd::DraftChanged(draft.clone()), false, 0).unwrap();
+            let mut state = ready_to_confirm();
+            assert!(state.confirm_sending(core.draft(), true).is_err());
+            assert!(!state.sending && !state.confirm);
+            // Also protects images recalled or restored after sync was enabled.
+            assert!(handle_command(&mut core, Cmd::Send, true, 1).is_err());
+            assert_eq!(core.draft(), &draft);
+            assert!(core.history().is_empty());
+            assert!(
+                handle_command(&mut core, Cmd::SendMarkup(format!("台词{tag}")), true, 2).is_err()
+            );
+            assert_eq!(core.draft(), &draft);
+            // Turning synchronization off still allows the local submission.
+            let fx = handle_command(&mut core, Cmd::Send, false, 3).unwrap();
+            assert!(
+                fx.events
+                    .iter()
+                    .any(|e| matches!(e, CoreEvent::LineSubmitted(line) if line.doc == draft))
+            );
+            state.confirm = true;
+            assert_eq!(state.confirm_sending(core.draft(), true), Ok(true));
+            handle_command(&mut core, Cmd::Recall(-1), true, 4).unwrap();
+            assert!(handle_command(&mut core, Cmd::Send, true, 5).is_err());
+            assert_eq!(core.draft(), &draft);
+            assert_eq!(core.history().len(), 1);
+            handle_command(
+                &mut core,
+                Cmd::DraftChanged(Document::plain("台词")),
+                true,
+                6,
+            )
+            .unwrap();
+            state.confirm = true;
+            assert_eq!(state.confirm_sending(core.draft(), true), Ok(true));
+            let fx = handle_command(&mut core, Cmd::Send, state.sending, 7).unwrap();
+            assert_eq!(
+                fx.events
+                    .iter()
+                    .filter(|e| matches!(e, CoreEvent::LineSubmitted(_)))
+                    .count(),
+                1
+            );
+            assert!(core.draft().is_blank());
+            assert!(
+                handle_command(&mut core, Cmd::Send, true, 8)
+                    .unwrap()
+                    .events
+                    .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn cancelled_or_stale_confirmation_never_enables_sending() {
+        let mut state = ready_to_confirm();
+        assert_eq!(
+            state.confirm_sending(&Document::plain("text"), false),
+            Ok(false)
+        );
+        assert_eq!(
+            state.confirm_sending(&Document::plain("text"), true),
+            Ok(false)
+        );
+        state.confirm = true;
+        state.connection = ConnectionState::Off;
+        assert_eq!(
+            state.confirm_sending(&Document::plain("text"), true),
+            Ok(false)
+        );
+    }
+
     fn key(id: &str) -> EchoKey {
         (1, 100, id.into())
     }
@@ -108,6 +208,48 @@ impl State {
             .filter(|d| matches!(d.state, DeliveryState::Queued | DeliveryState::Sending))
             .count()
     }
+
+    fn confirm_sending(&mut self, draft: &Document, accept: bool) -> Result<bool, ()> {
+        if !self.confirm {
+            return Ok(self.sending);
+        }
+        self.confirm = false;
+        self.sending = false;
+        if accept && self.can_send() {
+            if !draft.is_blank() && sending::plain_text(draft).is_err() {
+                return Err(());
+            }
+            self.sending = true;
+        }
+        Ok(self.sending)
+    }
+}
+
+/// All local commands, including the editor's Send, pass this boundary before
+/// consuming the draft or producing submission/history events.
+pub(super) fn handle_command(
+    core: &mut Core,
+    cmd: Cmd,
+    synchronizing: bool,
+    now: u64,
+) -> Result<Effects, ()> {
+    if synchronizing {
+        let invalid = match &cmd {
+            Cmd::Send => !core.draft().is_blank() && sending::plain_text(core.draft()).is_err(),
+            Cmd::SendMarkup(markup) => {
+                let doc = nanatype_markup::parse(markup).doc;
+                !doc.is_blank() && sending::plain_text(&doc).is_err()
+            }
+            Cmd::DraftChanged(doc) => {
+                sending::image_count(doc) > sending::image_count(core.draft())
+            }
+            _ => false,
+        };
+        if invalid {
+            return Err(());
+        }
+    }
+    Ok(core.handle(cmd, now))
 }
 impl App {
     pub(super) fn bili_state(&self, edit: impl FnOnce(&mut State)) {
@@ -172,44 +314,27 @@ impl App {
         if !state.confirm {
             return;
         }
-        let enable = accept && state.can_send();
-        self.bili_state(|s| {
-            s.confirm = false;
-            s.sending = enable;
-        });
-        self.bilibili.set_sending(enable);
-    }
-    pub(super) fn bilibili_preflight(&mut self, cmd: &Cmd) -> bool {
-        if !self.ui.bilibili.get_untracked().sending {
-            return true;
-        }
-        let invalid = match cmd {
-            Cmd::Send => {
-                sending::plain_text(self.core.draft()).is_err() && !self.core.draft().is_blank()
-            }
-            Cmd::SendMarkup(markup) => {
-                let doc = nanatype_markup::parse(markup).doc;
-                !doc.is_blank() && sending::plain_text(&doc).is_err()
-            }
-            Cmd::DraftChanged(doc) => {
-                sending::image_count(doc) > sending::image_count(self.core.draft())
-            }
-            _ => false,
-        };
-        if invalid {
+        let mut state = (*state).clone();
+        let result = state.confirm_sending(self.core.draft(), accept);
+        self.bilibili.set_sending(state.sending);
+        self.ui.bilibili.set(Arc::new(state));
+        if result.is_err() {
             self.notice(self.ui.now_t("bili-images-unavailable"), true);
         }
-        !invalid
     }
     pub(super) fn bilibili_submitted(&mut self, event: &CoreEvent) {
         if !self.ui.bilibili.get_untracked().sending {
             return;
         }
-        if let CoreEvent::LineSubmitted(line) = event
-            && let Ok(text) = sending::plain_text(&line.doc)
-            && !self.bilibili.send(line.id, text)
-        {
-            self.notice(self.ui.now_t("bili-queue-full"), true);
+        if let CoreEvent::LineSubmitted(line) = event {
+            match sending::plain_text(&line.doc) {
+                Ok(text) => {
+                    if !self.bilibili.send(line.id, text) {
+                        self.notice(self.ui.now_t("bili-queue-full"), true);
+                    }
+                }
+                Err(_) => self.notice(self.ui.now_t("bili-images-unavailable"), true),
+            }
         }
     }
     pub(super) fn sync_bilibili_speaker(&mut self) {

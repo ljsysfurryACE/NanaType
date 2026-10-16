@@ -214,7 +214,7 @@ impl Fixture {
             self.ui,
             self.editor,
             Some(self.source),
-            commands,
+            commands.into_iter().map(Into::into).collect(),
             focus,
             source_undoable,
         );
@@ -223,6 +223,29 @@ impl Fixture {
     }
     fn focus(&mut self) {
         self.sync(true, false, Vec::new());
+    }
+    fn insert_phrase(&mut self, markup: &str) {
+        let look = crate::ui::dialogue::Base::editor(&self.ui.skin.get_untracked()).look();
+        let fragment = crate::ui::rich::to_rich(
+            &nanatype_markup::parse(markup).doc,
+            &crate::ui::rich::Env {
+                look: &look,
+                urls: &self.ui.asset_urls.get_untracked(),
+                editor: true,
+                locale: self.ui.locale.get_untracked(),
+            },
+        );
+        sync_editor(
+            self.session.document_mut(),
+            self.ui,
+            self.editor,
+            Some(self.source),
+            vec![crate::app::EditorCommand::Insert(fragment)],
+            true,
+            false,
+        );
+        self.pump();
+        self.session.flush().unwrap();
     }
     fn action(&mut self, action: TextEditAction) {
         let id = self.id();
@@ -238,6 +261,135 @@ impl Fixture {
         self.pump();
         self.session.flush().unwrap();
     }
+}
+
+#[test]
+fn rich_phrases_insert_at_the_caret_or_selection_as_one_undo_step() {
+    let phrase = "[b]加粗[/b][ruby=かな]字[/ruby][pause][sticker=cats/hello]";
+    for selection in [3..3, 3..6] {
+        let mut f = Fixture::new(false, false, "甲乙丙");
+        f.focus();
+        f.sync(
+            true,
+            false,
+            vec![RichEditCommand::Select(selection.clone())],
+        );
+        let edits = f.edits;
+        f.insert_phrase(phrase);
+        let suffix = if selection.is_empty() {
+            "乙丙"
+        } else {
+            "丙"
+        };
+        let expected = nanatype_markup::parse(&format!("甲{phrase}{suffix}")).doc;
+        assert_eq!(*f.ui.draft.get_untracked(), expected);
+        assert_eq!(
+            f.edits,
+            edits + 1,
+            "no unstyled intermediate reaches the core"
+        );
+        let caret = f.selection();
+        assert_eq!(caret.0, caret.1);
+        assert!(caret.0 < f.text().len(), "caret stays before the suffix");
+        f.action(TextEditAction::Undo);
+        assert_eq!(f.text(), "甲乙丙");
+        assert_eq!(f.selection(), (selection.start, selection.end));
+        f.action(TextEditAction::Redo);
+        assert_eq!(*f.ui.draft.get_untracked(), expected);
+        assert_eq!(f.selection(), caret);
+    }
+}
+
+#[test]
+fn same_text_phrases_replace_formatting_and_rich_edits_keep_line_headers() {
+    let mut f = Fixture::new(false, false, "word");
+    f.focus();
+    let mut source = f.ui.source.get_untracked();
+    source.text = "[@auto=200 after=clear delay=100]word".into();
+    f.ui.source.set(source);
+    f.sync(true, false, vec![RichEditCommand::SelectAll]);
+    f.insert_phrase("[b]word[/b]");
+    let parsed = nanatype_markup::parse(&f.ui.source.get_untracked().text);
+    assert_eq!(parsed.doc, nanatype_markup::parse("[b]word[/b]").doc);
+    assert_eq!(parsed.meta.auto_advance_ms, Some(200));
+    assert_eq!(
+        parsed.meta.after,
+        Some(nanatype_model::AfterLine::Clear { delay_ms: 100 })
+    );
+    f.action(TextEditAction::Undo);
+    assert_eq!(
+        *f.ui.draft.get_untracked(),
+        nanatype_model::Document::plain("word")
+    );
+    f.action(TextEditAction::Redo);
+    assert_eq!(*f.ui.draft.get_untracked(), parsed.doc);
+}
+
+#[test]
+fn recheck_phrase_then_typing_undo_redo_and_source_switch_keep_the_document() {
+    let mut f = Fixture::new(false, false, "甲👩‍💻乙");
+    f.focus();
+    f.sync(true, false, vec![RichEditCommand::Select(3..3)]);
+    f.insert_phrase("[b]你好[/b]\n[ruby=かな]字[/ruby][pause][sticker=cats/hello]");
+    let inserted = f.ui.draft.get_untracked();
+    f.event(InputPayload::Text(nana_ui_platform::CommittedText::new(
+        "继续",
+    )));
+    let typed = f.ui.draft.get_untracked();
+    assert_ne!(typed, inserted);
+    f.action(TextEditAction::Undo);
+    assert_eq!(f.ui.draft.get_untracked(), inserted);
+    f.action(TextEditAction::Undo);
+    assert_eq!(f.text(), "甲👩‍💻乙");
+    f.action(TextEditAction::Redo);
+    assert_eq!(f.ui.draft.get_untracked(), inserted);
+    f.action(TextEditAction::Redo);
+    assert_eq!(f.ui.draft.get_untracked(), typed);
+    let caret = f.selection();
+    f.ui.source_mode.set(true);
+    f.focus();
+    assert_eq!(nanatype_markup::parse(&f.text()).doc, *typed);
+    f.ui.source_mode.set(false);
+    f.focus();
+    assert_eq!(f.ui.draft.get_untracked(), typed);
+    assert_eq!(f.selection(), caret);
+    assert!(!f.ui.editor_transaction.get_untracked());
+}
+
+#[test]
+fn recheck_repeated_phrases_replace_selected_objects_without_duplicate_edits() {
+    let mut f = Fixture::new(false, false, "左右");
+    f.focus();
+    f.sync(true, false, vec![RichEditCommand::Select(3..3)]);
+    f.insert_phrase("[sticker=cats/hello][pause]");
+    let first = f.ui.draft.get_untracked();
+    f.insert_phrase("[sticker=cats/hello][pause]");
+    let second = f.ui.draft.get_untracked();
+    let objects = f
+        .session
+        .document()
+        .context()
+        .read(f.editor, |e| e.value.objects().len())
+        .unwrap();
+    assert_eq!(objects, 4);
+    f.action(TextEditAction::Undo);
+    assert_eq!(f.ui.draft.get_untracked(), first);
+    f.action(TextEditAction::Redo);
+    assert_eq!(f.ui.draft.get_untracked(), second);
+    f.sync(
+        true,
+        false,
+        vec![RichEditCommand::Select(3..3 + 2 * '\u{fffc}'.len_utf8())],
+    );
+    let edits = f.edits;
+    f.insert_phrase("[i]替换[/i]");
+    assert_eq!(f.edits, edits + 1);
+    assert_eq!(
+        *f.ui.draft.get_untracked(),
+        nanatype_markup::parse("左[i]替换[/i][sticker=cats/hello][pause]右").doc
+    );
+    f.action(TextEditAction::Undo);
+    assert_eq!(f.ui.draft.get_untracked(), second);
 }
 
 #[test]

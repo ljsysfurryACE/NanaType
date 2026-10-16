@@ -191,6 +191,8 @@ pub struct Ui {
     pub settings_pulse_ms: Signal<u64>,
     /// The rich editor's document, as the program last set or received it.
     pub editor_value: Signal<nana_ui_core::RichText>,
+    /// Suppress the native text-only intermediate of a rich-fragment insertion.
+    pub editor_transaction: Signal<bool>,
     /// Attributes at the editor's selection (toolbar pressed states).
     pub sel_attrs: Signal<nana_ui::runtime::RichSelectionAttrs>,
     /// The editor shows markup source instead of the rich text.
@@ -273,6 +275,7 @@ impl Ui {
             pulse_ms: signal(0),
             settings_pulse_ms: signal(0),
             editor_value: signal(nana_ui_core::RichText::new("")),
+            editor_transaction: signal(false),
             sel_attrs: signal(nana_ui::runtime::RichSelectionAttrs::default()),
             source_mode: signal(false),
             text_node: node_ref(),

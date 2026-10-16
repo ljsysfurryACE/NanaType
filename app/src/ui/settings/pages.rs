@@ -6,7 +6,7 @@ use nana_ui::runtime::view::{AnyView, IntoView, Signal, dynamic, signal, widget}
 use nana_ui::runtime::{
     ActionMenu, ActionMenuItem, Activate, Button, Chip, IconButton, IconGlyph, ListItem,
     PopoverClosed, PopoverToggled, ScrollAxes, ScrollView, Select, SelectChanged, SelectOption,
-    Stack, StatusBadge, Switch, Text, TextChanged, TextInput, ToggleChanged,
+    SizeChanged, Stack, StatusBadge, Switch, Text, TextChanged, TextInput, ToggleChanged,
 };
 use nana_ui::theme::{space, type_scale};
 use nana_ui::{ButtonKind, ControlSize, StatusTone};
@@ -99,7 +99,14 @@ fn language_select(ui: Ui) -> AnyView {
 
 /// The speaker-name field, bound to the setting.
 fn speaker_field(ui: Ui) -> AnyView {
-    dynamic(
+    widget(
+        Stack::row(0.0)
+            .width(LengthSpec::Px(220.0))
+            .with_layout(|l| {
+                l.flex_shrink = Some(0.0);
+            }),
+    )
+    .children(dynamic(
         move || {
             ui.settings.with(|s| s.integrations.bilibili.sync_profile)
                 && matches!(
@@ -114,7 +121,8 @@ fn speaker_field(ui: Ui) -> AnyView {
                     move |name| {
                         widget(
                             Text::new(name.clone())
-                                .style(text_style(type_scale::BODY, type_scale::REGULAR)),
+                                .style(text_style(type_scale::BODY, type_scale::REGULAR))
+                                .truncating(),
                         )
                         .into_any()
                     },
@@ -130,7 +138,7 @@ fn speaker_field(ui: Ui) -> AnyView {
                 )
             }
         },
-    )
+    ))
     .into_any()
 }
 
@@ -1778,8 +1786,6 @@ fn view_switch(ui: Ui, grid: Signal<bool>) -> AnyView {
     .into_any()
 }
 
-/// Width the skin preview is scaled down to fit.
-const PREVIEW_W: f32 = 600.0;
 /// Checkerboard showing around the previewed box.
 const PREVIEW_INSET: f32 = INSET;
 
@@ -1896,6 +1902,7 @@ fn skin_filters(ui: Ui, filter: Signal<Option<String>>, grid: Signal<bool>) -> A
 /// A live sample of the previewed skin (the active one by default) with the
 /// user's personalisation, scaled to fit the page.
 fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
+    let available_width = signal(0.0_f32);
     let key = move || {
         // The overrides and the active skin both show up as a new `ui.skin`.
         (
@@ -1905,9 +1912,10 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             ui.skins.with(|s| Arc::as_ptr(s) as usize),
             ui.skin.with(|s| Arc::as_ptr(s) as usize),
             ui.locale.get(),
+            available_width.get(),
         )
     };
-    dynamic(key, move |(want, _, active, _, _, locale)| {
+    let content = dynamic(key, move |(want, _, active, _, _, locale, width)| {
         let locale = *locale;
         let id = want.clone().unwrap_or_else(|| active.clone());
         let rows = ui.skins.get_untracked();
@@ -1936,7 +1944,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
             d.region[0] + d.overscan * 2.0,
             d.region[1] + d.overscan * 2.0,
         );
-        let scale = ((PREVIEW_W - 2.0 * PREVIEW_INSET) / w).min(1.0);
+        let scale = ((width - 2.0 * PREVIEW_INSET).max(0.0) / w).min(1.0);
         let ctx = BoxCtx {
             skin: skin.clone(),
             urls,
@@ -1959,6 +1967,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                     l.overflow_y = OverflowSpec::Hidden;
                 }),
         )
+        .key("skin-preview-box")
         .children(
             widget(
                 Stack::fill_column(0.0)
@@ -1980,6 +1989,7 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
         );
         let stage = widget(
             Stack::row(0.0)
+                .width(LengthSpec::Px(w * scale + 2.0 * PREVIEW_INSET))
                 .padding_xy(PREVIEW_INSET, PREVIEW_INSET)
                 .radius(nana_ui_core::RadiusTier::Md)
                 .with_layout(move |l| {
@@ -2001,8 +2011,12 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                 .width(LengthSpec::Px(w * scale + 2.0 * PREVIEW_INSET)),
         )
         .children((
-            widget(Stack::column(4.0).grow(1.0).shrink(1.0)).children((
-                widget(Stack::row(6.0).align(AlignSpec::Center)).children((label(name), badges)),
+            widget(Stack::column(4.0).grow(1.0).shrink(1.0).with_layout(|l| {
+                l.min_width = Some(LengthSpec::Px(0.0));
+            }))
+            .children((
+                widget(Stack::row(6.0).wrap(true).align(AlignSpec::Center))
+                    .children((label(name), badges)),
                 (!description.is_empty()).then(|| hint(description)),
                 font_note.map(hint),
             )),
@@ -2012,16 +2026,33 @@ fn skin_preview(ui: Ui, previewing: Signal<Option<String>>) -> AnyView {
                         .kind(ButtonKind::Primary)
                         .size(ControlSize::Small),
                 ))
+                .key("apply-preview")
                 .on_cx(move |_, _: &Activate, cx| {
                     let id = apply_id.clone();
                     cx.dispatch_program_all(edit(move |s| s.skin.id = id));
                 })
             }),
         ));
-        widget(Stack::column(space::LG).padding_xy(INSET, space::XL))
+        widget(Stack::column(space::LG))
             .children((stage, caption))
             .into_any()
+    });
+    // Measure a stable, page-width container, not the scaled sample itself.
+    // Otherwise the preview's intrinsic width can prevent it from shrinking.
+    widget(
+        Stack::column(0.0)
+            .width(LengthSpec::Fill)
+            .padding_xy(INSET, space::XL)
+            .with_layout(|l| l.min_width = Some(LengthSpec::Px(0.0))),
+    )
+    .key("skin-preview")
+    .on(move |event: &SizeChanged| {
+        let width = (event.width - 2.0 * INSET).max(0.0);
+        if available_width.get_untracked() != width {
+            available_width.set(width);
+        }
     })
+    .children(content)
     .into_any()
 }
 
@@ -2855,7 +2886,7 @@ fn step(n: u8, body: impl IntoView) -> AnyView {
         .into_any()
 }
 
-/// Getting the display into OBS: three numbered steps with the live sender
+/// Getting the display into OBS: enable output before selecting its live sender
 /// name, other capture methods folded under one line, and a sample line.
 fn obs_guide(ui: Ui) -> AnyView {
     let body = |key: &str| {
@@ -2893,17 +2924,45 @@ fn obs_guide(ui: Ui) -> AnyView {
             cx.dispatch_program_all(Msg::CopyText(name))
         }),
     ));
+    let enable = || {
+        step(
+            1,
+            (
+                body("output-obs-step-enable"),
+                widget(crate::skin_theme::cta(
+                    Button::new(ui.now_t("output-obs-enable"))
+                        .kind(ButtonKind::Primary)
+                        .size(ControlSize::Small),
+                ))
+                .bind(move |b: &mut Button| {
+                    let enabled = ui.settings.with(|s| s.output.display.enabled);
+                    b.label = ui.now_t(if enabled {
+                        "output-obs-enabled"
+                    } else {
+                        "output-obs-enable"
+                    });
+                    b.disabled = enabled;
+                })
+                .on_cx(|_, _: &Activate, cx| {
+                    cx.dispatch_program_all(edit(|s| s.output.display.enabled = true));
+                }),
+                link_badge(ui, |s| &s.spout_display),
+            ),
+        )
+    };
     let steps: Vec<AnyView> = if cfg!(windows) {
         vec![
-            step(1, body("output-obs-step-plugin")),
-            step(2, (body("output-obs-step-source"), sender)),
-            step(3, body("output-obs-step-alpha")),
+            enable(),
+            step(2, body("output-obs-step-plugin")),
+            step(3, (body("output-obs-step-source"), sender)),
+            step(4, body("output-obs-step-alpha")),
         ]
     } else if cfg!(target_os = "macos") {
         vec![
-            step(1, body("output-obs-step-syphon")),
-            step(2, (body("output-obs-step-syphon-source"), sender)),
-            step(3, body("output-obs-step-alpha")),
+            enable(),
+            step(2, body("output-obs-step-syphon")),
+            step(3, (body("output-obs-step-syphon-source"), sender)),
+            step(4, body("output-obs-step-alpha")),
         ]
     } else {
         let _ = sender;
