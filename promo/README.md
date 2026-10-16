@@ -33,6 +33,17 @@ npm run cover:mobile:4x3            # out/nanatype-bilibili-cover-mobile-4x3.png
 在最窄的居中 4:3 裁剪范围 x=240…1680 中仍保留 40px 余量。
 `BilibiliCover4x3` 直接模拟 16:9 版本的居中裁剪，手机预览也由 Remotion 直接渲染。
 
+## 抖音封面
+
+```bash
+npm run cover:douyin                # out/nanatype-douyin-cover.png, 1080×1440（3:4）
+npm run cover:douyin:mobile         # out/nanatype-douyin-cover-mobile.png, 324×432
+```
+
+在 Studio 中选择 `DouyinCover` 预览。`src/Cover.tsx` 的独立竖版布局沿用 promo 的
+冰蓝配色、光环皮肤渐变姓名栏、产品 logo 和粉色光标；主标题分成“虚拟主播 / 打字机”两行，
+下方展示四个功能关键词，并使用片头文案“你打的每一句，都是台词”。
+
 ## 弹幕交互实录
 
 弹幕段的功能界面直接来自应用的 NanaUI 渲染器，包含实际按钮激活、编辑器输入、Core 回复归属和历史同步。主播操作面板使用紧凑列表，历史记录与展示框保留皮肤的气泡和引用效果。

@@ -7,7 +7,7 @@ import { Skins, GRID_LEN } from './scenes/Skins';
 import { Output, Outro } from './scenes/OutputOutro';
 import { Blivechat, VtsEvents } from './scenes/Link';
 import { SkinSheet } from './SkinSheet';
-import { Cover } from './Cover';
+import { Cover, DouyinCover } from './Cover';
 import { C, FPS, H, W } from './theme';
 
 // scene starts (frames) — keep in sync with scripts/gen-audio.mjs
@@ -67,5 +67,6 @@ export const Root: React.FC = () => (
     <Still id="BilibiliCover" component={Cover} width={1920} height={1200} />
     <Still id="BilibiliCover16x9" component={Cover} width={1920} height={1080} />
     <Still id="BilibiliCover4x3" component={Cover} defaultProps={{ cropToFourThree: true }} width={1440} height={1080} />
+    <Still id="DouyinCover" component={DouyinCover} width={1080} height={1440} />
   </>
 );

@@ -12,6 +12,8 @@
     "cover:mobile": "remotion still src/index.ts BilibiliCover out/nanatype-bilibili-cover-mobile.png --scale=0.2",
     "cover:4x3": "remotion still src/index.ts BilibiliCover4x3 out/nanatype-bilibili-cover-4x3.png",
     "cover:mobile:4x3": "remotion still src/index.ts BilibiliCover4x3 out/nanatype-bilibili-cover-mobile-4x3.png --scale=0.2",
+    "cover:douyin": "remotion still src/index.ts DouyinCover out/nanatype-douyin-cover.png",
+    "cover:douyin:mobile": "remotion still src/index.ts DouyinCover out/nanatype-douyin-cover-mobile.png --scale=0.3",
     "capture:chat": "cd .. && cargo run -p nanatype --example chat_parity -- promo/public/chat-parity nanatype.halo zh-CN capture",
     "render:chat": "remotion render src/index.ts ChatParity out/chat-parity.mp4 --crf=16"
   },

@@ -82,3 +82,80 @@ export const Cover: React.FC<{ cropToFourThree?: boolean }> = ({ cropToFourThree
     </AbsoluteFill>
   );
 };
+
+/** A dedicated 3:4 layout: keep the title and feature labels large on phones. */
+export const DouyinCover: React.FC = () => (
+  <AbsoluteFill
+    style={{
+      background: `radial-gradient(ellipse at 30% 15%, #ffffff, ${C.ice} 70%, #d6e9f7)`,
+      overflow: 'hidden', fontFamily: fSans, fontWeight: 900, color: C.navy,
+    }}
+  >
+    <div
+      style={{
+        position: 'absolute', left: 48, top: 210, width: 984, height: 1134,
+        boxSizing: 'border-box', borderRadius: halo.box.radius * 3.2,
+        border: `3px solid ${halo.box.border_color}`, background: gradient(halo.box.gradient),
+        boxShadow: '0 26px 72px #1b2f4b25, inset 0 3px 0 #ffffff',
+      }}
+    />
+
+    <div
+      style={{
+        position: 'absolute', left: 94, top: 104, width: 892, height: 176,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24,
+        borderRadius: halo.nameplate.radius, background: gradient(halo.nameplate.gradient),
+        boxShadow: '0 16px 36px #0876d040, inset 0 2px 0 #ffffff50',
+      }}
+    >
+      <Img src={staticFile('nanatype-256.png')} style={{ width: 132, height: 132 }} />
+      <span style={{ fontFamily: fRound, fontSize: 132, lineHeight: 1, letterSpacing: -4, color: '#fff', transform: 'translateY(-9px)' }}>
+        NanaType
+      </span>
+    </div>
+
+    <div
+      style={{
+        position: 'absolute', left: 88, top: 364, width: 10, height: 824,
+        borderRadius: 5, background: `linear-gradient(${C.blue}, ${C.sky})`,
+      }}
+    />
+
+    <div style={{ position: 'absolute', left: 120, top: 354, width: 840, textAlign: 'center', fontSize: 172, lineHeight: 1.25, letterSpacing: -6 }}>
+      虚拟主播
+    </div>
+    <div
+      style={{
+        position: 'absolute', left: 120, top: 562, width: 840,
+        display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 18,
+        fontSize: 224, lineHeight: 1.2, letterSpacing: -8, color: '#0767b6',
+      }}
+    >
+      打字机
+      <span style={{ width: 12, height: 204, borderRadius: 6, background: C.pink, marginTop: 20 }} />
+    </div>
+    <div style={{ position: 'absolute', left: 120, top: 858, width: 840, textAlign: 'center', fontSize: 40, fontWeight: 700, color: C.muted, letterSpacing: 2 }}>
+      你打的每一句，都是台词
+    </div>
+
+    <div
+      style={{
+        position: 'absolute', left: 120, top: 990, width: 840,
+        display: 'grid', gridTemplateColumns: '1fr 1fr', rowGap: 34,
+        fontSize: 80, lineHeight: 1.3, letterSpacing: -3, whiteSpace: 'nowrap', textAlign: 'center',
+      }}
+    >
+      <div style={{ color: '#0767b6' }}>VTS 控制</div>
+      <div>弹幕互动</div>
+      <div style={{ color: '#cf3f79' }}>文字演出</div>
+      <div style={{ color: '#0767b6' }}>18 款皮肤</div>
+    </div>
+
+    <div
+      style={{
+        position: 'absolute', left: 520, top: 1258, width: 0, height: 0,
+        borderLeft: '20px solid transparent', borderRight: '20px solid transparent', borderTop: `16px solid ${C.blueLight}`,
+      }}
+    />
+  </AbsoluteFill>
+);
