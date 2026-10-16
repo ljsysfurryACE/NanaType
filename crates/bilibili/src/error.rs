@@ -1,4 +1,4 @@
-// Adapted from LiliaBilibili, Copyright (c) 2026 Sena, MIT; see LICENSE-LILIA.
+// Copyright (c) 2026 Sena. MIT; see ../../../LICENSE-MIT.
 use std::fmt;
 
 /// 协议层统一错误:区分本地 IO、网络传输、HTTP 状态、业务码、解析失败与非法入参。

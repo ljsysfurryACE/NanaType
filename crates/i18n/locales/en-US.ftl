@@ -534,6 +534,16 @@ about-fonts-hide = Hide
 about-fonts-author = By { $author }
 about-fonts-version = Version: { $version }
 about-fonts-license-other = Licence below
+about-interfaces = Interface sources and licences
+about-interfaces-hint = Chat protocols and signing implementations come from the community projects below. NanaType handles integration, porting and adaptation.
+about-design = Design sources
+about-design-echo = The Vanilla, Glass, Bubble and Void skins reference designs from sheep-realms/Echo-Live, by Sheep-realms and contributors. NanaType implements and adapts these styles in its local skin format.
+about-design-upstream-license = Upstream licensing
+about-license-project = Original code: MIT. Inherited material keeps its licence. The Bilibili component and combined app also include CC BY-NC 4.0 material, subject to attribution and NonCommercial conditions.
+about-source-api-collect = Original Bilibili protocol documentation by SocialSisterYi and contributors. Adapted live protocol descriptions and WBI material retain CC BY-NC 4.0 attribution and NonCommercial conditions. The original repository is unavailable; a mirror is linked.
+about-source-douyin = WebSocket signing and HTTP a_bogus ported from revision 0e506f3; connection parameters reference the same revision. Copyright (c) 2025 今晚打打.
+about-source-repository = Source repository
+about-source-mirror = Documentation mirror
 ## end wave5-fonts-licences
 ## round2-skins
 skins-fallback-font-missing = { $family } not installed

@@ -1,11 +1,14 @@
 # Third-party notices
 
-NanaType includes the third-party fonts, the shader compiler and the Rust
+NanaType includes the interface materials, third-party fonts, shader compiler and Rust
 crates below. Their licence texts ship with the program in the installer's
 (and the portable zip's) `licenses` folder, beside this file:
 
 | File | What |
 | --- | --- |
+| `LICENSE`, `LICENSE-MIT` | NanaType licensing scope and MIT licence for original code |
+| `Bilibili-API-collect-CC-BY-NC-4.0.txt`, `Bilibili-NOTICE.md` | Original Bilibili protocol documentation source, attribution and inherited material scope |
+| `DouyinLive-MIT.txt` | Douyin signing source, Copyright (c) 2025 今晚打打 |
 | `FusionPixel12pxProportionalSC.LICENSE.txt`, `LXGWWenKai-Regular.LICENSE.txt` | The fonts embedded for the built-in skins (also on the About page under "Open-source fonts") |
 | `NotoSansSC-OFL.txt` | NanaUI's interface font |
 | `rust-crates.txt` | Every Rust crate's own licence files, written at packaging time |
@@ -18,10 +21,21 @@ when it is out of date or a crate has no licence expression.
 
 ## Bilibili protocol code
 
-The Bilibili cookie, QR login, WBI signing and WebSocket transport code is
-adapted from LiliaBilibili, Copyright (c) 2026 Sena, under the MIT License.
-The full license is in `licenses/LiliaBilibili-MIT.txt` (source copy:
-`crates/bilibili/LICENSE-LILIA`).
+The Bilibili live protocol documentation and WBI material come from
+[SocialSisterYi/bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)
+and its contributors, under **CC-BY-NC-4.0**, preserved by the accessible
+[bilibili-plugins mirror](https://github.com/bilibili-plugins/bilibili-api-collect).
+The inherited protocol comments and WBI material are adapted for NanaType;
+they retain the upstream attribution, NonCommercial condition and disclaimer,
+and are not covered by the MIT grant for original code. Full licence:
+`crates/bilibili/LICENSE-API-COLLECT`, shipped as
+`licenses/Bilibili-API-collect-CC-BY-NC-4.0.txt`.
+See [crates/bilibili/NOTICE.md](crates/bilibili/NOTICE.md) (shipped as
+`licenses/Bilibili-NOTICE.md`) for specific documents and the scope of changes.
+The Bilibili crate and combined application declare `MIT AND CC-BY-NC-4.0`.
+
+These interfaces and signing rules are sourced from existing community projects;
+NanaType handles integration, porting and adaptation.
 
 ## Douyin native signing
 
@@ -40,6 +54,21 @@ the Rust HTTP/WebSocket and reconnect implementation is maintained locally.
 
 No dycast source, generated decoder, or extracted platform SDK is bundled.
 Douyin connections, heartbeats, acknowledgements and decoding run in Rust.
+
+## Design sources
+
+The visual designs of the four built-in Echo-Live skins (`echo_vanilla`,
+`echo_glass`, `echo_bubble`, `echo_void`) reference
+[sheep-realms/Echo-Live](https://github.com/sheep-realms/Echo-Live),
+by Sheep-realms and the project's contributors. NanaType implements and adapts
+these styles in its local TOML skin format.
+
+The upstream software is licensed under GPL-3.0-or-later, as stated in its
+[copyright notice](https://github.com/sheep-realms/Echo-Live/blob/master/copyright.md);
+see its [licence](https://github.com/sheep-realms/Echo-Live/blob/master/LICENSE).
+This design credit identifies the original project separately from the chat
+interface sources above. The local skin manifests' CC0-1.0 declarations cover
+NanaType's own contributions, without relicensing the upstream project.
 
 ## Fonts embedded for the built-in skins
 

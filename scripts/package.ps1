@@ -34,7 +34,6 @@ Copy-Item $dxc (Join-Path $root "target\dxc\dxcompiler.dll") -Force
 $staged = Join-Path $root "target\licenses"
 Remove-Item -Recurse -Force $staged -ErrorAction SilentlyContinue
 pwsh (Join-Path $PSScriptRoot "third-party-notices.ps1") -Check -Texts $staged
-Copy-Item -LiteralPath (Join-Path $root "crates\douyin\LICENSE-DOUYINLIVE") -Destination (Join-Path $staged "DouyinLive-MIT.txt")
 if ($env:DXC_DLL) {
     $release = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $env:DXC_DLL))
     $dxcLicenses = Get-ChildItem (Join-Path $release "LICENSE*") -File -ErrorAction SilentlyContinue

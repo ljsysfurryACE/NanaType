@@ -1,4 +1,4 @@
-// Adapted from LiliaBilibili, Copyright (c) 2026 Sena, MIT; see LICENSE-LILIA.
+// Copyright (c) 2026 Sena. MIT; see ../../../LICENSE-MIT.
 use std::collections::BTreeMap;
 
 /// Cookie 保留的属性名(出现在 `Set-Cookie` 行尾),永不作为真实 cookie 名吸收。

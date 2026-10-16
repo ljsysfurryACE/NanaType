@@ -143,6 +143,21 @@ pwsh scripts/package.ps1
 
 纯逻辑 crate 不依赖界面框架，可单独测试。
 
+## 接口来源
+
+NanaType 的弹幕接口依据和签名实现来自已有社区项目；本项目仅负责接入、移植和适配：
+
+| 接口 | 来源仓库与使用范围 | 上游许可 |
+| --- | --- | --- |
+| B 站 | 直播协议资料与 WBI 签名依据来自 [SocialSisterYi/bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)（[可访问镜像](https://github.com/bilibili-plugins/bilibili-api-collect)） | API-collect 继承资料：CC BY-NC 4.0 |
+| 抖音 | 签名实现移植自 [jwwsjlm/douyinLive](https://github.com/jwwsjlm/douyinLive)，版本 `0e506f3cf935beede946296602af2e52d57ecea2` 的 `internal/webcastsign/native.go` 与 `sign/ab_sign.go`；连接参数参考同版本 | MIT，Copyright (c) 2025 今晚打打 |
+
+软件内可在 **设置 › 关于 › 接口来源与许可** 查看来源链接、版权声明和许可全文。
+
+## 设计来源
+
+内置的 **Echo-Live 原版、玻璃、气泡、虚空** 四套皮肤，设计参考自 [sheep-realms/Echo-Live](https://github.com/sheep-realms/Echo-Live)，原作者为 Sheep-realms 及该项目贡献者；NanaType 使用本地皮肤格式实现和适配这些样式。原项目的授权说明见 [Echo-Live 授权协议与声明](https://github.com/sheep-realms/Echo-Live/blob/master/copyright.md)。软件「设置 › 关于 › 设计来源」也提供原始仓库链接。
+
 ## 许可
 
-MIT OR Apache-2.0
+本仓库原创代码采用 [MIT](LICENSE-MIT)；继承的第三方材料保留原许可，详见 [许可范围](LICENSE) 与 [第三方声明](THIRD_PARTY_NOTICES.md)。B 站组件及包含它的应用以 `MIT AND CC-BY-NC-4.0` 标明组合许可；其中来自 API-collect 的材料受 CC BY-NC 4.0 的署名及非商业条件约束，不能仅按 MIT 再分发。B 站来源链及改动范围见 [接口来源说明](crates/bilibili/NOTICE.md)。字体、插画及其他依赖按各自许可分发。

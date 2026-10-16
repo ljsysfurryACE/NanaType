@@ -528,6 +528,16 @@ about-fonts-hide = 閉じる
 about-fonts-author = 作者：{ $author }
 about-fonts-version = バージョン：{ $version }
 about-fonts-license-other = ライセンスは下記のとおり
+about-interfaces = API の出典とライセンス
+about-interfaces-hint = コメント API の仕様と署名実装は以下のコミュニティプロジェクトに基づきます。NanaType は接続・移植・調整を担当します。
+about-design = デザインの出典
+about-design-echo = オリジナル、ガラス、気泡、虚空の4種類のスキンは、Sheep-realms と貢献者による sheep-realms/Echo-Live のデザインを参考にしています。NanaType のスキン形式で実装・調整しています。
+about-design-upstream-license = 原プロジェクトのライセンス
+about-license-project = 独自コードは MIT。継承した資料は元のライセンスを維持します。Bilibili コンポーネントとアプリ全体には CC BY-NC 4.0 の資料も含まれ、表示と非営利条件が適用されます。
+about-source-api-collect = Bilibili 通信仕様の元の出典：SocialSisterYi と貢献者。調整したライブ通信仕様と WBI 資料には CC BY-NC 4.0 の表示と非営利条件を維持します。元のリポジトリは現在利用できないため、ミラーも掲載しています。
+about-source-douyin = リビジョン 0e506f3 の WebSocket 署名と HTTP a_bogus を移植し、接続パラメーターも参照しています。Copyright (c) 2025 今晚打打。
+about-source-repository = 出典リポジトリ
+about-source-mirror = 資料のミラー
 ## end wave5-fonts-licences
 ## round2-skins
 skins-fallback-font-missing = { $family } 未インストール

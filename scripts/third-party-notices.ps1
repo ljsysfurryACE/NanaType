@@ -146,6 +146,19 @@ if ($Check) {
 }
 
 if ($Texts) {
+    # Workspace crates are excluded from the generated dependency list, so
+    # their inherited material must be staged explicitly as well.
+    New-Item -ItemType Directory -Force $Texts | Out-Null
+    $interfaceFiles = @{
+        "LICENSE" = "LICENSE"
+        "LICENSE-MIT" = "LICENSE-MIT"
+        "crates\bilibili\LICENSE-API-COLLECT" = "Bilibili-API-collect-CC-BY-NC-4.0.txt"
+        "crates\bilibili\NOTICE.md" = "Bilibili-NOTICE.md"
+        "crates\douyin\LICENSE-DOUYINLIVE" = "DouyinLive-MIT.txt"
+    }
+    foreach ($source in $interfaceFiles.Keys) {
+        Copy-Item -LiteralPath (Join-Path $root $source) -Destination (Join-Path $Texts $interfaceFiles[$source])
+    }
     # Each crate's licence files as published, identical texts written once
     # with every crate that ships them.
     $byText = [System.Collections.Specialized.OrderedDictionary]::new([System.StringComparer]::Ordinal)

@@ -1,4 +1,8 @@
 //! Authenticated Bilibili live chat. IO runs off the UI thread.
+//!
+//! Protocol documentation and WBI material come from
+//! SocialSisterYi/bilibili-API-collect
+//! (CC-BY-NC-4.0). See ../NOTICE.md and the accompanying licence files.
 mod api;
 mod cookie;
 mod credentials;

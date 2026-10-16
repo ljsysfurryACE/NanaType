@@ -37,6 +37,10 @@
 
 水墨直接叠加大都会博物馆开放图像中郑燮 [Bamboo and Poem](https://www.metmuseum.org/art/collection/search/52946) 的墨竹局部（Public Domain）。只裁切并去掉纸底，不重绘线条或改色；来源与处理记录随皮肤附在 `ink/ART-LICENSE.txt` 中。
 
+### Echo-Live 设计来源
+
+`echo_vanilla`、`echo_glass`、`echo_bubble`、`echo_void` 四套皮肤的设计参考自 [sheep-realms/Echo-Live](https://github.com/sheep-realms/Echo-Live)，原作者为 Sheep-realms 及该项目贡献者。NanaType 使用本地 TOML 皮肤格式实现和适配这些样式。原项目采用 GPL-3.0-or-later，详见其 [授权协议与声明](https://github.com/sheep-realms/Echo-Live/blob/master/copyright.md)；本地清单中的 CC0-1.0 声明仅覆盖 NanaType 自身的贡献。
+
 ## 清单
 
 ```toml

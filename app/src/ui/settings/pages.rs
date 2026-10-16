@@ -3832,10 +3832,135 @@ fn about(ui: Ui) -> AnyView {
         .into_any(),
     ]);
     let mut rows = vec![(header.into_any(), None), (links.into_any(), None)];
+    rows.extend(interface_licences(ui));
+    rows.extend(design_sources(ui));
     rows.extend(font_licences(ui));
     widget(Stack::column(SECTION_GAP))
         .children(section_with(ui, "", rows))
         .into_any()
+}
+
+fn design_sources(ui: Ui) -> Vec<(AnyView, Shown)> {
+    let link = |key: &str, url: &'static str| {
+        widget(
+            Button::new(ui.now_t(key))
+                .kind(ButtonKind::Ghost)
+                .size(ControlSize::Small)
+                .icon(ti::EXTERNAL_LINK),
+        )
+        .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(Msg::OpenUrl(url)))
+    };
+    vec![(
+        widget(Stack::column(space::SM).padding_xy(INSET, space::LG))
+            .children((
+                widget(Text::new(ui.now_t("about-design")).style(text_style(13.0, 600))),
+                widget(Text::new("Echo-Live · Sheep-realms").style(text_style(13.0, 600))),
+                hint(ui.now_t("about-design-echo")),
+                widget(Stack::row(space::SM).wrap(true)).children((
+                    link(
+                        "about-source-repository",
+                        "https://github.com/sheep-realms/Echo-Live",
+                    ),
+                    link(
+                        "about-design-upstream-license",
+                        "https://github.com/sheep-realms/Echo-Live/blob/master/copyright.md",
+                    ),
+                )),
+            ))
+            .into_any(),
+        None,
+    )]
+}
+
+/// Sources stay visible; each licence is embedded for offline reading.
+fn interface_licences(ui: Ui) -> Vec<(AnyView, Shown)> {
+    let mut rows = vec![(
+        widget(Stack::column(space::SM).padding_xy(INSET, space::LG))
+            .children((
+                widget(Text::new(ui.now_t("about-interfaces")).style(text_style(13.0, 600))),
+                hint(ui.now_t("about-interfaces-hint")),
+            ))
+            .into_any(),
+        None,
+    )];
+    let entries = [
+        (
+            "NanaType · MIT AND CC-BY-NC-4.0",
+            "about-license-project",
+            HOMEPAGE,
+            None,
+            concat!(
+                include_str!("../../../../LICENSE"),
+                "\n",
+                include_str!("../../../../LICENSE-MIT")
+            ),
+        ),
+        (
+            "SocialSisterYi/bilibili-API-collect · CC BY-NC 4.0",
+            "about-source-api-collect",
+            "https://github.com/SocialSisterYi/bilibili-API-collect",
+            Some("https://github.com/bilibili-plugins/bilibili-api-collect"),
+            include_str!("../../../../crates/bilibili/LICENSE-API-COLLECT"),
+        ),
+        (
+            "jwwsjlm/douyinLive · MIT",
+            "about-source-douyin",
+            "https://github.com/jwwsjlm/douyinLive/tree/0e506f3cf935beede946296602af2e52d57ecea2",
+            None,
+            include_str!("../../../../crates/douyin/LICENSE-DOUYINLIVE"),
+        ),
+    ];
+    for (name, description, url, mirror, licence) in entries {
+        let open = signal(false);
+        let source_link = |key: &str, url: &'static str| {
+            widget(
+                Button::new(ui.now_t(key))
+                    .kind(ButtonKind::Ghost)
+                    .size(ControlSize::Small)
+                    .icon(ti::EXTERNAL_LINK),
+            )
+            .on_cx(move |_, _: &Activate, cx| cx.dispatch_program_all(Msg::OpenUrl(url)))
+            .into_any()
+        };
+        let mut buttons = vec![source_link("about-source-repository", url)];
+        if let Some(mirror) = mirror {
+            buttons.push(source_link("about-source-mirror", mirror));
+        }
+        buttons.push(
+            widget(Button::new(ui.now_t("about-fonts-show")).size(ControlSize::Small))
+                .visible(move || !open.get())
+                .on(move |_: &Activate| open.set(true))
+                .into_any(),
+        );
+        buttons.push(
+            widget(Button::new(ui.now_t("about-fonts-hide")).size(ControlSize::Small))
+                .visible(move || open.get())
+                .on(move |_: &Activate| open.set(false))
+                .into_any(),
+        );
+        rows.push((
+            widget(Stack::column(space::SM).padding_xy(INSET, space::LG))
+                .children((
+                    widget(Text::new(name).style(text_style(13.0, 600))),
+                    hint(ui.now_t(description)),
+                    widget(Stack::row(space::SM).wrap(true)).children(buttons),
+                ))
+                .into_any(),
+            None,
+        ));
+        rows.push(shown_if(
+            widget(Stack::column(0.0).padding_xy(INSET, space::LG))
+                .children(
+                    widget(ScrollView::new(ScrollAxes::Vertical).with_layout(|l| {
+                        l.height = Some(LengthSpec::Px(260.0));
+                    }))
+                    .children(widget(Stack::column(0.0)).children(licence_lines(licence))),
+                )
+                .into_any(),
+            move || open.get(),
+        ));
+    }
+    rows
 }
 
 /// The "Open-source fonts" row and, below it while open, a scrolling panel

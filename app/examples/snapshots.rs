@@ -1013,6 +1013,7 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
     for (page, h) in [
         (settings::Page::Skins, 1700),
         (settings::Page::History, 1100),
+        (settings::Page::About, 1600),
     ] {
         ui.page.set(page);
         shot(

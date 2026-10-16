@@ -2,7 +2,7 @@
 name = "nanatype-bilibili"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license = "MIT AND CC-BY-NC-4.0"
 rust-version.workspace = true
 description = "Authenticated Bilibili live chat and typewriter delivery"
 

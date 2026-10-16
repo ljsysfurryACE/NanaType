@@ -1,3 +1,5 @@
+# Design reference: https://github.com/sheep-realms/Echo-Live (Sheep-realms and contributors).
+# CC0-1.0 below covers NanaType's own contributions to this local skin implementation.
 [meta]
 id = "nanatype.echo_vanilla"
 version = "1.0.0"

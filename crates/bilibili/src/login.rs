@@ -1,4 +1,4 @@
-// Adapted from LiliaBilibili, Copyright (c) 2026 Sena, MIT; see LICENSE-LILIA.
+// Copyright (c) 2026 Sena. MIT; see ../../../LICENSE-MIT.
 use serde::Deserialize;
 
 use crate::ApiError;

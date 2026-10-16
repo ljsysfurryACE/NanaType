@@ -1,4 +1,6 @@
-// Adapted from LiliaBilibili, Copyright (c) 2026 Sena, MIT; see LICENSE-LILIA.
+// Copyright (c) 2026 Sena. MIT; see ../../../LICENSE-MIT.
+// WBI material: SocialSisterYi/bilibili-API-collect and contributors,
+// CC-BY-NC-4.0; see ../NOTICE.md and ../LICENSE-API-COLLECT.
 use md5::{Digest, Md5};
 
 /// WBI 签名密钥对,来自 nav 接口 `wbi_img.img_url/sub_url` 的文件名。

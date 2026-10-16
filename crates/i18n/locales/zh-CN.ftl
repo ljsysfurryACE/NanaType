@@ -528,6 +528,16 @@ about-fonts-hide = 收起
 about-fonts-author = 作者：{ $author }
 about-fonts-version = 版本：{ $version }
 about-fonts-license-other = 许可见下文
+about-interfaces = 接口来源与许可
+about-interfaces-hint = 弹幕接口依据与签名实现来自以下社区项目，NanaType 仅负责接入、移植和适配。
+about-design = 设计来源
+about-design-echo = Echo-Live 原版、玻璃、气泡、虚空四套皮肤的设计参考自 sheep-realms/Echo-Live，原作者为 Sheep-realms 及项目贡献者。NanaType 使用本地皮肤格式实现和适配这些样式。
+about-design-upstream-license = 原项目授权说明
+about-license-project = 原创代码采用 MIT；继承资料保留原许可。B 站组件及完整应用同时包含 CC BY-NC 4.0 材料，须遵守其署名及非商业条件。
+about-source-api-collect = 原始 B 站协议资料来源：SocialSisterYi 及项目贡献者。继承的直播协议说明与 WBI 材料经过适配，保留 CC BY-NC 4.0 署名及非商业条件。原仓库目前不可用，可访问镜像。
+about-source-douyin = 抖音 WebSocket 签名与 HTTP a_bogus 实现移植自版本 0e506f3，连接参数参考同版本。Copyright (c) 2025 今晚打打。
+about-source-repository = 来源仓库
+about-source-mirror = 文档镜像
 ## end wave5-fonts-licences
 ## round2-skins
 skins-fallback-font-missing = 未安装 { $family }

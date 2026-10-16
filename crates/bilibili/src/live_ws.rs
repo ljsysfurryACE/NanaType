@@ -1,4 +1,6 @@
-// Adapted from LiliaBilibili, Copyright (c) 2026 Sena, MIT; see LICENSE-LILIA.
+// Copyright (c) 2026 Sena. MIT; see ../../../LICENSE-MIT.
+// Adapted protocol documentation: SocialSisterYi/bilibili-API-collect and
+// contributors, CC-BY-NC-4.0; see ../NOTICE.md and ../LICENSE-API-COLLECT.
 //! 直播间弹幕 WebSocket 协议:认证、心跳、数据包编解码与会话。
 //!
 //! 文档依据(bilibili-API-collect 镜像 docs/live/message_stream.md):
