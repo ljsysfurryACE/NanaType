@@ -1688,7 +1688,6 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
                 .key("input-preview-canvas")
                 .bind(move |s: &mut Stack| {
                     let (w, h) = canvas_size();
-                    let skin = ui.skin.get();
                     restyle(s, |l| {
                         l.width = Some(LengthSpec::Px(w));
                         l.height = Some(LengthSpec::Px(h));
@@ -1697,8 +1696,6 @@ pub fn input_window(ui: Ui) -> WithRefs<impl IntoView, (EditorRef, SourceRef, To
                             x: LengthSpec::Px(0.0),
                             y: LengthSpec::Px(0.0),
                         });
-                        // Skin-specific contrast stays inside the preview.
-                        l.background = Some(super::c(skin.chrome.background));
                     });
                 })
                 .on(move |e: &FocusWithinChanged| {
