@@ -281,16 +281,14 @@ impl App {
                     let keys = self.bili_echoes.delete_super_chats(room, ids);
                     self.run(Cmd::RemoveHistoryRows(keys));
                     self.chat.retain(|m| {
-                        !(m.room == room
+                        !(m.platform == crate::chat::Platform::Bilibili
+                            && m.room == room.to_string()
                             && matches!(m.kind, crate::chat::ChatKind::SuperChat { .. })
                             && ids.contains(&m.id))
                     });
                     self.publish_chat();
                 } else {
-                    let _ = self
-                        ._chat_assets
-                        .sender()
-                        .send((session.epoch, room, event));
+                    self._chat_assets.bilibili(session.epoch, room, event);
                 }
             }
             Event::Delivery(delivery) => {
@@ -332,7 +330,11 @@ impl App {
         }
     }
     pub(super) fn bilibili_history(&mut self, message: &crate::chat::ChatMessage) -> bool {
-        let key = (message.epoch, message.room, message.id.clone());
+        let key = (
+            message.epoch,
+            message.room.parse().unwrap_or_default(),
+            message.id.clone(),
+        );
         if matches!(message.kind, crate::chat::ChatKind::Text) && self.bili_echoes.suppress(&key) {
             return false;
         }
@@ -341,13 +343,19 @@ impl App {
     pub(super) fn bilibili_record_row(&mut self, message: &crate::chat::ChatMessage) {
         if let Some(row) = self.core.history().back() {
             if matches!(message.kind, crate::chat::ChatKind::SuperChat { .. }) {
-                self.bili_echoes
-                    .super_chats
-                    .insert((message.room, message.id.clone()), row.key);
+                self.bili_echoes.super_chats.insert(
+                    (message.room.parse().unwrap_or_default(), message.id.clone()),
+                    row.key,
+                );
             }
-            self.bili_echoes
-                .rows
-                .insert((message.epoch, message.room, message.id.clone()), row.key);
+            self.bili_echoes.rows.insert(
+                (
+                    message.epoch,
+                    message.room.parse().unwrap_or_default(),
+                    message.id.clone(),
+                ),
+                row.key,
+            );
         }
         let oldest = self
             .core
@@ -363,6 +371,6 @@ impl App {
             && self
                 .bili_echoes
                 .deleted
-                .contains(&(message.room, message.id.clone()))
+                .contains(&(message.room.parse().unwrap_or_default(), message.id.clone()))
     }
 }

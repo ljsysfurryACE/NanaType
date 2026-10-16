@@ -203,6 +203,10 @@ pub enum Msg {
     ChatAssetReady(nanatype_model::AssetRef),
     /// The Bilibili connection changed.
     Bilibili(nanatype_bilibili::SessionEvent),
+    Douyin(nanatype_douyin::SessionEvent),
+    DouyinRefresh,
+    DouyinLogout,
+    DouyinImport(String),
     BilibiliLogin,
     BilibiliCancelLogin,
     BilibiliRefresh,

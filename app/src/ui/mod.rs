@@ -4,6 +4,7 @@
 pub mod bilibili;
 pub mod danmaku;
 pub mod dialogue;
+pub mod douyin;
 pub mod feedback;
 pub mod history;
 pub mod input;
@@ -136,6 +137,9 @@ pub struct Source {
 #[derive(Clone, Copy)]
 pub struct Ui {
     pub bilibili: Signal<Arc<crate::app::bilibili::State>>,
+    pub douyin: Signal<Arc<crate::app::douyin::State>>,
+    /// Kept only in memory and cleared after import; never serialized with settings.
+    pub douyin_cookie: Signal<String>,
     pub speaker: Signal<nanatype_model::Speaker>,
     pub locale: Signal<Locale>,
     pub settings: Signal<Arc<Settings>>,
@@ -229,6 +233,8 @@ impl Ui {
         };
         Self {
             bilibili: signal(Arc::new(crate::app::bilibili::State::default())),
+            douyin: signal(Arc::new(crate::app::douyin::State::default())),
+            douyin_cookie: signal(String::new()),
             speaker: signal(speaker),
             chrome_dark: signal(crate::skin_theme::dark_mode(settings.skin.chrome, false)),
             locale: signal(locale),

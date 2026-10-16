@@ -1,4 +1,4 @@
-//! Live chat as the app keeps it: Bilibili events with their pictures saved
+//! Live chat as the app keeps it: platform-tagged events with their pictures saved
 //! locally, ready for the chat panel, the history list and replies.
 
 use nanatype_bilibili::{Author, ChatEvent, Guard};
@@ -14,6 +14,20 @@ use crate::ui::I18N;
 /// History rows from Bilibili carry this source id.
 pub const SOURCE: &str = "bilibili";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    Bilibili,
+    Douyin,
+}
+impl Platform {
+    pub fn source(self) -> &'static str {
+        match self {
+            Self::Bilibili => SOURCE,
+            Self::Douyin => "douyin",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChatKind {
     Text,
@@ -27,6 +41,11 @@ pub enum ChatKind {
         /// Gold coins (1000 = ¥1); 0 for free gifts.
         coin: u64,
     },
+    DouyinGift {
+        name: String,
+        num: u64,
+        diamonds: Option<u64>,
+    },
     /// A guard membership (上舰).
     Member {
         num: u32,
@@ -38,8 +57,9 @@ pub enum ChatKind {
 /// One chat message, its pictures already on disk.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChatMessage {
+    pub platform: Platform,
     pub epoch: u64,
-    pub room: u64,
+    pub room: String,
     /// Arrival order; the app's handle for the message.
     pub seq: u64,
     /// Bilibili's id (Super Chats are taken down by it).
@@ -59,6 +79,77 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    pub fn from_douyin(
+        event: nanatype_douyin::ChatEvent,
+        avatar: Option<AssetRef>,
+        emoticon: Option<AssetRef>,
+        seq: u64,
+    ) -> Self {
+        let (kind, doc) = match event.content {
+            nanatype_douyin::Content::Text(text) => (
+                ChatKind::Text,
+                Document::plain(&text.replace(['\r', '\n'], " ")),
+            ),
+            nanatype_douyin::Content::Emote { text, .. } => {
+                let doc = match emoticon {
+                    Some(asset) => Document::from_inlines(vec![Inline::Atom(Atom {
+                        kind: AtomKind::Emote,
+                        asset,
+                        height_em: 2.2,
+                        alt: text,
+                        effects: Default::default(),
+                    })]),
+                    None => Document::plain(&text),
+                };
+                (ChatKind::Text, doc)
+            }
+            nanatype_douyin::Content::Gift {
+                name,
+                count,
+                diamonds,
+            } => (
+                ChatKind::DouyinGift {
+                    name,
+                    num: count,
+                    diamonds,
+                },
+                Document::new(),
+            ),
+        };
+        Self {
+            platform: Platform::Douyin,
+            epoch: 0,
+            room: String::new(),
+            seq,
+            id: if event.id.is_empty() {
+                format!("local-{seq}")
+            } else {
+                event.id
+            },
+            kind,
+            // Namespacing survives markup serialization and reply references without changing old Bilibili ids.
+            user: ChatUser {
+                uid: if event.author.uid.is_empty() {
+                    String::new()
+                } else {
+                    format!("douyin:{}", event.author.uid)
+                },
+                name: event.author.name,
+                avatar,
+            },
+            guard: Guard::None,
+            owner: false,
+            admin: false,
+            medal_level: 0,
+            medal_name: String::new(),
+            doc,
+            at: if event.at == 0 {
+                nanatype_model::unix_millis()
+            } else {
+                event.at
+            },
+        }
+    }
     /// Build from a Bilibili event; `avatar` and `emoticon` are the saved
     /// pictures. `None` for events that are not messages.
     pub fn from_event(
@@ -151,8 +242,9 @@ impl ChatMessage {
             ..
         } = author;
         Some(Self {
+            platform: Platform::Bilibili,
             epoch: 0,
-            room: 0,
+            room: String::new(),
             seq,
             id: if id.is_empty() {
                 format!("local-{seq}")
@@ -181,6 +273,7 @@ impl ChatMessage {
             ChatKind::Text => filter.text,
             ChatKind::SuperChat { .. } => filter.super_chat,
             ChatKind::Gift { coin, .. } => filter.gift && *coin >= u64::from(filter.min_gift_coin),
+            ChatKind::DouyinGift { .. } => filter.gift,
             ChatKind::Member { .. } => filter.member,
         }
     }
@@ -201,6 +294,24 @@ impl ChatMessage {
                 "chat-gift",
                 &[("gift", name.as_str().into()), ("count", (*num).into())],
             ),
+            ChatKind::DouyinGift {
+                name,
+                num,
+                diamonds,
+            } => {
+                let gift = I18N.tr_in(
+                    locale,
+                    "chat-gift",
+                    &[("gift", name.as_str().into()), ("count", (*num).into())],
+                );
+                match diamonds.and_then(|p| p.checked_mul(*num)) {
+                    Some(total) => format!(
+                        "{gift} · {}",
+                        I18N.tr_in(locale, "dy-diamonds", &[("count", total.into())])
+                    ),
+                    None => gift,
+                }
+            }
             ChatKind::Member { num, unit, .. } => I18N.tr_in(
                 locale,
                 "chat-member",
@@ -246,7 +357,7 @@ impl ChatMessage {
     /// A history row for this message.
     pub fn history_item(&self, locale: Locale) -> HistoryItem {
         HistoryItem {
-            source: SourceId(SOURCE.into()),
+            source: SourceId(self.platform.source().into()),
             kind: self.source_kind(),
             line: None,
             author: self.user.name.clone(),
@@ -284,6 +395,43 @@ pub fn super_chat_color(price: u64) -> [f32; 4] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn douyin_identity_reply_and_gift_units_stay_separate_from_bilibili() {
+        let event = nanatype_douyin::ChatEvent {
+            id: "42".into(),
+            author: nanatype_douyin::Author {
+                uid: "42".into(),
+                name: "viewer".into(),
+                avatar: String::new(),
+            },
+            content: nanatype_douyin::Content::Gift {
+                name: "flower".into(),
+                count: 2,
+                diamonds: Some(3),
+            },
+            at: 1,
+        };
+        let message = super::ChatMessage::from_douyin(event, None, None, 1);
+        assert_eq!(message.user.uid, "douyin:42");
+        let mention =
+            nanatype_model::Document::from_inlines(vec![nanatype_model::Inline::Mention(
+                nanatype_model::Mention::new(message.user.clone()),
+            )]);
+        let restored = nanatype_markup::parse(&nanatype_markup::serialize(&mention)).doc;
+        assert_eq!(restored, mention);
+        assert_eq!(
+            message.quote(nanatype_i18n::Locale::EnUs).user.uid,
+            "douyin:42"
+        );
+        let item = message.history_item(nanatype_i18n::Locale::EnUs);
+        assert_eq!(item.source.0, "douyin");
+        assert!(item.doc.plain_text().contains("6 Douyin coins"));
+        assert!(!item.doc.plain_text().contains('¥'));
+        assert!(message.passes(&nanatype_settings::ChatFilter {
+            min_gift_coin: u32::MAX,
+            ..Default::default()
+        }));
+    }
     use super::*;
 
     fn author() -> Author {
@@ -341,8 +489,9 @@ mod tests {
     #[test]
     fn filters_keep_kinds_and_cheap_gifts_out() {
         let gift = |coin| ChatMessage {
+            platform: crate::chat::Platform::Bilibili,
             epoch: 0,
-            room: 0,
+            room: String::new(),
             seq: 1,
             id: "g".into(),
             kind: ChatKind::Gift {

@@ -33,6 +33,7 @@ use crate::windows::WindowKind;
 pub fn page(ui: Ui, page: Page) -> AnyView {
     let body = match page {
         Page::Bilibili => super::super::bilibili::settings_page(ui),
+        Page::Douyin => super::super::douyin::settings_page(ui),
         Page::General => general(ui),
         Page::Playback => playback(ui),
         Page::Skins => skins(ui),

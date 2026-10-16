@@ -804,8 +804,9 @@ fn sample(n: usize) -> ChatMessage {
         ("路过的猫", "求个自我介绍～"),
     ][n];
     ChatMessage {
+        platform: nanatype::chat::Platform::Bilibili,
         epoch: 0,
-        room: 0,
+        room: String::new(),
         seq: n as u64 + 1,
         id: format!("demo-{n}"),
         kind: ChatKind::Text,

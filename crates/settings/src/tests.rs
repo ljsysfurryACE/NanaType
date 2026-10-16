@@ -4,6 +4,37 @@ use nanatype_model::AfterLine;
 
 use crate::*;
 
+#[test]
+fn douyin_defaults_off_and_never_serializes_session_credentials() {
+    let mut settings: Settings =
+        serde_json::from_str(r#"{"schema":2,"integrations":{"bilibili":{"room":"42"}}}"#).unwrap();
+    assert!(!settings.integrations.douyin.enabled);
+    settings.sanitize();
+    assert_eq!(settings.integrations.bilibili.room, "42");
+    let value = serde_json::to_value(settings).unwrap();
+    assert!(value["integrations"]["douyin"].get("cookie").is_none());
+}
+
+#[test]
+fn retired_douyin_browser_settings_load_as_native_without_losing_room_or_other_settings() {
+    for backend in ["auto", "browser", "native", "unknown"] {
+        let value = serde_json::json!({"schema":2,"integrations":{
+            "douyin":{"enabled":true,"room":" 694562812381 ","backend":backend,"browser":"C:/old/edge.exe"},
+            "bilibili":{"room":"42"}
+        }});
+        let mut settings: Settings = serde_json::from_value(value).unwrap();
+        settings.sanitize();
+        assert!(settings.integrations.douyin.enabled);
+        assert_eq!(settings.integrations.douyin.room, "694562812381");
+        assert_eq!(settings.integrations.bilibili.room, "42");
+        let saved = serde_json::to_value(settings).unwrap();
+        assert_eq!(
+            saved["integrations"]["douyin"],
+            serde_json::json!({"enabled":true,"room":"694562812381"})
+        );
+    }
+}
+
 const V0: &str = r#"{
   "theme": "Night",
   "speaker_name": "奈奈",

@@ -627,6 +627,13 @@ impl Default for BilibiliSettings {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DouyinSettings {
+    pub enabled: bool,
+    pub room: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Integrations {
@@ -634,6 +641,7 @@ pub struct Integrations {
     pub osc: OscSettings,
     pub websocket: WsSettings,
     pub bilibili: BilibiliSettings,
+    pub douyin: DouyinSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -741,6 +749,8 @@ impl Settings {
             self.skin.id = DEFAULT_SKIN.into();
         }
         self.general.speaker_name = self.general.speaker_name.chars().take(64).collect();
+        let d = &mut self.integrations.douyin;
+        d.room = d.room.trim().chars().take(2048).collect();
         let b = &mut self.integrations.bilibili;
         b.room = b.room.trim().to_owned();
         *self != before

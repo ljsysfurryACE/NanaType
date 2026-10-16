@@ -1,5 +1,6 @@
 //! Application state and the single update function.
 pub mod bilibili;
+pub mod douyin;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -63,6 +64,7 @@ pub struct App {
     pub bridge: BridgeHandle,
     /// The Bilibili connection and the thread saving its pictures.
     pub bilibili: BilibiliHandle,
+    pub douyin: nanatype_douyin::DouyinHandle,
     _chat_assets: ChatAssets,
     /// Live chat, oldest first, capped at the panel's size.
     chat: VecDeque<Arc<ChatMessage>>,
@@ -193,6 +195,10 @@ impl App {
                 move |s| post(Msg::HotkeyStatus(s))
             },
         );
+        let douyin = nanatype_douyin::DouyinHandle::new(paths.config.clone(), {
+            let post = post.clone();
+            move |event| post(Msg::Douyin(event))
+        });
         let core = Core::new(settings.clone(), skin.clone());
         let mut app = Self {
             assets: AssetLibrary::new(paths.blobs()),
@@ -214,6 +220,7 @@ impl App {
             bank: Vec::new(),
             bridge,
             bilibili,
+            douyin,
             _chat_assets: chat_assets,
             chat: VecDeque::new(),
             bili_echoes: Default::default(),
@@ -717,6 +724,7 @@ impl App {
             self.bilibili_reconnecting();
         }
         self.sync_bilibili_speaker();
+        self.douyin_configure();
         self.edit_status(|s| {
             if !i.vts.enabled {
                 s.vts = LinkState::Off;
@@ -1650,6 +1658,10 @@ impl App {
             Msg::Bridge(status) => self.bridge_status(status),
             Msg::Chat(message) => self.chat_message(message),
             Msg::Bilibili(event) => self.bilibili_event(event),
+            Msg::Douyin(event) => self.douyin_event(event),
+            Msg::DouyinRefresh => self.douyin_refresh(),
+            Msg::DouyinLogout => self.douyin_logout(),
+            Msg::DouyinImport(cookie) => self.douyin_import(cookie),
             Msg::BilibiliLogin => self.bilibili_login(),
             Msg::BilibiliCancelLogin => {
                 self.bilibili.cancel_login();
@@ -1840,19 +1852,27 @@ impl App {
     // ---- live chat ----------------------------------------------------------
 
     fn chat_message(&mut self, message: Arc<ChatMessage>) {
-        if message.epoch != 0 && message.epoch != self.bilibili.epoch() {
+        let bilibili = message.platform == crate::chat::Platform::Bilibili;
+        let epoch = if bilibili {
+            self.bilibili.epoch()
+        } else {
+            self.douyin.epoch()
+        };
+        if message.epoch != 0 && message.epoch != epoch {
             return;
         }
-        if self.bilibili_message_deleted(&message) {
+        if bilibili && self.bilibili_message_deleted(&message) {
             return;
         }
-        let include = self.bilibili_history(&message);
+        let include = !bilibili || self.bilibili_history(&message);
         self.ensure_urls(message_assets(&message));
         let history = &self.settings.history.chat;
         if include && history.enabled && message.passes(&history.filter) {
             let locale = self.ui.locale.get_untracked();
             self.run(Cmd::External(message.history_item(locale)));
-            self.bilibili_record_row(&message);
+            if bilibili {
+                self.bilibili_record_row(&message);
+            }
         }
         self.chat.push_back(message);
         while self.chat.len() > CHAT_CAP {

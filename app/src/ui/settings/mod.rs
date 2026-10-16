@@ -57,12 +57,13 @@ pub enum Page {
     Output,
     Integrations,
     Bilibili,
+    Douyin,
     Assets,
     About,
 }
 
 impl Page {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::General,
         Self::Playback,
         Self::Skins,
@@ -72,6 +73,7 @@ impl Page {
         Self::Output,
         Self::Integrations,
         Self::Bilibili,
+        Self::Douyin,
         Self::Assets,
         Self::About,
     ];
@@ -79,6 +81,7 @@ impl Page {
     pub fn label_key(self) -> &'static str {
         match self {
             Self::Bilibili => "settings-bilibili",
+            Self::Douyin => "settings-douyin",
             Self::General => "settings-general",
             Self::Playback => "settings-playback",
             Self::Skins => "settings-skins",
@@ -96,6 +99,7 @@ impl Page {
     pub fn subtitle_key(self) -> &'static str {
         match self {
             Self::Bilibili => "settings-bilibili-sub",
+            Self::Douyin => "settings-douyin-sub",
             Self::General => "settings-general-sub",
             Self::Playback => "settings-playback-sub",
             Self::Skins => "settings-skins-sub",
@@ -112,6 +116,7 @@ impl Page {
     fn icon(self) -> nana_ui::runtime::Icon {
         match self {
             Self::Bilibili => ti::BRAND_BILIBILI,
+            Self::Douyin => ti::MESSAGE_CIRCLE,
             Self::General => ti::ADJUSTMENTS,
             Self::Playback => ti::PLAYER_PLAY,
             Self::Skins => ti::PALETTE,
@@ -200,6 +205,7 @@ fn sidebar(ui: Ui) -> AnyView {
         items.extend(pages.into_iter().map(|page| nav_row(ui, page)));
         if i == 2 {
             items.push(nav_row(ui, Page::Bilibili));
+            items.push(nav_row(ui, Page::Douyin));
         }
     }
     let mut title = NodeStyle::default();

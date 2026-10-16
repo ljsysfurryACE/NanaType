@@ -300,8 +300,9 @@ fn sample_chat(
     let message = |seq: u64, who: usize, kind: ChatKind, text: &str| {
         let (uid, name, _, guard) = viewers[who];
         ChatMessage {
+            platform: nanatype::chat::Platform::Bilibili,
             epoch: 0,
-            room: 0,
+            room: String::new(),
             seq,
             id: seq.to_string(),
             kind,
@@ -692,6 +693,67 @@ fn render_at(registry: &SkinRegistry, out: &std::path::Path, skin_id: &str, loca
         }
         return;
     }
+    let before_dy_settings = ui.settings.get_untracked();
+    let before_dy_chat = ui.chat.get_untracked();
+    let before_dy_state = ui.douyin.get_untracked();
+    let before_dy_page = ui.page.get_untracked();
+    let mut dy_settings = (*before_dy_settings).clone();
+    dy_settings.integrations.douyin.enabled = true;
+    dy_settings.integrations.douyin.room = "123456789".into();
+    ui.settings.set(Arc::new(dy_settings));
+    ui.douyin.set(Arc::new(nanatype::app::douyin::State {
+        account: nanatype_douyin::AccountState::SignedOut,
+        connection: nanatype_douyin::ConnectionState::Connected {
+            room: "123456789".into(),
+        },
+        warning: None,
+    }));
+    ui.page.set(settings::Page::Douyin);
+    shot("dy-settings", out, 920, 1050, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || settings::settings_window(ui))
+            .unwrap();
+    });
+    let mut mixed = (*before_dy_chat).clone();
+    for (n, content) in [
+        nanatype_douyin::Content::Text("抖音观众：你好！Hello from Douyin 👋".into()),
+        nanatype_douyin::Content::Gift {
+            name: "小心心".into(),
+            count: 3,
+            diamonds: Some(1),
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut message = ChatMessage::from_douyin(
+            nanatype_douyin::ChatEvent {
+                id: format!("dy-{n}"),
+                author: nanatype_douyin::Author {
+                    uid: "42".into(),
+                    name: "抖音观众".into(),
+                    avatar: String::new(),
+                },
+                content,
+                at: nanatype_model::unix_millis() + n as u64,
+            },
+            None,
+            None,
+            9000 + n as u64,
+        );
+        message.room = "123456789".into();
+        mixed.push(Arc::new(message));
+    }
+    ui.chat.set(Arc::new(mixed));
+    shot("dy-chat", out, 620, 700, theme.clone(), |doc, id| {
+        doc.context_mut()
+            .mount_view_root(id, move || danmaku::chat_window(ui))
+            .unwrap();
+    });
+    ui.chat.set(before_dy_chat);
+    ui.settings.set(before_dy_settings);
+    ui.douyin.set(before_dy_state);
+    ui.page.set(before_dy_page);
     ui.peer_panel.set(true);
     shot("p2p-create", out, w, ih + 114, theme.clone(), |doc, id| {
         doc.context_mut()

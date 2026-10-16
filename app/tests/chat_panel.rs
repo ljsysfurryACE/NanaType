@@ -14,8 +14,9 @@ use nanatype_settings::{ChatPanelStyle, Settings};
 
 fn message(seq: u64) -> Arc<ChatMessage> {
     Arc::new(ChatMessage {
+        platform: nanatype::chat::Platform::Bilibili,
         epoch: 0,
-        room: 0,
+        room: String::new(),
         seq,
         id: seq.to_string(),
         kind: ChatKind::Text,

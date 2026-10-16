@@ -1,4 +1,4 @@
-//! The chat panel: live chat from Bilibili for the streamer to read and
+//! The chat panel: live chat from Bilibili and Douyin for the streamer to read and
 //! answer. The operator can choose compact rows or neutral history cards.
 //! Both presentations share hover/focus actions and the same retained feed.
 //!
@@ -410,7 +410,10 @@ fn compact_message(ui: Ui, source: RowSource, width: f32, actions: Option<AnyVie
     let metadata = match source {
         RowSource::Chat(seq) => ui.chat.with_untracked(|rows| {
             rows.iter().find(|m| m.seq == seq).and_then(|m| {
-                let mut labels = Vec::new();
+                let mut labels = vec![ui.now_t(match m.platform {
+                    crate::chat::Platform::Bilibili => "settings-bilibili",
+                    crate::chat::Platform::Douyin => "settings-douyin",
+                })];
                 if m.owner {
                     labels.push(ui.now_t("chat-room-owner"));
                 } else if m.admin {
@@ -608,7 +611,17 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
             .height(LengthSpec::Px(8.0)),
     )
     .bind(move |s: &mut Stack| {
-        let color = match ui.status.with(|x| x.bilibili_link) {
+        let link = match ui.douyin.get().connection {
+            nanatype_douyin::ConnectionState::Connected { .. } => Link::Connected,
+            nanatype_douyin::ConnectionState::Connecting => Link::Connecting,
+            nanatype_douyin::ConnectionState::Error(_)
+                if ui.status.with(|x| x.bilibili_link) != Link::Connected =>
+            {
+                Link::Error
+            }
+            _ => ui.status.with(|x| x.bilibili_link),
+        };
+        let color = match link {
             Link::Connected => [0.20, 0.72, 0.42, 1.0],
             Link::Connecting => [0.95, 0.70, 0.20, 1.0],
             Link::Error => [0.90, 0.30, 0.30, 1.0],
@@ -629,7 +642,14 @@ fn header_layout(ui: Ui, narrow: bool) -> AnyView {
             .truncating(),
     )
     .bind(move |t: &mut Text| {
-        let v = ui.status.with(|s| s.bilibili.clone());
+        let mut v = ui.status.with(|s| s.bilibili.clone());
+        if ui.settings.with(|s| s.integrations.douyin.enabled) {
+            v = format!(
+                "{v} · {}: {}",
+                ui.now_t("settings-douyin"),
+                super::douyin::connection(ui)
+            );
+        }
         if t.value != v {
             t.value = v;
         }
@@ -749,7 +769,8 @@ fn empty(ui: Ui) -> AnyView {
         .bind(move |t: &mut Text| {
             let configured = ui.settings.with(|s| {
                 let b = &s.integrations.bilibili;
-                b.enabled && !b.room.is_empty()
+                (b.enabled && !b.room.is_empty())
+                    || (s.integrations.douyin.enabled && !s.integrations.douyin.room.is_empty())
             });
             let key = if configured {
                 "chat-empty"
@@ -861,8 +882,9 @@ mod tests {
 
     fn message(seq: u64, kind: ChatKind) -> Arc<ChatMessage> {
         Arc::new(ChatMessage {
+            platform: crate::chat::Platform::Bilibili,
             epoch: 0,
-            room: 0,
+            room: String::new(),
             seq,
             id: seq.to_string(),
             kind,

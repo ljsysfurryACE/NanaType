@@ -23,6 +23,24 @@ adapted from LiliaBilibili, Copyright (c) 2026 Sena, under the MIT License.
 The full license is in `licenses/LiliaBilibili-MIT.txt` (source copy:
 `crates/bilibili/LICENSE-LILIA`).
 
+## Douyin native signing
+
+The compact WebSocket signature and HTTP a_bogus byte layout in
+`crates/douyin/src/signing.rs` are adapted into Rust from
+[jwwsjlm/douyinLive](https://github.com/jwwsjlm/douyinLive), commit
+`0e506f3cf935beede946296602af2e52d57ecea2`, specifically
+`internal/webcastsign/native.go` and `sign/ab_sign.go`.
+Copyright (c) 2025 今晚打打, MIT License. The full license ships as
+`licenses/DouyinLive-MIT.txt` (source copy: `crates/douyin/LICENSE-DOUYINLIVE`).
+The corresponding fixed WebSocket test vectors are attributed to
+`internal/webcastsign/native_test.go` at the same revision.
+The native connection parameter values and default push endpoint were also
+checked against `websocket_params.go` and `constants.go` at that revision;
+the Rust HTTP/WebSocket and reconnect implementation is maintained locally.
+
+No dycast source, generated decoder, or extracted platform SDK is bundled.
+Douyin connections, heartbeats, acknowledgements and decoding run in Rust.
+
 ## Fonts embedded for the built-in skins
 
 ### Fusion Pixel Font 12px Proportional (Simplified Chinese), 2026.09.25
@@ -88,7 +106,7 @@ which NanaUI uses to compile its DirectX 12 shaders.
 
 ## Rust crates
 
-The 497 crates below are compiled into `nanatype.exe` (Windows, `x86_64-pc-windows-msvc`), as
+The 502 crates below are compiled into `nanatype.exe` (Windows, `x86_64-pc-windows-msvc`), as
 locked in `Cargo.lock`; NanaType's own crates are left out. Each crate's
 licence files ship in the installer's `licenses\rust-crates.txt`.
 
@@ -104,13 +122,15 @@ licence files ship in the installer's `licenses\rust-crates.txt`.
 
 - adler2 2.0.1 — <https://github.com/oyvindln/adler2>
 
-### Apache-2.0 (12)
+### Apache-2.0 (14)
 
 - backon 1.6.0 — <https://github.com/Xuanwo/backon>
 - calendrical_calculations 0.2.4 — <https://github.com/unicode-org/icu4x>
 - codespan-reporting 0.13.1 — <https://github.com/brendanzab/codespan>
 - cpal 0.18.2 — <https://github.com/RustAudio/cpal>
 - glutin_wgl_sys 0.6.1 — <https://github.com/rust-windowing/glutin>
+- prost 0.14.4 — <https://github.com/tokio-rs/prost>
+- prost-derive 0.14.4 — <https://github.com/tokio-rs/prost>
 - spirv 0.4.0+sdk-1.4.341.0 — <https://github.com/gfx-rs/rspirv>
 - sync_wrapper 1.0.2 — <https://github.com/Actyx/sync_wrapper>
 - unicode-linebreak 0.1.5 — <https://github.com/axelf4/unicode-linebreak>
@@ -159,7 +179,7 @@ licence files ship in the installer's `licenses\rust-crates.txt`.
 - hyper-rustls 0.27.10 — <https://github.com/rustls/hyper-rustls>
 - rustls 0.23.44 — <https://github.com/rustls/rustls>
 
-### Apache-2.0 OR MIT (310)
+### Apache-2.0 OR MIT (313)
 
 - accesskit 0.25.1 — <https://github.com/AccessKit/accesskit>
 - accesskit_consumer 0.39.1 — <https://github.com/AccessKit/accesskit>
@@ -169,6 +189,7 @@ licence files ship in the installer's `licenses\rust-crates.txt`.
 - aes 0.8.4 — <https://github.com/RustCrypto/block-ciphers>
 - aes-gcm 0.10.3 — <https://github.com/RustCrypto/AEADs>
 - allocator-api2 0.2.21 — <https://github.com/zakarumych/allocator-api2>
+- anyhow 1.0.104 — <https://github.com/dtolnay/anyhow>
 - arboard 3.6.1 — <https://github.com/1Password/arboard>
 - arc-swap 1.9.2 — <https://github.com/vorner/arc-swap>
 - arrayvec 0.7.8 — <https://github.com/bluss/arrayvec>
@@ -275,6 +296,7 @@ licence files ship in the installer's `licenses\rust-crates.txt`.
 - iroh-metrics 1.0.2 — <https://github.com/n0-computer/iroh-metrics>
 - iroh-metrics-derive 1.0.1 — <https://github.com/n0-computer/iroh-metrics>
 - iroh-relay 1.3.0 — <https://github.com/n0-computer/iroh>
+- itertools 0.14.0 — <https://github.com/rust-itertools/itertools>
 - itoa 1.0.18 — <https://github.com/dtolnay/itoa>
 - keyboard-types 0.7.0 — <https://github.com/pyfisch/keyboard-types>
 - keyboard-types 0.8.3 — <https://github.com/rust-windowing/keyboard-types>
@@ -385,6 +407,7 @@ licence files ship in the installer's `licenses\rust-crates.txt`.
 - simplecss 0.2.2 — <https://github.com/linebender/simplecss>
 - siphasher 1.0.3 — <https://github.com/jedisct1/rust-siphash>
 - skrifa 0.44.0 — <https://github.com/googlefonts/fontations>
+- sm3 0.4.2 — <https://github.com/RustCrypto/hashes>
 - smallvec 1.16.1 — <https://github.com/servo/rust-smallvec>
 - smol_str 0.3.6 — <https://github.com/rust-lang/rust-analyzer/tree/master/lib/smol_str>
 - socket2 0.6.5 — <https://github.com/rust-lang/socket2>

@@ -43,7 +43,11 @@ pub fn cache_profile_avatar(
 }
 
 pub struct ChatAssets {
-    tx: Sender<(u64, u64, ChatEvent)>,
+    tx: Sender<(u64, String, Incoming)>,
+}
+enum Incoming {
+    Bilibili(ChatEvent),
+    Douyin(nanatype_douyin::ChatEvent),
 }
 
 #[derive(Clone)]
@@ -57,14 +61,14 @@ impl Job {
     fn asset(&self) -> AssetRef {
         AssetRef::Blob(self.name.clone())
     }
-    fn avatar(uid: &str, url: &str) -> Option<Self> {
+    fn avatar(platform: &str, uid: &str, url: &str) -> Option<Self> {
         if url.is_empty() {
             return None;
         }
         let name = if uid.is_empty() || !uid.chars().all(|c| c.is_ascii_alphanumeric()) {
-            format!("bili-face-u{:016x}", fnv(url))
+            format!("{platform}-face-u{:016x}", fnv(url))
         } else {
-            format!("bili-face-{uid}")
+            format!("{platform}-face-{uid}")
         };
         Some(Self {
             name,
@@ -73,9 +77,9 @@ impl Job {
             ttl: Some(AVATAR_TTL),
         })
     }
-    fn emote(url: &str) -> Self {
+    fn emote(platform: &str, url: &str) -> Self {
         Self {
-            name: format!("bili-emote-{:016x}", fnv(url)),
+            name: format!("{platform}-emote-{:016x}", fnv(url)),
             url: url.into(),
             px: EMOTE_PX,
             ttl: None,
@@ -111,7 +115,7 @@ impl ChatAssets {
         deliver: impl Fn(ChatMessage) + Send + 'static,
         ready: impl Fn(AssetRef) + Send + Sync + 'static,
     ) -> Self {
-        let (tx, rx) = unbounded::<(u64, u64, ChatEvent)>();
+        let (tx, rx) = unbounded::<(u64, String, Incoming)>();
         let (jobs, work) = bounded::<Job>(512);
         let requests = Arc::new(Mutex::new(Requests::default()));
         let ready = Arc::new(ready);
@@ -136,7 +140,10 @@ impl ChatAssets {
                         }
                         match result {
                             Ok(()) => ready(job.asset()),
-                            Err(e) => crate::debug_log(&format!("chat picture {}: {e}", job.url)),
+                            Err(_) => crate::debug_log(&format!(
+                                "chat picture {}: download failed",
+                                job.name
+                            )),
                         }
                     }
                 })
@@ -148,25 +155,45 @@ impl ChatAssets {
                 let mut next = 1u64;
                 for (epoch, room, event) in rx {
                     let (avatar, emote) = match &event {
-                        ChatEvent::Text {
-                            author, emoticon, ..
-                        } => (
-                            Job::avatar(&author.uid, &author.avatar_url),
-                            emoticon.as_deref().map(Job::emote),
+                        Incoming::Douyin(event) => (
+                            Job::avatar("douyin", &event.author.uid, &event.author.avatar),
+                            match &event.content {
+                                nanatype_douyin::Content::Emote { url, .. } => {
+                                    Some(Job::emote("douyin", url))
+                                }
+                                _ => None,
+                            },
                         ),
-                        ChatEvent::Gift { author, .. }
-                        | ChatEvent::Member { author, .. }
-                        | ChatEvent::SuperChat { author, .. } => {
-                            (Job::avatar(&author.uid, &author.avatar_url), None)
-                        }
-                        _ => continue,
+                        Incoming::Bilibili(event) => match event {
+                            ChatEvent::Text {
+                                author, emoticon, ..
+                            } => (
+                                Job::avatar("bili", &author.uid, &author.avatar_url),
+                                emoticon.as_deref().map(|url| Job::emote("bili", url)),
+                            ),
+                            ChatEvent::Gift { author, .. }
+                            | ChatEvent::Member { author, .. }
+                            | ChatEvent::SuperChat { author, .. } => {
+                                (Job::avatar("bili", &author.uid, &author.avatar_url), None)
+                            }
+                            _ => continue,
+                        },
                     };
-                    if let Some(mut message) = ChatMessage::from_event(
-                        event,
-                        avatar.as_ref().map(Job::asset),
-                        emote.as_ref().map(Job::asset),
-                        next,
-                    ) {
+                    let message = match event {
+                        Incoming::Douyin(event) => Some(ChatMessage::from_douyin(
+                            event,
+                            avatar.as_ref().map(Job::asset),
+                            emote.as_ref().map(Job::asset),
+                            next,
+                        )),
+                        Incoming::Bilibili(event) => ChatMessage::from_event(
+                            event,
+                            avatar.as_ref().map(Job::asset),
+                            emote.as_ref().map(Job::asset),
+                            next,
+                        ),
+                    };
+                    if let Some(mut message) = message {
                         message.epoch = epoch;
                         message.room = room;
                         next += 1;
@@ -184,8 +211,13 @@ impl ChatAssets {
             .expect("spawn chat ingest");
         Self { tx }
     }
-    pub fn sender(&self) -> Sender<(u64, u64, ChatEvent)> {
-        self.tx.clone()
+    pub fn bilibili(&self, epoch: u64, room: u64, event: ChatEvent) {
+        let _ = self
+            .tx
+            .send((epoch, room.to_string(), Incoming::Bilibili(event)));
+    }
+    pub fn douyin(&self, epoch: u64, room: String, event: nanatype_douyin::ChatEvent) {
+        let _ = self.tx.send((epoch, room, Incoming::Douyin(event)));
     }
 }
 
@@ -252,6 +284,45 @@ mod tests {
     use nanatype_bilibili::Author;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    #[test]
+    fn platform_images_and_ingestion_ids_are_isolated() {
+        assert_ne!(
+            Job::avatar("bili", "42", "https://example.test/avatar")
+                .unwrap()
+                .name,
+            Job::avatar("douyin", "42", "https://example.test/avatar")
+                .unwrap()
+                .name
+        );
+        let (tx, rx) = unbounded();
+        let service = ChatAssets::start(
+            scratch("platforms"),
+            move |m| {
+                let _ = tx.send(m);
+            },
+            |_| {},
+        );
+        service.bilibili(7, 42, event(String::new(), 1));
+        service.douyin(
+            7,
+            "42".into(),
+            nanatype_douyin::ChatEvent {
+                id: "1".into(),
+                author: nanatype_douyin::Author {
+                    uid: "42".into(),
+                    name: "viewer".into(),
+                    avatar: String::new(),
+                },
+                content: nanatype_douyin::Content::Text("hi".into()),
+                at: 1,
+            },
+        );
+        let bili = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let dy = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_ne!(bili.seq, dy.seq);
+        assert_ne!(bili.user.uid, dy.user.uid);
+        assert_ne!(bili.platform, dy.platform);
+    }
 
     fn event(url: String, n: u64) -> ChatEvent {
         ChatEvent::Text {
@@ -308,16 +379,10 @@ mod tests {
                 let _ = ready.send(a);
             },
         );
-        service
-            .sender()
-            .send((0, 0, event(url.clone(), 1)))
-            .unwrap();
+        service.bilibili(0, 0, event(url.clone(), 1));
         accepted.recv_timeout(Duration::from_secs(2)).unwrap();
         for n in 2..=20 {
-            service
-                .sender()
-                .send((0, 0, event(url.clone(), n)))
-                .unwrap();
+            service.bilibili(0, 0, event(url.clone(), n));
         }
         for n in 1..=20 {
             let m = got
@@ -364,7 +429,7 @@ mod tests {
                 let _ = ready.send(a);
             },
         );
-        service.sender().send((0, 0, event(url, 1))).unwrap();
+        service.bilibili(0, 0, event(url, 1));
         let message = got.recv_timeout(Duration::from_secs(2)).unwrap();
         assert_eq!(
             Some(assets.recv_timeout(Duration::from_secs(2)).unwrap()),
@@ -378,7 +443,7 @@ mod tests {
     #[test]
     fn cached_and_recently_failed_images_do_not_use_the_pool() {
         let dir = scratch("cache");
-        let job = Job::avatar("42", "http://example.invalid/face").unwrap();
+        let job = Job::avatar("bili", "42", "http://example.invalid/face").unwrap();
         let mut state = Requests::default();
         assert!(state.reserve(&job, &dir));
         assert!(!state.reserve(&job, &dir));
