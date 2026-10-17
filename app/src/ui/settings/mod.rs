@@ -5,6 +5,7 @@
 pub(super) mod controls;
 mod pages;
 mod skin_grid;
+mod telegram;
 
 pub use controls::links_pulsing;
 pub use pages::font_licence_panel;

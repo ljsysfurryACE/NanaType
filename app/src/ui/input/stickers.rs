@@ -147,7 +147,7 @@ pub(super) fn panel(ui: Ui, close_on_insert: Option<Signal<bool>>, region: Optio
                     .color(SemanticColorRole::Muted),
             )
             .bind(move |text: &mut Text| {
-                text.value = status(ui, hovered.get()).into();
+                text.value = status(ui, hovered.get());
             }),
             widget(Divider::horizontal()),
             widget(ScrollView::new(ScrollAxes::Horizontal).with_layout(|l| {

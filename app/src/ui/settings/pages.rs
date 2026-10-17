@@ -3613,7 +3613,16 @@ fn assets(ui: Ui) -> AnyView {
                         .is_some_and(|url| url.starts_with("https://"))
                     {
                         let root = pack.root.clone();
-                        actions.push(button(ui, "stickers-repository", move || {
+                        let label = if pack
+                            .repository
+                            .as_deref()
+                            .is_some_and(|u| u.starts_with("https://t.me/"))
+                        {
+                            "telegram-source"
+                        } else {
+                            "stickers-repository"
+                        };
+                        actions.push(button(ui, label, move || {
                             Msg::StickerRepository(root.clone())
                         }));
                     }
@@ -3782,6 +3791,7 @@ fn assets(ui: Ui) -> AnyView {
                         .into_any(),
                 ],
             ),
+            super::telegram::panel(ui),
             section(
                 ui,
                 "assets-phrases",

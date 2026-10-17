@@ -253,7 +253,7 @@ fn texture(gpu: &GpuContext, image: &image::RgbaImage) -> Result<GpuTexture, Str
 }
 fn upload(gpu: &GpuContext, texture: &GpuTexture, image: &image::RgbaImage) -> Result<(), String> {
     let mut pixels = image.as_raw().clone();
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         for i in 0..3 {
             pixel[i] = ((u16::from(pixel[i]) * u16::from(pixel[3]) + 127) / 255) as u8;
         }

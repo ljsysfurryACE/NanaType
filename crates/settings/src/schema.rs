@@ -649,6 +649,15 @@ pub struct AssetSettings {
     /// Folders whose images become sticker libraries (folder name = library).
     pub sticker_dirs: Vec<String>,
     pub phrases: Vec<QuickPhrase>,
+    pub telegram: TelegramSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TelegramSettings {
+    pub api_id: i32,
+    /// SOCKS5 URL. Login codes, API hashes and passwords are never settings.
+    pub proxy: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -737,6 +746,15 @@ impl Settings {
             self.skin.id = DEFAULT_SKIN.into();
         }
         self.general.speaker_name = self.general.speaker_name.chars().take(64).collect();
+        self.assets.telegram.api_id = self.assets.telegram.api_id.max(0);
+        self.assets.telegram.proxy = self
+            .assets
+            .telegram
+            .proxy
+            .trim()
+            .chars()
+            .take(2048)
+            .collect();
         let d = &mut self.integrations.douyin;
         d.room = d.room.trim().chars().take(2048).collect();
         let b = &mut self.integrations.bilibili;

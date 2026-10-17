@@ -182,6 +182,8 @@ pub enum Msg {
     StickerRemove(std::path::PathBuf),
     StickerRepository(std::path::PathBuf),
     StickerImportFolders(Vec<std::path::PathBuf>),
+    Telegram(crate::stickers::telegram::Command),
+    TelegramEvent(crate::stickers::telegram::Event),
     /// A file of the active (folder) skin changed and hot reload is on.
     SkinFilesChanged,
     /// A second instance asked us to come forward.

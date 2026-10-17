@@ -5,6 +5,24 @@ use nanatype_model::AfterLine;
 use crate::*;
 
 #[test]
+fn telegram_download_preferences_are_backward_compatible_and_contain_no_login_secrets() {
+    let mut settings: Settings =
+        serde_json::from_str(r#"{"assets":{"sticker_dirs":["stickers/cats"]}}"#).unwrap();
+    assert_eq!(settings.assets.telegram.api_id, 0);
+    assert!(settings.assets.telegram.proxy.is_empty());
+    settings.assets.telegram.api_id = 12345;
+    settings.assets.telegram.proxy = " socks5://127.0.0.1:7890 ".into();
+    settings.sanitize();
+    let value = serde_json::to_value(&settings).unwrap();
+    let preferences = value["assets"]["telegram"].as_object().unwrap();
+    assert_eq!(preferences.len(), 2);
+    assert_eq!(preferences["api_id"], 12345);
+    assert_eq!(preferences["proxy"], "socks5://127.0.0.1:7890");
+    let restored: Settings = serde_json::from_value(value).unwrap();
+    assert_eq!(restored.assets, settings.assets);
+}
+
+#[test]
 fn overlays_default_to_interactive_and_preserve_explicit_locks() {
     for s in [
         Settings::default(),

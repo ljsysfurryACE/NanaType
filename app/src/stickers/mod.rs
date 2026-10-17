@@ -1,8 +1,10 @@
 //! One folder pipeline for local imports and downloaded presets.
 pub mod cache;
 pub mod definition;
+mod formats;
 mod literal;
 pub mod playback;
+pub mod telegram;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;

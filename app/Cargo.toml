@@ -51,12 +51,26 @@ tray-icon = "0.21"
 ureq = { version = "=3.4.2", default-features = false, features = ["rustls"] }
 blake3 = "1"
 gif = "0.14"
+flate2 = "1"
+grammers-client = { version = "=0.11.0", features = ["proxy"] }
+grammers-session = { version = "=0.11.0", default-features = false, features = ["serde"] }
+tokio = { version = "1", features = ["rt", "sync", "time", "net"] }
+rasterlottie = { version = "=0.2.4", default-features = false }
+webm-iterable = "0.7.1"
+# Includes the upstream MSVC prebuilt/source-build fixes.
+shiguredo_libvpx = "=2026.2.0-canary.3"
+url = "2"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 objc2-metal = "0.3"
+
+# Upstream ships prebuilt Apple Silicon archives; Intel Macs build from source.
+[target.'cfg(all(target_os = "macos", target_arch = "x86_64"))'.dependencies]
+shiguredo_libvpx = { version = "=2026.2.0-canary.3", features = ["source-build"] }
 
 [target.'cfg(windows)'.dependencies]
 nanalive-spout = { git = "https://github.com/sena-nana/nanalive-spout", rev = "106e124cdbe3a5eb9ee104715ee1d54c3903b217", default-features = false, features = ["gpu-dx11-shared"] }
@@ -72,6 +86,7 @@ windows = { version = "0.62", features = [
     "Win32_System_Registry",
     "Win32_UI_Shell",
     "Win32_System_Time",
+    "Win32_Security_Cryptography",
 ] }
 
 [target.'cfg(windows)'.build-dependencies]

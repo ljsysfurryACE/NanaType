@@ -70,6 +70,7 @@ pub struct App {
     pub ui: Ui,
     pub assets: AssetLibrary,
     pub sticker_manager: crate::stickers::Manager,
+    telegram: crate::stickers::telegram::Service,
     pub windows: WindowManager,
     pub scheduler: Scheduler,
     pub audio: AudioHandle,
@@ -224,9 +225,14 @@ impl App {
             let post = post.clone();
             move |event| post(Msg::Stickers(event))
         });
+        let telegram = crate::stickers::telegram::Service::new(paths.data.clone(), {
+            let post = post.clone();
+            move |event| post(Msg::TelegramEvent(event))
+        });
         let mut app = Self {
             assets: AssetLibrary::new(paths.blobs()),
             sticker_manager,
+            telegram,
             paths,
             readonly_settings: matches!(loaded_settings.note, LoadNote::TooNew { .. }),
             registry,
@@ -1535,6 +1541,30 @@ impl App {
         match msg {
             Msg::UiChanged => {}
             Msg::StickerImportFolders(paths) => self.import_sticker_folders(paths),
+            Msg::Telegram(command) => {
+                if matches!(command, crate::stickers::telegram::Command::Cancel) {
+                    let _ = self.telegram.send(command);
+                } else if !self.ui.telegram.with_untracked(|s| s.busy) {
+                    let mut state = (*self.ui.telegram.get_untracked()).clone();
+                    state.busy = true;
+                    state.error = None;
+                    self.ui.telegram.set(Arc::new(state));
+                    if let Err(error) = self.telegram.send(command) {
+                        let mut state = (*self.ui.telegram.get_untracked()).clone();
+                        state.busy = false;
+                        state.error = Some(error);
+                        self.ui.telegram.set(Arc::new(state));
+                    }
+                }
+            }
+            Msg::TelegramEvent(event) => match event {
+                crate::stickers::telegram::Event::State(state) => {
+                    self.ui.telegram.set(Arc::new(state))
+                }
+                crate::stickers::telegram::Event::Downloaded(root) => {
+                    self.import_sticker_folders(vec![root])
+                }
+            },
             Msg::PeerStart { invitation, relay } => self.peer_start(invitation, relay),
             Msg::PeerLeave => self.peer_leave(),
             Msg::PeerPanel(expanded) => self.ui.peer_panel.set(expanded),

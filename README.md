@@ -94,6 +94,14 @@
 
 预设图片来自 [Echo-Live](https://github.com/sheep-realms/Echo-Live) 和 [绵羊动态表情包扩展](https://github.com/sheep-realms/Echo-Live-Sheep-realms-EmoteLab-Extension)，作者与图片授权显示在列表中，下载目录保留来源、定义与许可证。
 
+「设置 › 素材 › Telegram 贴纸」可登录 Telegram 账号，使用官方搜索查找贴纸包，也可输入包名或 `https://t.me/addstickers/包名` 下载整包。首次登录需要从 [my.telegram.org](https://my.telegram.org) 获取自己的 API ID 和 API Hash，填写带国家代码的手机号，再输入收到的验证码及可选的两步验证密码。再次点击「连接 / 登录」可恢复本机会话，不必重新填写登录凭据。
+
+下载代理支持 `socks5://127.0.0.1:7890` 和带认证的 `socks5://用户名:密码@主机:端口`；留空直连。修改后重新连接，登录、搜索、文件下载和跨数据中心连接均使用相同代理。此设置只用于 Telegram。
+
+支持静态 WebP、TGS 矢量动画和带透明度的 VP9 WebM。下载完成后沿用本地文件夹的解析、预转码和注册流程，出现在相同的表情包列表及底部系列标签中，标识为 `tg_包名/文件ID`。动画转为 PNG 完整帧缓存，重启后可离线复用；超出 Telegram 尺寸、时长或当前渲染器支持范围的动画会明确报错。原始文件及来源保留，贴纸的权利仍属于各自创作者。
+
+API Hash、手机号、验证码及密码只在登录期间使用，不写入配置。授权会话单独保存在应用数据目录的 `telegram.session` 中，Windows 使用当前用户的 DPAPI 加密，其他平台使用仅当前用户可读写的文件权限；请勿共享该会话文件。「退出登录并清除会话」会注销并删除本机会话，已下载的贴纸仍可离线使用。
+
 ## 皮肤
 
 皮肤是一个含 `skin.toml` 的文件夹或 `.ntskin` 压缩包，可继承内置皮肤只写差异。格式见 [docs/skins.md](docs/skins.md)。
@@ -101,6 +109,8 @@
 ## 构建
 
 需要 Rust 1.98+ 和 Windows 10 SDK（图标与版本资源）。NanaUI 与 nanalive-spout（Spout2 发送端）以固定 rev 通过 GitHub 远程仓库引用，首次构建时 cargo 会自动拉取，无需本地检出；构建 nanalive-spout 需要 git 可用（会拉取 Spout2 子模块）。
+
+WebM 解码使用固定版本的 libvpx：Windows 和 Apple Silicon 首次构建会下载并校验上游预编译静态库，运行时无需额外安装。Intel Mac 使用源码构建，需 `brew install nasm` 和 `rustup component add llvm-tools`；其他需要源码构建的平台可启用 `shiguredo_libvpx/source-build` 特性。
 
 ```bash
 cargo run -p nanatype

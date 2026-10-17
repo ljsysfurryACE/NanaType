@@ -179,6 +179,7 @@ pub struct Ui {
     pub skins: Signal<Arc<Vec<SkinRow>>>,
     pub stickers: Signal<Arc<Vec<StickerRow>>>,
     pub sticker_packs: Signal<Arc<Vec<crate::stickers::PackRow>>>,
+    pub telegram: Signal<Arc<crate::stickers::telegram::State>>,
     pub recording: Signal<Option<GlobalAction>>,
     pub hotkeys: Signal<Arc<HashMap<GlobalAction, HotkeyState>>>,
     /// Asset reference → `file://` URL, for documents' atoms.
@@ -280,6 +281,7 @@ impl Ui {
             skins: signal(Arc::new(Vec::new())),
             stickers: signal(Arc::new(Vec::new())),
             sticker_packs: signal(Arc::new(Vec::new())),
+            telegram: signal(Arc::new(Default::default())),
             recording: signal(None),
             hotkeys: signal(Arc::new(HashMap::new())),
             asset_urls: signal(Arc::new(HashMap::new())),

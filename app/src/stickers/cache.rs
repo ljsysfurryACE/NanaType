@@ -10,7 +10,7 @@ use std::sync::{Arc, LazyLock, Mutex, RwLock, Weak};
 use image::{AnimationDecoder, ImageDecoder};
 use serde::{Deserialize, Serialize};
 
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 pub const MAX_SOURCE: u64 = 8 * 1024 * 1024;
 const MAX_FRAMES: usize = 1024;
 const MAX_PIXELS: u64 = 256 * 1024 * 1024;
@@ -238,9 +238,14 @@ fn transcode(
         cached.delays.push(delay.clamp(10, 600_000));
         Ok(())
     };
-    let format = image::guess_format(bytes).map_err(|e| e.to_string())?;
     let cycles;
-    if format == image::ImageFormat::Gif {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        super::formats::tgs(bytes, &mut save)?;
+        cycles = None;
+    } else if bytes.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        super::formats::webm(bytes, &mut save)?;
+        cycles = None;
+    } else if image::guess_format(bytes).map_err(|e| e.to_string())? == image::ImageFormat::Gif {
         let mut decoder =
             image::codecs::gif::GifDecoder::new(Cursor::new(bytes)).map_err(|e| e.to_string())?;
         decoder.set_limits(limits()).map_err(|e| e.to_string())?;
@@ -259,6 +264,7 @@ fn transcode(
             save(frame.into_buffer(), u64::from(num) / u64::from(den.max(1)))?;
         }
     } else {
+        let format = image::guess_format(bytes).map_err(|e| e.to_string())?;
         let mut reader = image::ImageReader::with_format(Cursor::new(bytes), format);
         reader.limits(limits());
         save(

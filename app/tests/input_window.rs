@@ -1119,7 +1119,7 @@ fn sticker_series_stay_at_bottom_filter_search_and_accept_folder_drops() {
         session
             .file_drag_xy(
                 nana_ui_core::FileDragKind::Hover,
-                &[folder.clone()],
+                std::slice::from_ref(&folder),
                 port.x + 8.0,
                 port.y + 8.0,
             )
@@ -1133,7 +1133,7 @@ fn sticker_series_stay_at_bottom_filter_search_and_accept_folder_drops() {
         session
             .file_drag_xy(
                 nana_ui_core::FileDragKind::Cancel,
-                &[folder.clone()],
+                std::slice::from_ref(&folder),
                 0.0,
                 0.0,
             )
@@ -1145,13 +1145,13 @@ fn sticker_series_stay_at_bottom_filter_search_and_accept_folder_drops() {
                 .any(|n| n.label.as_deref() == Some("松开以导入表情包文件夹"))
         );
         session
-            .drop_files_xy(&[folder.clone()], port.x + 8.0, port.y + 8.0)
+            .drop_files_xy(std::slice::from_ref(&folder), port.x + 8.0, port.y + 8.0)
             .unwrap();
         assert!(session.document_mut().context_mut().take_program_messages().into_iter().any(|m|m.downcast::<Msg>().is_ok_and(|m|matches!(*m,Msg::StickerImportFolders(ref dirs) if dirs==&vec![folder.clone()]))));
         click_keyed(&mut session, "input-dock-commands");
         let port = keyed(&session, "input-dock-commands-scroll").bounds;
         session
-            .drop_files_xy(&[folder.clone()], port.x + 8.0, port.y + 8.0)
+            .drop_files_xy(std::slice::from_ref(&folder), port.x + 8.0, port.y + 8.0)
             .unwrap();
         assert!(
             !session
@@ -1187,7 +1187,7 @@ fn sticker_series_stay_at_bottom_filter_search_and_accept_folder_drops() {
         session
             .file_drag_xy(
                 nana_ui_core::FileDragKind::Hover,
-                &[folder.clone()],
+                std::slice::from_ref(&folder),
                 header.x + header.width / 2.0,
                 header.y + header.height / 2.0,
             )
@@ -1201,7 +1201,7 @@ fn sticker_series_stay_at_bottom_filter_search_and_accept_folder_drops() {
         );
         session
             .drop_files_xy(
-                &[folder.clone()],
+                std::slice::from_ref(&folder),
                 header.x + header.width / 2.0,
                 header.y + header.height / 2.0,
             )

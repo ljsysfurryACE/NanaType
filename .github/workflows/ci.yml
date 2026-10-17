@@ -20,7 +20,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.98"
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools
+      - name: libvpx source build tools (Intel Mac)
+        if: runner.os == 'macOS' && runner.arch == 'X64'
+        run: brew install nasm
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all -- --check

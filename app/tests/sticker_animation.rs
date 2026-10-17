@@ -159,7 +159,9 @@ fn cached_animation_changes_pixels_without_relayout_and_respects_motion_and_visi
         .unwrap();
     write_painter_png(&out.join("frame-red.png"), size, &red).unwrap();
     assert!(
-        red.chunks_exact(4)
+        red.as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[0] > 240 && p[1] < 10 && p[3] > 240)
             .count()
             > 1000
@@ -172,7 +174,9 @@ fn cached_animation_changes_pixels_without_relayout_and_respects_motion_and_visi
     write_painter_png(&out.join("frame-green.png"), size, &green).unwrap();
     assert!(
         green
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[1] > 240 && p[0] < 10 && p[3] > 240)
             .count()
             > 1000

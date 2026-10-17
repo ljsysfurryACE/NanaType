@@ -155,6 +155,7 @@ if ($Texts) {
         "crates\bilibili\LICENSE-API-COLLECT" = "Bilibili-API-collect-CC-BY-NC-4.0.txt"
         "crates\bilibili\NOTICE.md" = "Bilibili-NOTICE.md"
         "crates\douyin\LICENSE-DOUYINLIVE" = "DouyinLive-MIT.txt"
+        "packaging\licenses\libvpx-BSD.txt" = "libvpx-BSD.txt"
     }
     foreach ($source in $interfaceFiles.Keys) {
         Copy-Item -LiteralPath (Join-Path $root $source) -Destination (Join-Path $Texts $interfaceFiles[$source])
