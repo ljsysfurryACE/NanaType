@@ -9,11 +9,8 @@ description = { zh-CN = "宣纸底色、墨竹画作与朱红印章，配楷书"
 
 [chrome]
 accent = "#b0302a"
-background = "#f6f1e6"
 surface = "#fdfaf3"
 text = "#222222"
-muted = "#5e574c"
-border = "#d8cfbd"
 
 [fonts.body]
 file = "builtin:fonts/LXGWWenKai-Regular.ttf"

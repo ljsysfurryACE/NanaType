@@ -11,11 +11,8 @@ description = { zh-CN = "还原 Echo-Live 的虚空主题：完全透明，只�
 
 [chrome]
 accent = "#888888"
-background = "#f3f3f5"
 surface = "#ffffff"
 text = "#000000"
-muted = "#666666"
-border = "#cccccc"
 
 [fonts.body]
 families = ["Source Han Sans SC", "思源黑体", "Noto Sans CJK SC", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC"]
@@ -143,7 +140,6 @@ name_width = 124
 name_size = 17
 time_size = 15
 time_seconds = true
-show_time = true
 gap = 9
 entrance = "none"
 # Like Echo-Live, the line still on the dialogue box joins once it clears.

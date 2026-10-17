@@ -497,10 +497,13 @@ mod tests {
     }
 
     #[test]
-    fn accent_fg_meets_its_minimum_on_the_skin_surface() {
+    fn builtin_content_colors_are_readable() {
         let reg = SkinRegistry::new(None, "test");
         for e in reg.entries() {
-            let c = reg.load(&e.id).expect("skin loads").skin.chrome.clone();
+            let skin = reg.load(&e.id).expect("skin loads").skin;
+            let c = &skin.chrome;
+            let r = contrast(c.text, c.surface);
+            assert!(r >= 4.5, "{}: content text on surface is {r:.2}:1", e.id);
             for min in [3.0, 4.5] {
                 let fg = accent_fg(c.accent, c.surface, c.text, min);
                 let r = contrast(fg, c.surface);
@@ -530,37 +533,5 @@ mod tests {
                 }
             );
         }
-    }
-
-    #[test]
-    fn builtin_chrome_text_roles_are_readable() {
-        let reg = SkinRegistry::new(None, "test");
-        let mut bad = Vec::new();
-        for e in reg.entries() {
-            let c = reg.load(&e.id).expect("skin loads").skin.chrome.clone();
-            for (role, fg, min) in [
-                ("text", c.text, 4.5),
-                ("muted", c.muted, 4.5),
-                ("success", c.success, 3.0),
-                ("warning", c.warning, 3.0),
-                ("danger", c.danger, 3.0),
-            ] {
-                for (on_name, bg) in [("surface", c.surface), ("background", c.background)] {
-                    let r = contrast(fg, bg);
-                    if r < min {
-                        bad.push(format!("{} {role} on {on_name}: {r:.2}:1 < {min}", e.id));
-                    }
-                }
-            }
-        }
-        assert!(
-            bad.is_empty(),
-            "
-{}",
-            bad.join(
-                "
-"
-            )
-        );
     }
 }

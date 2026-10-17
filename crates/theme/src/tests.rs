@@ -232,7 +232,7 @@ avatar = { shape = "circle", ring_color = "#fff", ring_width = 2 }
 }
 
 #[test]
-fn a_legacy_manifest_keeps_its_old_meaning() {
+fn default_dialogue_has_a_plain_box_and_bobbing_continue_hint() {
     let skin = Skin::default();
     let d = &skin.dialogue;
     assert!(d.tail.is_none());
@@ -1102,13 +1102,12 @@ fn docs_list_exactly_the_builtin_skins() {
 }
 
 /// Every key path a skin can write: the default skin's fields and every key
-/// a built-in manifest uses. Free-form maps (localised names, palette roles,
-/// portrait variants, sound effects) contribute their own key only.
+/// a built-in manifest uses. Free-form maps (localised names, portrait variants,
+/// sound effects) contribute their own key only.
 fn manifest_keys() -> std::collections::BTreeSet<String> {
     const OPEN_MAPS: &[&str] = &[
         "meta.name",
         "meta.description",
-        "chrome.palette",
         "dialogue.portrait.variants",
         "sounds.se",
     ];
@@ -1166,8 +1165,6 @@ fn docs_name_every_manifest_key() {
         .collect();
     assert!(missing.is_empty(), "docs/skins.md never names {missing:?}");
     for section in [
-        "[chrome.dark]",
-        "[chrome.light]",
         "[mention]",
         "[dialogue.reply]",
         "[history.reply]",
@@ -1175,13 +1172,7 @@ fn docs_name_every_manifest_key() {
     ] {
         assert!(docs.contains(section), "docs/skins.md lacks {section}");
     }
-    for key in [
-        "when",
-        "anchor",
-        "contrast_guard",
-        "highlight",
-        "hide_latest",
-    ] {
+    for key in ["when", "anchor", "contrast_guard", "hide_latest"] {
         assert!(
             docs.contains(&format!("{key} =")),
             "docs/skins.md lacks an example of `{key} =`"

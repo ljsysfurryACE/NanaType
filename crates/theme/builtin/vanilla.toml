@@ -9,11 +9,8 @@ description = { zh-CN = "极简白条与左侧强调色，名字收在框内，�
 
 [chrome]
 accent = "#4a7dff"
-background = "#f3f5fa"
 surface = "#ffffff"
 text = "#22263a"
-muted = "#5a6178"
-border = "#d8dde9"
 
 [dialogue]
 region = [760, 170]

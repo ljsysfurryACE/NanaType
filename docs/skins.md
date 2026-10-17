@@ -4,7 +4,7 @@
 
 所有字段都有默认值（即未加修饰的「光环」的样子）。用 `base` 继承另一个皮肤时只需写不同的部分；表格逐层合并，其它值（包括 `[[dialogue.decor]]` 这样的数组）整体替换，写 `decor = []` 可清空继承来的装饰。
 
-通用界面采用独立的 NanaUI 中性配色，在设置 › 常规 › 界面外观中选择跟随系统、浅色或深色。只有展示框（含对方展示框）、历史记录框和输入编辑区域随皮肤变化；皮肤选择器中的缩略图、示例及色板也保留皮肤效果。输入窗工具栏、状态栏和弹幕面板均使用通用配色。旧皮肤的 `chrome` 字段仍可加载，供内容框的强调色、行内标签等效果使用，但不会改变应用界面。
+通用界面采用独立的 NanaUI 中性配色，在设置 › 常规 › 界面外观中选择跟随系统、浅色或深色。只有展示框（含对方展示框）、历史记录框和输入编辑区域随皮肤变化；皮肤选择器中的缩略图、示例及色板也保留皮肤效果。输入窗工具栏、状态栏和弹幕面板均使用通用配色。`chrome` 提供内容强调色、行内标签底色和文字对比色，不改变应用界面。
 
 ## 内置皮肤
 
@@ -56,23 +56,11 @@ license = "CC-BY-4.0"
 preview = "preview.png"
 tags = ["cute", "streaming"]      # 选择器里的分类：classic streaming game retro cute elegant minimal
 
-[chrome]                          # 内容框配色参考；不影响设置、工具栏等通用界面
-appearance = "light"              # light | dark
-accent = "#e86a92"
-background = "#fff5f8"
-surface = "#ffffff"
-text = "#3a2230"
-muted = "#7a5a68"
-border = "#f0cfdc"
-# highlight = "#e86a92"           # 兼容旧皮肤的强调色；不改变应用的直播/注意态
-
-[chrome.dark]                     # 兼容旧皮肤；不再用于应用界面配色
-surface = "#2a1a24"               # 键与 [chrome] 相同（accent / background / surface / text /
-                                  # muted / border / success / warning / danger / highlight），都可省略
-# [chrome.light] 同样仅用于兼容旧皮肤
-
-[chrome.palette]                  # 兼容旧皮肤；不再覆盖通用界面的颜色（background surface subtle
-hover = "#ffe9f1"                 #   hover active selected border text muted faint highlight）
+[chrome]                          # 内容配色；不影响设置、工具栏等通用界面
+appearance = "light"              # light | dark，皮肤选择器的明暗分类
+accent = "#e86a92"                # 装饰、引用昵称、行内标签等的强调色
+surface = "#ffffff"               # 编辑器行内标记的底色参考
+text = "#3a2230"                  # 内容文字对比描边的候选色
 
 [fonts.body]                      # 台词字体；name（名牌）、accent（装饰文字）同理
 file = "fonts/LXGWWenKai.ttf"     # 随皮肤分发的字体（可选）
@@ -223,9 +211,7 @@ name_width = 96                   # inline 时名字栏宽度；窄窗自动缩�
 name_weight = 700
 time_size = 11                    # 默认比名字小 3（也用于“主播/观众”角色标签）
 time_color = "#8aa0b4"            # 时间与角色标签的颜色
-show_time = false                 # 保留；是否显示时间由 设置 › 历史记录 决定
 time_seconds = false              # true 显示 HH:MM:SS
-anchor = "top"                    # 保留兼容字段；应用历史统一从内容区顶部排列，不再随皮肤切换锚点
 hide_latest = false               # true：展示框上还显示着的那句先不进历史（设置 › 历史记录 可覆盖）
 # 整个列表背后的面板（可选）；也支持 gradient / radii / border_widths / border_style / shadows
 panel = { color = "#edeef0", border_color = "#888888", border_width = 0, radius = 0, padding = [18, 18, 18, 18], margin = [0, 0, 0, 0] }   # padding 左上右下，margin 上右下左
@@ -284,9 +270,9 @@ contrast_guard = 3.0              # 自带颜色的文字与框色对比低于 3
 
 ## 内容配色参考（chrome）
 
-`[chrome]` 是旧皮肤清单保留的颜色表，不再决定设置窗口、工具栏、弹幕面板或其他通用控件的外观。`appearance` 仍用于皮肤选择器的明暗分类；`accent`、`surface`、`text` 等颜色仍可被内容框、行内标签和颜色角色引用。
+`[chrome]` 只包含 `appearance`、`accent`、`surface` 和 `text`。`appearance` 用于皮肤选择器的明暗分类；`accent` 提供装饰、引用昵称和行内标签等的强调色；`surface` 用于编辑器行内标记的底色；`text` 为内容文字的对比描边提供候选色。
 
-`[chrome.dark]`、`[chrome.light]` 和 `[chrome.palette]` 继续接受加载，以兼容已有皮肤，但不会覆盖应用主题。界面明暗只由设置 › 常规 › 界面外观决定，默认跟随系统；旧配置的「跟随皮肤」自动改为跟随系统。
+界面明暗由设置 › 常规 › 界面外观决定，默认跟随系统。历史记录是否显示时间由设置 › 历史记录决定，列表统一从内容区顶部排列。
 
 通用界面使用 NanaUI 标准浅色、深色配色及固定强调色，保留现有圆角、间距、卡片阴影和动效。皮肤的个性化强调色只影响皮肤内容，不改变应用按钮或选中状态。
 
@@ -337,10 +323,6 @@ NanaUI 一次只用一个字体名，NanaType 会从 `families` 里挑第一个�
 
 `echo_*` 不带字体文件，`families` 末尾是 NanaUI 自带的 `"Noto Sans SC"`。
 
-## 兼容性
-
-使用上面新增字段的皮肤在旧版 NanaType 中仍能加载，只是新字段会被忽略并提示。如果皮肤离不开它们，请把 `min_app` 设为支持它们的版本。`effects.rainbow_saturation` 和 `rainbow_lightness` 目前保留，暂不生效。
-
 ## 校验规则
 
 导入时以下任何一项不满足都会拒绝整个皮肤，并显示具体字段：
@@ -357,7 +339,7 @@ NanaUI 一次只用一个字体名，NanaType 会从 `families` 里挑第一个�
 
 `tags` 不合规只会提示。
 
-清单中不认识的字段只会提示，不影响加载，以便旧版本打开新皮肤。
+清单中不认识的字段会提示并忽略；制作皮肤时应清理这些字段。
 
 ## 热重载
 

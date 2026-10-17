@@ -9,14 +9,8 @@ description = { zh-CN = "暖色纸张、双线边框与花饰，配宋体", en-U
 
 [chrome]
 accent = "#7a4824"
-background = "#faf4e8"
 surface = "#fffcf5"
 text = "#3e2a1c"
-muted = "#6e543e"
-border = "#d6c4a8"
-success = "#2e6e3e"
-warning = "#a06014"
-danger = "#a8302a"
 
 [fonts.body]
 families = ["Noto Serif SC", "Source Han Serif SC", "SimSun", "Songti SC"]

@@ -10,14 +10,8 @@ description = { zh-CN = "没有框，只有粗描边白字，叠在任何画面�
 [chrome]
 appearance = "dark"
 accent = "#ffd27f"
-background = "#121214"
 surface = "#1e1e22"
 text = "#f2f2f5"
-muted = "#b4b4c0"
-border = "#3a3a46"
-success = "#64d29a"
-warning = "#ffc85a"
-danger = "#ff7a8a"
 
 [fonts.body]
 weight = 800

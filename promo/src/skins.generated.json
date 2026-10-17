@@ -22,14 +22,8 @@
   "chrome": {
    "appearance": "dark",
    "accent": "#ffd27f",
-   "background": "#101014",
    "surface": "#1c1c22",
-   "text": "#f2f2f5",
-   "muted": "#b4b4c0",
-   "border": "#3a3a46",
-   "success": "#64d29a",
-   "warning": "#ffc85a",
-   "danger": "#ff7a8a"
+   "text": "#f2f2f5"
   },
   "dialogue": {
    "region": [
@@ -190,11 +184,8 @@
   },
   "chrome": {
    "accent": "#ff7aa8",
-   "background": "#fff6f9",
    "surface": "#ffffff",
-   "text": "#2b2b3a",
-   "muted": "#64647a",
-   "border": "#e6d6de"
+   "text": "#2b2b3a"
   },
   "fonts": {
    "body": {
@@ -432,11 +423,8 @@
   },
   "chrome": {
    "accent": "#ffcc00",
-   "background": "#fffbea",
    "surface": "#ffffff",
-   "text": "#111111",
-   "muted": "#555555",
-   "border": "#111111"
+   "text": "#111111"
   },
   "fonts": {
    "body": {
@@ -581,11 +569,8 @@
   },
   "chrome": {
    "accent": "#888888",
-   "background": "#f3f3f5",
    "surface": "#ffffff",
-   "text": "#000000",
-   "muted": "#666666",
-   "border": "#888888"
+   "text": "#000000"
   },
   "fonts": {
    "body": {
@@ -790,7 +775,6 @@
    "name_size": 18,
    "time_size": 16,
    "time_seconds": true,
-   "show_time": true,
    "gap": 9,
    "entrance": "none",
    "bubble_color": "#00000000",
@@ -861,14 +845,8 @@
   "chrome": {
    "appearance": "dark",
    "accent": "#1a62be",
-   "background": "#0c0c10",
    "surface": "#1a1a20",
-   "text": "#ffffff",
-   "muted": "#dddddd",
-   "border": "#3a3a46",
-   "success": "#64d29a",
-   "warning": "#ffc85a",
-   "danger": "#ff7a8a"
+   "text": "#ffffff"
   },
   "fonts": {
    "body": {
@@ -1112,7 +1090,6 @@
    "name_size": 18,
    "time_size": 16,
    "time_seconds": true,
-   "show_time": true,
    "gap": 9,
    "entrance": "none",
    "bubble_color": "#00000000",
@@ -1195,11 +1172,8 @@
   },
   "chrome": {
    "accent": "#606266",
-   "background": "#edeef0",
    "surface": "#ffffff",
-   "text": "#000000",
-   "muted": "#888888",
-   "border": "#cccccc"
+   "text": "#000000"
   },
   "fonts": {
    "body": {
@@ -1419,7 +1393,6 @@
    "name_size": 18,
    "time_size": 16,
    "time_seconds": true,
-   "show_time": true,
    "gap": 9,
    "entrance": "none",
    "bubble_color": "#00000000",
@@ -1530,11 +1503,8 @@
   },
   "chrome": {
    "accent": "#888888",
-   "background": "#f3f3f5",
    "surface": "#ffffff",
-   "text": "#000000",
-   "muted": "#666666",
-   "border": "#cccccc"
+   "text": "#000000"
   },
   "fonts": {
    "body": {
@@ -1725,7 +1695,6 @@
    "name_size": 18,
    "time_size": 16,
    "time_seconds": true,
-   "show_time": true,
    "gap": 9,
    "entrance": "none",
    "bubble_color": "#00000000",
@@ -1953,11 +1922,8 @@
   },
   "chrome": {
    "accent": "#b0302a",
-   "background": "#f6f1e6",
    "surface": "#fdfaf3",
-   "text": "#222222",
-   "muted": "#5e574c",
-   "border": "#d8cfbd"
+   "text": "#222222"
   },
   "fonts": {
    "body": {
@@ -2214,11 +2180,8 @@
   },
   "chrome": {
    "accent": "#23ade5",
-   "background": "#f2f7fb",
    "surface": "#ffffff",
-   "text": "#1f2a36",
-   "muted": "#5a6b7c",
-   "border": "#d4e2ec"
+   "text": "#1f2a36"
   },
   "fonts": {
    "accent": {
@@ -2390,7 +2353,6 @@
     "ring_color": "#ffffff",
     "ring_width": 2
    },
-   "show_time": true,
    "time_color": "#8aa0b4",
    "text": {
     "color": "#1f2a36"
@@ -2420,14 +2382,8 @@
   "chrome": {
    "appearance": "dark",
    "accent": "#5cb8ff",
-   "background": "#0e1218",
    "surface": "#1c2531",
-   "text": "#e6edf5",
-   "muted": "#a6b5c7",
-   "border": "#404f62",
-   "success": "#48d296",
-   "warning": "#ffc85a",
-   "danger": "#ff7a96"
+   "text": "#e6edf5"
   },
   "dialogue": {
    "padding": [
@@ -2663,14 +2619,8 @@
   },
   "chrome": {
    "accent": "#7a4824",
-   "background": "#faf4e8",
    "surface": "#fffcf5",
-   "text": "#3e2a1c",
-   "muted": "#6e543e",
-   "border": "#d6c4a8",
-   "success": "#2e6e3e",
-   "warning": "#a06014",
-   "danger": "#a8302a"
+   "text": "#3e2a1c"
   },
   "fonts": {
    "body": {
@@ -2851,11 +2801,8 @@
   },
   "chrome": {
    "accent": "#306230",
-   "background": "#c4d7a0",
    "surface": "#9bbc0f",
-   "text": "#0f380f",
-   "muted": "#306230",
-   "border": "#306230"
+   "text": "#0f380f"
   },
   "fonts": {
    "body": {
@@ -2998,14 +2945,8 @@
   "chrome": {
    "appearance": "dark",
    "accent": "#8fa8ff",
-   "background": "#0a1030",
    "surface": "#16205a",
-   "text": "#ffffff",
-   "muted": "#c0c8f0",
-   "border": "#3c4a9a",
-   "success": "#6ae09a",
-   "warning": "#ffd060",
-   "danger": "#ff7a7a"
+   "text": "#ffffff"
   },
   "fonts": {
    "body": {
@@ -3188,11 +3129,8 @@
   },
   "chrome": {
    "accent": "#f06a9c",
-   "background": "#fff4f8",
    "surface": "#ffffff",
-   "text": "#5e2a42",
-   "muted": "#9a6a80",
-   "border": "#f7c6d8"
+   "text": "#5e2a42"
   },
   "fonts": {
    "accent": {
@@ -3542,14 +3480,8 @@
   "chrome": {
    "appearance": "dark",
    "accent": "#ffd27f",
-   "background": "#121214",
    "surface": "#1e1e22",
-   "text": "#f2f2f5",
-   "muted": "#b4b4c0",
-   "border": "#3a3a46",
-   "success": "#64d29a",
-   "warning": "#ffc85a",
-   "danger": "#ff7a8a"
+   "text": "#f2f2f5"
   },
   "fonts": {
    "body": {
@@ -3664,14 +3596,8 @@
   "chrome": {
    "appearance": "dark",
    "accent": "#33ff66",
-   "background": "#050805",
    "surface": "#0d140e",
-   "text": "#c8ffd4",
-   "muted": "#6fae7e",
-   "border": "#1f5f2a",
-   "success": "#48d296",
-   "warning": "#ffc85a",
-   "danger": "#ff7a96"
+   "text": "#c8ffd4"
   },
   "fonts": {
    "body": {
@@ -3879,11 +3805,8 @@
   },
   "chrome": {
    "accent": "#4a7dff",
-   "background": "#f3f5fa",
    "surface": "#ffffff",
-   "text": "#22263a",
-   "muted": "#5a6178",
-   "border": "#d8dde9"
+   "text": "#22263a"
   },
   "dialogue": {
    "region": [

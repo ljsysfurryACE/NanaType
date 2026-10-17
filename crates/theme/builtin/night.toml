@@ -10,14 +10,8 @@ description = { zh-CN = "深蓝玻璃底、霓虹描边与流光下划线", en-U
 [chrome]
 appearance = "dark"
 accent = "#5cb8ff"
-background = "#0e1218"
 surface = "#1c2531"
 text = "#e6edf5"
-muted = "#a6b5c7"
-border = "#404f62"
-success = "#48d296"
-warning = "#ffc85a"
-danger = "#ff7a96"
 
 [dialogue]
 padding = [26, 26, 26, 16]

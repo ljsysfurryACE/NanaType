@@ -10,14 +10,8 @@ description = { zh-CN = "黑底绿字的命令行窗口，带标题栏与闪烁�
 [chrome]
 appearance = "dark"
 accent = "#33ff66"
-background = "#050805"
 surface = "#0d140e"
 text = "#c8ffd4"
-muted = "#6fae7e"
-border = "#1f5f2a"
-success = "#48d296"
-warning = "#ffc85a"
-danger = "#ff7a96"
 
 [fonts.body]
 families = ["Cascadia Mono", "Consolas", "Sarasa Mono SC", "NSimSun", "Menlo"]

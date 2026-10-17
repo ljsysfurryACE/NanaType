@@ -566,94 +566,15 @@ impl Default for Meta {
     }
 }
 
-/// Legacy skin colour table, still used by content boxes and inline labels.
+/// Content colours and the appearance used to classify skins in the picker.
 /// Operator controls use an independent application theme.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Chrome {
     pub appearance: Appearance,
     pub accent: Rgba8,
-    pub background: Rgba8,
     pub surface: Rgba8,
     pub text: Rgba8,
-    pub muted: Rgba8,
-    pub border: Rgba8,
-    pub success: Rgba8,
-    pub warning: Rgba8,
-    pub danger: Rgba8,
-    /// Legacy secondary accent; does not affect application controls.
-    pub highlight: Option<Rgba8>,
-    /// Legacy `[chrome.dark]` colours, retained for manifest compatibility.
-    pub dark: Option<ChromeVariant>,
-    /// Legacy `[chrome.light]` colours, retained for manifest compatibility.
-    pub light: Option<ChromeVariant>,
-    /// Legacy named palette overrides; no longer applied to operator controls.
-    pub palette: BTreeMap<String, Rgba8>,
-}
-
-/// `[chrome.dark]` / `[chrome.light]`: the chrome roles for the other
-/// appearance. Every key is optional; the rest come from the counterpart.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ChromeVariant {
-    pub accent: Option<Rgba8>,
-    pub background: Option<Rgba8>,
-    pub surface: Option<Rgba8>,
-    pub text: Option<Rgba8>,
-    pub muted: Option<Rgba8>,
-    pub border: Option<Rgba8>,
-    pub success: Option<Rgba8>,
-    pub warning: Option<Rgba8>,
-    pub danger: Option<Rgba8>,
-    pub highlight: Option<Rgba8>,
-}
-
-/// Nana pink, the default highlight on a light chrome.
-pub const HIGHLIGHT_LIGHT: Rgba8 = Rgba8::rgb(232, 106, 146);
-/// Nana pink, the default highlight on a dark chrome.
-pub const HIGHLIGHT_DARK: Rgba8 = Rgba8::rgb(255, 143, 177);
-
-impl Chrome {
-    /// The Nana chrome for one appearance: the manifest defaults when light,
-    /// the Nana-tinted navy when dark. A skin whose own appearance differs
-    /// from the chosen mode is drawn on this counterpart (carrying its accent
-    /// and highlight), never on a plain grey.
-    pub fn nana(dark: bool) -> Self {
-        if !dark {
-            return Self::default();
-        }
-        Self {
-            appearance: Appearance::Dark,
-            accent: Rgba8::rgb(92, 184, 255),
-            background: Rgba8::rgb(15, 23, 36),
-            surface: Rgba8::rgb(24, 35, 58),
-            text: Rgba8::rgb(230, 238, 248),
-            muted: Rgba8::rgb(159, 179, 204),
-            border: Rgba8::rgb(44, 61, 88),
-            success: Rgba8::rgb(72, 210, 150),
-            warning: Rgba8::rgb(255, 200, 90),
-            danger: Rgba8::rgb(255, 122, 150),
-            ..Self::default()
-        }
-    }
-
-    /// The highlight role for a chrome drawn `dark` or light.
-    pub fn highlight_for(&self, dark: bool) -> Rgba8 {
-        self.highlight.unwrap_or(if dark {
-            HIGHLIGHT_DARK
-        } else {
-            HIGHLIGHT_LIGHT
-        })
-    }
-
-    /// The `[chrome.dark]` / `[chrome.light]` table for that appearance.
-    pub fn variant(&self, dark: bool) -> Option<&ChromeVariant> {
-        if dark {
-            self.dark.as_ref()
-        } else {
-            self.light.as_ref()
-        }
-    }
 }
 
 impl Default for Chrome {
@@ -661,18 +582,8 @@ impl Default for Chrome {
         Self {
             appearance: Appearance::Light,
             accent: Rgba8::rgb(8, 118, 208),
-            background: Rgba8::rgb(234, 244, 251),
             surface: Rgba8::rgb(255, 255, 255),
             text: Rgba8::rgb(27, 47, 75),
-            muted: Rgba8::rgb(74, 98, 128),
-            border: Rgba8::rgb(203, 224, 239),
-            success: Rgba8::rgb(10, 128, 92),
-            warning: Rgba8::rgb(163, 100, 0),
-            danger: Rgba8::rgb(214, 52, 88),
-            highlight: None,
-            dark: None,
-            light: None,
-            palette: BTreeMap::new(),
         }
     }
 }
@@ -1255,17 +1166,6 @@ pub enum HistoryLayout {
     Inline,
 }
 
-/// Which end of the history window the rows gather at while they do not fill it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HistoryAnchor {
-    /// Newest row at the bottom edge, like a chat.
-    #[default]
-    Bottom,
-    /// Rows start at the top edge.
-    Top,
-}
-
 /// A surface behind the whole history list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -1343,7 +1243,6 @@ pub struct History {
     pub text: TextSpec,
     pub gap: f32,
     pub entrance: HistoryEntrance,
-    pub show_time: bool,
     pub time_color: Rgba8,
     pub bubble_gradient: Option<GradientSpec>,
     pub bubble_radii: Option<[f32; 4]>,
@@ -1369,8 +1268,6 @@ pub struct History {
     pub chat: HistoryChatSpec,
     /// The chat message a row answers, quoted above its bubble.
     pub reply: ReplySpec,
-    /// Where a short list sits in the window.
-    pub anchor: HistoryAnchor,
 }
 
 impl Default for History {
@@ -1395,7 +1292,6 @@ impl Default for History {
             },
             gap: 10.0,
             entrance: HistoryEntrance::SlideUp,
-            show_time: false,
             time_color: Rgba8::rgb(0x8a, 0xa0, 0xb4),
             bubble_gradient: None,
             bubble_radii: None,
@@ -1413,7 +1309,6 @@ impl Default for History {
             hide_latest: false,
             chat: HistoryChatSpec::default(),
             reply: ReplySpec::default(),
-            anchor: HistoryAnchor::Bottom,
         }
     }
 }
@@ -1482,8 +1377,6 @@ pub struct EffectDefaults {
     pub flicker_amount: f32,
     pub flicker_hz: f32,
     pub rainbow_period_s: f32,
-    pub rainbow_saturation: f32,
-    pub rainbow_lightness: f32,
     pub screen_shake_px: f32,
     /// Smallest contrast ratio a coloured run may have against the box
     /// colour before it gets a 1.5px outline in the skin's darkest (or
@@ -1505,8 +1398,6 @@ impl Default for EffectDefaults {
             flicker_amount: 1.0,
             flicker_hz: 8.0,
             rainbow_period_s: 2.4,
-            rainbow_saturation: 0.75,
-            rainbow_lightness: 0.6,
             screen_shake_px: 6.0,
             contrast_guard: 0.0,
         }

@@ -9,14 +9,8 @@ description = { zh-CN = "四阶绿色的复古掌机画面，方角粗框与像�
 
 [chrome]
 accent = "#306230"
-background = "#9bbc0f"
 surface = "#c4d7a0"
 text = "#0f380f"
-muted = "#1f4a1f"
-border = "#0f380f"
-danger = "#7a1020"
-warning = "#5a3a00"
-success = "#0f380f"
 
 [fonts.body]
 file = "builtin:fonts/FusionPixel12pxProportionalSC.ttf"

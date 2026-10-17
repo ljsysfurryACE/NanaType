@@ -9,11 +9,8 @@ description = { zh-CN = "黑色粗线、硬投影和带影子的尾巴，黄色�
 
 [chrome]
 accent = "#ffcc00"
-background = "#fffbea"
 surface = "#ffffff"
 text = "#111111"
-muted = "#555555"
-border = "#111111"
 
 [fonts.body]
 weight = 800

@@ -10,14 +10,8 @@ description = { zh-CN = "蓝色渐变窗口加白色双线框，经典 RPG 消�
 [chrome]
 appearance = "dark"
 accent = "#8fa8ff"
-background = "#0a1030"
 surface = "#16205a"
 text = "#ffffff"
-muted = "#c0c8f0"
-border = "#3c4a9a"
-success = "#6ae09a"
-warning = "#ffd060"
-danger = "#ff7a7a"
 
 [fonts.body]
 file = "builtin:fonts/FusionPixel12pxProportionalSC.ttf"

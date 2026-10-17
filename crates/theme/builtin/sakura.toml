@@ -9,11 +9,8 @@ description = { zh-CN = "粉色渐变圆角框，花瓣点缀与爱心提示", e
 
 [chrome]
 accent = "#f06a9c"
-background = "#fff4f8"
 surface = "#ffffff"
 text = "#5e2a42"
-muted = "#8a5470"
-border = "#f7c6d8"
 
 [fonts.accent]
 families = ["Segoe UI Symbol", "Microsoft YaHei UI", "PingFang SC"]
