@@ -1,0 +1,53 @@
+name: Build Linux
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config nasm git \
+            libasound2-dev libxkbcommon-dev libwayland-dev libx11-xcb-dev \
+            libudev-dev libvulkan-dev libssl-dev \
+            libgtk-3-dev libayatana-appindicator3-dev
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: 编译（release）
+        run: cargo build --release -p nanatype --locked
+
+      - name: 看一下产物
+        run: |
+          ls -la target/release/nanatype
+          file target/release/nanatype
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nanatype-linux-x86_64
+          path: target/release/nanatype
+          if-no-files-found: error
+
+      - name: 附带许可证（MIT 要求保留版权声明）
+        run: |
+          mkdir -p dist
+          cp target/release/nanatype dist/ 2>/dev/null || true
+          cp LICENSE LICENSE-MIT THIRD_PARTY_NOTICES.md dist/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nanatype-linux-with-licenses
+          path: dist/
+          if-no-files-found: error
